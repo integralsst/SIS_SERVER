@@ -23,7 +23,7 @@ export const sendSSTCampaign = async (req: any, res: Response) => {
 
     // 2. Enviamos el correo masivo a través de Resend
     const { data, error } = await resend.emails.send({
-      from: 'SIS Consultoría <alertas@tu-dominio.com>', // Aquí irá tu dominio validado
+      from: 'SIS Consultoría <alertas@sisriesgoslaborales.com>', // Aquí irá tu dominio validado
       to: emails,
       subject: '⚠️ Recordatorio: Requisitos Legales SST 2026',
       replyTo: 'contacto@sisriesgoslaborales.com', // ¡AQUÍ ES DONDE RECIBIRÁS LAS RESPUESTAS!
