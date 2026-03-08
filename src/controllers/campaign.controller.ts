@@ -20,18 +20,16 @@ const generateSSTTemplate = (email: string) => `
         <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06);">
           
           <tr>
-            <td style="padding: 0;">
-              <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td width="30%" height="14" style="background-color: #2cbef9; border-top-left-radius: 18px;"></td>
-                  <td width="70%" height="14" style="background-color: #04127c; border-top-right-radius: 18px;"></td>
-                </tr>
-              </table>
+            <td style="padding: 0; font-size: 0; line-height: 0;">
+              <svg viewBox="0 0 600 60" preserveAspectRatio="none" style="display: block; width: 100%; height: 60px;" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0,0 L600,0 L600,40 C450,70 150,10 0,40 Z" fill="#04127c" />
+                <path d="M0,0 L600,0 L600,20 C450,50 150,-10 0,20 Z" fill="#2cbef9" opacity="0.9"/>
+              </svg>
             </td>
           </tr>
 
           <tr>
-            <td style="padding: 40px 30px 20px 30px; text-align: center;">
+            <td style="padding: 20px 30px 20px 30px; text-align: center;">
               <img src="http://sisriesgoslaborales.com/logo-correo.jpeg" alt="Logo de la Empresa" width="120" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
             </td>
           </tr>
