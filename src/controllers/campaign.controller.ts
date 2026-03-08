@@ -17,8 +17,19 @@ const generateSSTTemplate = (email: string) => `
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F5F5F7; padding: 50px 20px;">
     <tr>
       <td align="center">
-        <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 20px rgba(0,0,0,0.04);">
+        <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06);">
           
+          <tr>
+            <td style="padding: 0;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30%" height="14" style="background-color: #2cbef9; border-top-left-radius: 18px;"></td>
+                  <td width="70%" height="14" style="background-color: #04127c; border-top-right-radius: 18px;"></td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
           <tr>
             <td style="padding: 40px 30px 20px 30px; text-align: center;">
               <img src="http://sisriesgoslaborales.com/logo-correo.jpeg" alt="Logo de la Empresa" width="120" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
@@ -37,7 +48,7 @@ const generateSSTTemplate = (email: string) => `
           <tr>
             <td style="padding: 0 40px 30px 40px; text-align: center;">
               <p style="color: #86868B; font-size: 18px; line-height: 1.5; margin: 0; font-weight: 400;">
-                El Ministerio del Trabajo ha fijado una fecha límite estricta para el reporte de la autoevaluación del SG-SST (vigencia 2025) y su plan de mejoramiento[cite: 8, 9, 29].
+                El Ministerio del Trabajo ha fijado una fecha límite estricta para el reporte de la autoevaluación del SG-SST (vigencia 2025) y su plan de mejoramiento.
               </p>
             </td>
           </tr>
@@ -54,13 +65,13 @@ const generateSSTTemplate = (email: string) => `
                 <tr>
                   <td style="padding-bottom: 15px;">
                     <strong style="color: #1D1D1F; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Fecha Límite:</strong><br>
-                    <span style="color: #ef4444; font-size: 18px; font-weight: 600;">31 de julio de 2026 [cite: 30]</span>
+                    <span style="color: #ef4444; font-size: 18px; font-weight: 600;">31 de julio de 2026</span>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding-bottom: 15px;">
                     <strong style="color: #1D1D1F; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Obligación Adicional:</strong><br>
-                    <span style="color: #4b5563; font-size: 16px;">Remitir copia a su ARL para evitar reportes por incumplimiento[cite: 35, 53].</span>
+                    <span style="color: #4b5563; font-size: 16px;">Remitir copia a su ARL para evitar reportes por incumplimiento.</span>
                   </td>
                 </tr>
                 <tr>
