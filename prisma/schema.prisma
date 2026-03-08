@@ -5,22 +5,67 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql" 
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
+// --- MODELOS PRINCIPALES ---
+
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  company   String?  // Nombre de la empresa cliente
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String          @id @default(uuid())
+  email          String          @unique
+  password       String
+  name           String
+  company        String?         // Tu empresa de consultoría en Pereira
+  role           Role            @default(USER)
+  
+  // Relaciones
+  contacts       Contact[]       // Tus leads y clientes
+  emailCampaigns EmailCampaign[] // Tu historial de envíos
+  
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
+
+model Contact {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  name            String?
+  company         String?       // Empresa a la que le ofreces SST
+  status          ContactStatus @default(LEAD) // Estado en el embudo comercial
+  
+  // Relación con el consultor (User)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  
+  lastContactedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model EmailCampaign {
+  id              String   @id @default(uuid())
+  subject         String   // Asunto: Ej. "Requisitos Legales SST 2026"
+  content         String   @db.LongText // El cuerpo del correo (HTML con estilo Apple)
+  totalRecipients Int      @default(0)  // Cantidad de correos enviados
+  
+  // Relación con el consultor (User)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  
+  sentAt          DateTime @default(now())
+}
+
+// --- ENUMS ---
 
 enum Role {
   USER
   ADMIN
+}
+
+enum ContactStatus {
+  LEAD        // Recién cargado al sistema
+  CONTACTED   // Ya recibió el primer correo informativo
+  INTERESTED  // Respondió o mostró interés en la asesoría
+  CLIENT      // Ya es cliente de SIS o Legal 360
 }
