@@ -21,7 +21,7 @@ const generateSSTTemplate = (email: string) => `
           
           <tr>
             <td style="background-color: #ffffff; padding: 30px; text-align: center; border-bottom: 3px solid #0891b2;">
-              <img src="http://sisriesgoslaborales.com/logo-correo.webp" alt="Logo de la Empresa" width="180" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
+              <img src="http://sisriesgoslaborales.com/logo-correo.jpg" alt="Logo de la Empresa" width="180" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
             </td>
           </tr>
 
