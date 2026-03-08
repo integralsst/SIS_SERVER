@@ -11,58 +11,62 @@ const generateSSTTemplate = (email: string) => `
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Urgente: Obligaciones SG-SST Circular 0027 de 2026</title>
+  <title>Actualización SG-SST: Circular 0027</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f4f7f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f7f6; padding: 40px 0;">
+<body style="margin: 0; padding: 0; background-color: #F5F5F7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F5F5F7; padding: 50px 20px;">
     <tr>
       <td align="center">
-        <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+        <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 20px rgba(0,0,0,0.04);">
           
           <tr>
-            <td style="background-color: #ffffff; padding: 30px; text-align: center; border-bottom: 3px solid #0891b2;">
-              <img src="http://sisriesgoslaborales.com/logo-correo.jpg" alt="Logo de la Empresa" width="180" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
+            <td style="padding: 40px 30px 20px 30px; text-align: center;">
+              <img src="http://sisriesgoslaborales.com/logo-correo.jpeg" alt="Logo de la Empresa" width="120" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
             </td>
           </tr>
 
           <tr>
-            <td style="background-color: #0891b2; padding: 30px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">
-                Alerta Normativa: Circular 0027 de 2026
+            <td style="padding: 10px 40px 30px 40px; text-align: center;">
+              <h1 style="color: #1D1D1F; margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2;">
+                Circular 0027.<br>
+                <span style="color: #04127c;">El plazo está corriendo.</span>
               </h1>
             </td>
           </tr>
 
           <tr>
-            <td style="padding: 40px 30px;">
-              <h2 style="color: #1f2937; font-size: 20px; margin-top: 0; margin-bottom: 20px;">
-                ¿Su empresa ya reportó la autoevaluación del SG-SST?
-              </h2>
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-                Hola,<br><br>
-                El Ministerio del Trabajo acaba de emitir la <strong>Circular 0027 del 26 de febrero de 2026</strong>[cite: 6, 8, 9]. Esta normativa exige que todos los empleadores y contratantes registren la autoevaluación de los Estándares Mínimos del SG-SST del año 2025 y su respectivo plan de mejoramiento[cite: 11, 29].
+            <td style="padding: 0 40px 30px 40px; text-align: center;">
+              <p style="color: #86868B; font-size: 18px; line-height: 1.5; margin: 0; font-weight: 400;">
+                El Ministerio del Trabajo ha fijado una fecha límite estricta para el reporte de la autoevaluación del SG-SST (vigencia 2025) y su plan de mejoramiento[cite: 8, 9, 29].
               </p>
-              
-              <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin-bottom: 25px;">
-                <p style="color: #991b1b; font-size: 15px; margin: 0; font-weight: bold;">
-                  Fecha límite impostergable: 31 de julio de 2026[cite: 30].
-                </p>
-              </div>
+            </td>
+          </tr>
 
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
-                Además del registro en la plataforma del Fondo de Riesgos Laborales, es obligatorio enviar una copia de la autoevaluación a su ARL[cite: 33, 35]. Tenga en cuenta que las ARL tienen el deber de informar a las Direcciones Territoriales del Ministerio del Trabajo sobre las empresas que no cumplan con este reporte[cite: 53].
-              </p>
+          <tr>
+            <td style="padding: 0 40px 30px 40px; text-align: center;">
+              <img src="http://sisriesgoslaborales.com/ministerio.png" alt="Comunicado Ministerio del Trabajo" width="100%" style="display: block; margin: 0 auto; border-radius: 12px; border: 1px solid #E5E5EA;">
+            </td>
+          </tr>
 
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 35px;">
-                <strong>Evite sanciones o requerimientos innecesarios.</strong> Nuestro equipo de especialistas está listo para auditar su sistema, estructurar el plan de mejoramiento y gestionar todo el proceso de reporte por usted, sin afectar la operatividad de su negocio.
-              </p>
-              
-              <table border="0" cellspacing="0" cellpadding="0" width="100%">
+          <tr>
+            <td style="padding: 0 40px 40px 40px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F5F5F7; border-radius: 12px; padding: 25px;">
                 <tr>
-                  <td align="center">
-                    <a href="https://wa.link/7awkvv" style="background-color: #0891b2; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
-                      Solicitar Diagnóstico Gratuito
-                    </a>
+                  <td style="padding-bottom: 15px;">
+                    <strong style="color: #1D1D1F; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Fecha Límite:</strong><br>
+                    <span style="color: #ef4444; font-size: 18px; font-weight: 600;">31 de julio de 2026 [cite: 30]</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-bottom: 15px;">
+                    <strong style="color: #1D1D1F; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Obligación Adicional:</strong><br>
+                    <span style="color: #4b5563; font-size: 16px;">Remitir copia a su ARL para evitar reportes por incumplimiento[cite: 35, 53].</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong style="color: #1D1D1F; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Plataforma Oficial:</strong><br>
+                    <a href="https://sgrl.mintrabajo.gov.co/Autenticacion/Autenticacion" style="color: #2cbef9; font-size: 16px; text-decoration: none; font-weight: 500;">Acceder al Fondo de Riesgos Laborales ↗</a>
                   </td>
                 </tr>
               </table>
@@ -70,13 +74,29 @@ const generateSSTTemplate = (email: string) => `
           </tr>
 
           <tr>
-            <td style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="color: #9ca3af; font-size: 12px; line-height: 1.5; margin: 0 0 10px 0;">
-                Recibe este correo porque está registrado en nuestra base de datos corporativa y consideramos que esta actualización legal es vital para su empresa.
+            <td style="padding: 0 40px 30px 40px; text-align: center;">
+              <p style="color: #1D1D1F; font-size: 18px; line-height: 1.5; margin: 0; font-weight: 500;">
+                Auditoría, estructuración y reporte sin interrumpir su operación.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 40px 50px 40px; text-align: center;">
+              <a href="https://wa.link/7awkvv" style="background-color: #04127c; color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 980px; font-weight: 600; font-size: 16px; display: inline-block; transition: background-color 0.3s ease;">
+                Solicitar Diagnóstico Gratuito
+              </a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color: #FAFAFA; padding: 25px 40px; text-align: center; border-top: 1px solid #E5E5EA;">
+              <p style="color: #86868B; font-size: 12px; line-height: 1.5; margin: 0 0 10px 0;">
+                Recibe esta información técnica como parte de nuestras actualizaciones normativas corporativas.
               </p>
               <p style="margin: 0;">
-                <a href="#" style="color: #6b7280; font-size: 12px; text-decoration: underline;">Modificar preferencias</a> | 
-                <a href="#" style="color: #6b7280; font-size: 12px; text-decoration: underline;">Darse de baja</a>
+                <a href="#" style="color: #2cbef9; font-size: 12px; text-decoration: none;">Modificar preferencias</a> &nbsp;|&nbsp; 
+                <a href="#" style="color: #2cbef9; font-size: 12px; text-decoration: none;">Darse de baja</a>
               </p>
             </td>
           </tr>
