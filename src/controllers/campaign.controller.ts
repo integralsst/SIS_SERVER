@@ -11,7 +11,7 @@ const generateSSTTemplate = (email: string) => `
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Actualización Normativa SST</title>
+  <title>Urgente: Obligaciones SG-SST Circular 0027 de 2026</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f4f7f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f7f6; padding: 40px 0;">
@@ -20,34 +20,48 @@ const generateSSTTemplate = (email: string) => `
         <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
           
           <tr>
+            <td style="background-color: #ffffff; padding: 30px; text-align: center; border-bottom: 3px solid #0891b2;">
+              <img src="http://sisriesgoslaborales.com/logo-correo.webp" alt="Logo de la Empresa" width="180" style="display: block; margin: 0 auto; max-width: 100%; height: auto;">
+            </td>
+          </tr>
+
+          <tr>
             <td style="background-color: #0891b2; padding: 30px; text-align: center;">
               <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">
-                Consultoría en Riesgos Laborales
+                Alerta Normativa: Circular 0027 de 2026
               </h1>
-              <p style="color: #cffafe; margin: 5px 0 0 0; font-size: 14px;">
-                Especialistas en SST
-              </p>
             </td>
           </tr>
 
           <tr>
             <td style="padding: 40px 30px;">
               <h2 style="color: #1f2937; font-size: 20px; margin-top: 0; margin-bottom: 20px;">
-                Actualización: Requisitos Legales SST 2026
+                ¿Su empresa ya reportó la autoevaluación del SG-SST?
               </h2>
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
                 Hola,<br><br>
-                Asegurar el cumplimiento normativo es vital para proteger tanto a sus colaboradores como a su empresa ante posibles sanciones. Le informamos que los estándares del Sistema de Gestión de Seguridad y Salud en el Trabajo (SG-SST) requieren revisión periódica.
+                El Ministerio del Trabajo acaba de emitir la <strong>Circular 0027 del 26 de febrero de 2026</strong>[cite: 6, 8, 9]. Esta normativa exige que todos los empleadores y contratantes registren la autoevaluación de los Estándares Mínimos del SG-SST del año 2025 y su respectivo plan de mejoramiento[cite: 11, 29].
               </p>
+              
+              <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin-bottom: 25px;">
+                <p style="color: #991b1b; font-size: 15px; margin: 0; font-weight: bold;">
+                  Fecha límite impostergable: 31 de julio de 2026[cite: 30].
+                </p>
+              </div>
+
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+                Además del registro en la plataforma del Fondo de Riesgos Laborales, es obligatorio enviar una copia de la autoevaluación a su ARL[cite: 33, 35]. Tenga en cuenta que las ARL tienen el deber de informar a las Direcciones Territoriales del Ministerio del Trabajo sobre las empresas que no cumplan con este reporte[cite: 53].
+              </p>
+
               <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 35px;">
-                Nuestro equipo está listo para ayudarle a auditar y alinear sus procesos actuales sin interrumpir su operatividad.
+                <strong>Evite sanciones o requerimientos innecesarios.</strong> Nuestro equipo de especialistas está listo para auditar su sistema, estructurar el plan de mejoramiento y gestionar todo el proceso de reporte por usted, sin afectar la operatividad de su negocio.
               </p>
               
               <table border="0" cellspacing="0" cellpadding="0" width="100%">
                 <tr>
                   <td align="center">
-                    <a href="https://wa.me/573100000000" style="background-color: #0891b2; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
-                      Contactar a un Asesor
+                    <a href="https://wa.link/7awkvv" style="background-color: #0891b2; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                      Solicitar Diagnóstico Gratuito
                     </a>
                   </td>
                 </tr>
@@ -58,7 +72,7 @@ const generateSSTTemplate = (email: string) => `
           <tr>
             <td style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
               <p style="color: #9ca3af; font-size: 12px; line-height: 1.5; margin: 0 0 10px 0;">
-                Recibe este correo porque está registrado en nuestra base de datos de interés corporativo.
+                Recibe este correo porque está registrado en nuestra base de datos corporativa y consideramos que esta actualización legal es vital para su empresa.
               </p>
               <p style="margin: 0;">
                 <a href="#" style="color: #6b7280; font-size: 12px; text-decoration: underline;">Modificar preferencias</a> | 
