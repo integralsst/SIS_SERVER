@@ -4,8 +4,6 @@ import {
   EstadoPeriodoSgsst,
   EstadoRegistro,
   Prisma,
-  TipoFechaBaseVigencia,
-  UnidadPeriodicidad,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -18,96 +16,8 @@ import {
   convertirFecha,
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
+import { calcularFechaVencimientoEvaluacion } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
-
-function agregarPeriodicidad(
-  fechaBase: Date,
-  cantidad: number,
-  unidad: UnidadPeriodicidad
-): Date {
-  const resultado = new Date(fechaBase);
-
-  switch (unidad) {
-    case UnidadPeriodicidad.DIA:
-      resultado.setUTCDate(resultado.getUTCDate() + cantidad);
-      break;
-    case UnidadPeriodicidad.SEMANA:
-      resultado.setUTCDate(
-        resultado.getUTCDate() + cantidad * 7
-      );
-      break;
-    case UnidadPeriodicidad.MES:
-      resultado.setUTCMonth(
-        resultado.getUTCMonth() + cantidad
-      );
-      break;
-    case UnidadPeriodicidad.ANIO:
-      resultado.setUTCFullYear(
-        resultado.getUTCFullYear() + cantidad
-      );
-      break;
-  }
-
-  return resultado;
-}
-
-function calcularFechaVencimiento(
-  gestionFecha: Date,
-  fechaDocumento: Date | null,
-  configuracion: {
-    tipoFechaBase: TipoFechaBaseVigencia;
-    cantidad: number | null;
-    unidad: UnidadPeriodicidad | null;
-    mesFechaFija: number | null;
-    diaFechaFija: number | null;
-  } | null,
-  esEvergreen: boolean
-): Date | null {
-  if (esEvergreen || !configuracion) {
-    return null;
-  }
-
-  if (
-    configuracion.tipoFechaBase ===
-    TipoFechaBaseVigencia.FECHA_FIJA_CALENDARIO
-  ) {
-    if (
-      !configuracion.mesFechaFija ||
-      !configuracion.diaFechaFija
-    ) {
-      return null;
-    }
-
-    return new Date(
-      Date.UTC(
-        gestionFecha.getUTCFullYear(),
-        configuracion.mesFechaFija - 1,
-        configuracion.diaFechaFija,
-        12
-      )
-    );
-  }
-
-  if (!configuracion.cantidad || !configuracion.unidad) {
-    return null;
-  }
-
-  const fechaBase =
-    configuracion.tipoFechaBase ===
-    TipoFechaBaseVigencia.FECHA_DOCUMENTO
-      ? fechaDocumento
-      : gestionFecha;
-
-  if (!fechaBase) {
-    return null;
-  }
-
-  return agregarPeriodicidad(
-    fechaBase,
-    configuracion.cantidad,
-    configuracion.unidad
-  );
-}
 
 async function guardarUnaEvaluacion(
   tx: Prisma.TransactionClient,
@@ -191,11 +101,12 @@ async function guardarUnaEvaluacion(
       : input.calificacionAdministrativa;
 
   const fechaVencimientoCalculada =
-    calcularFechaVencimiento(
+    calcularFechaVencimientoEvaluacion(
       gestion.fechaGestion,
       fechaDocumento,
       contexto.configuracionVigencia,
-      contexto.configuracion?.esEvergreen ?? false
+      contexto.configuracion?.esEvergreen ?? false,
+      input.estadoCumplimiento
     );
 
   const anterior = await tx.evaluacionAspecto.findUnique({

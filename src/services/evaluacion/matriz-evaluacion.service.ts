@@ -10,6 +10,10 @@ import {
   ErrorEvaluacion,
   validarAnio,
 } from "../../utils/evaluacion";
+import {
+  resolverVigenciaEvaluacion,
+  type ResultadoVigenciaEvaluacion,
+} from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 import { servicioPeriodosEvaluacion } from "./periodos-evaluacion.service";
 
@@ -61,42 +65,15 @@ function serializarEvaluacion(evaluacion: {
   };
 }
 
-function calcularEstadoVigencia(
-  evaluacion: {
-    fechaVencimientoCalculada: Date | null;
-  } | null,
-  diasAlertaPrevia: number
-): "SIN_REVISION" | "VIGENTE" | "POR_VENCER" | "VENCIDO" | "SIN_VENCIMIENTO" {
-  if (!evaluacion) {
-    return "SIN_REVISION";
-  }
-
-  if (!evaluacion.fechaVencimientoCalculada) {
-    return "SIN_VENCIMIENTO";
-  }
-
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-
-  const vencimiento = new Date(
-    evaluacion.fechaVencimientoCalculada
-  );
-  vencimiento.setHours(0, 0, 0, 0);
-
-  if (vencimiento.getTime() < hoy.getTime()) {
-    return "VENCIDO";
-  }
-
-  const limiteAlerta = new Date(hoy);
-  limiteAlerta.setDate(
-    limiteAlerta.getDate() + diasAlertaPrevia
-  );
-
-  if (vencimiento.getTime() <= limiteAlerta.getTime()) {
-    return "POR_VENCER";
-  }
-
-  return "VIGENTE";
+function serializarDetalleVigencia(
+  detalle: ResultadoVigenciaEvaluacion
+) {
+  return {
+    ...detalle,
+    fechaVencimiento: serializarFecha(
+      detalle.fechaVencimiento
+    ),
+  };
 }
 
 export const servicioMatrizEvaluacion = {
@@ -193,6 +170,7 @@ export const servicioMatrizEvaluacion = {
           vigentes: 0,
           porVencer: 0,
           vencidos: 0,
+          pendientesVigencia: 0,
           cumplimientoAdministrativo: 0,
           calificacionMinisterial: 0,
           calificacionMinisterialMaxima: 0,
@@ -399,9 +377,37 @@ export const servicioMatrizEvaluacion = {
         ultimaPorAspecto.get(tarea.aspectoId) ?? null;
       const evaluacionGestionActiva =
         borradorPorAspecto.get(tarea.aspectoId) ?? null;
-      const diasAlertaPrevia =
-        tarea.aspecto.configuracionVigencia
-          ?.diasAlertaPrevia ?? 30;
+      const esEvergreen =
+        tarea.aspecto.configuracion
+          ?.esEvergreen ?? false;
+
+      const evaluacionParaVista =
+        evaluacionGestionActiva ??
+        ultimaEvaluacion;
+
+      const detalleVigencia =
+        resolverVigenciaEvaluacion({
+          evaluacion:
+            evaluacionParaVista,
+          configuracion:
+            tarea.aspecto
+              .configuracionVigencia,
+          esEvergreen,
+          provisional: Boolean(
+            evaluacionGestionActiva
+          ),
+        });
+
+      const detalleVigenciaOficial =
+        resolverVigenciaEvaluacion({
+          evaluacion:
+            ultimaEvaluacion,
+          configuracion:
+            tarea.aspecto
+              .configuracionVigencia,
+          esEvergreen,
+          provisional: false,
+        });
 
       return {
         tareaId: tarea.id,
@@ -458,10 +464,14 @@ export const servicioMatrizEvaluacion = {
         evaluacionGestionActiva: evaluacionGestionActiva
           ? serializarEvaluacion(evaluacionGestionActiva)
           : null,
-        estadoVigencia: calcularEstadoVigencia(
-          ultimaEvaluacion,
-          diasAlertaPrevia
-        ),
+        estadoVigencia:
+          detalleVigencia.estado,
+        detalleVigencia:
+          serializarDetalleVigencia(
+            detalleVigencia
+          ),
+        estadoVigenciaOficial:
+          detalleVigenciaOficial.estado,
       };
     });
 
@@ -536,10 +546,12 @@ export const servicioMatrizEvaluacion = {
     }
 
     const contarVigencia = (
-      estado: (typeof filasAspectos)[number]["estadoVigencia"]
+      estado: (typeof filasAspectos)[number]["estadoVigenciaOficial"]
     ) =>
       filasAspectos.filter(
-        (fila) => fila.estadoVigencia === estado
+        (fila) =>
+          fila.estadoVigenciaOficial ===
+          estado
       ).length;
 
     return {
@@ -591,9 +603,21 @@ export const servicioMatrizEvaluacion = {
         sinRevision: contarVigencia("SIN_REVISION"),
         vigentes:
           contarVigencia("VIGENTE") +
-          contarVigencia("SIN_VENCIMIENTO"),
-        porVencer: contarVigencia("POR_VENCER"),
-        vencidos: contarVigencia("VENCIDO"),
+          contarVigencia(
+            "VIGENTE_PERMANENTE"
+          ) +
+          contarVigencia("NO_APLICA"),
+        porVencer:
+          contarVigencia("POR_VENCER"),
+        vencidos:
+          contarVigencia("VENCIDO"),
+        pendientesVigencia:
+          contarVigencia(
+            "FALTA_FECHA_DOCUMENTO"
+          ) +
+          contarVigencia(
+            "PERIODICIDAD_NO_CONFIGURADA"
+          ),
         cumplimientoAdministrativo: Number(
           promedioAdministrativo.toFixed(2)
         ),
