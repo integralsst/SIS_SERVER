@@ -172,7 +172,7 @@ model Usuario {
   gestionesSgsstCreadas   GestionSgsst[]        @relation("GestionSgsstCreadaPor")
   evaluacionesRegistradas EvaluacionAspecto[]   @relation("EvaluacionRegistradaPor")
   historialEvaluaciones   HistorialEvaluacion[] @relation("HistorialEvaluacionUsuario")
-  evidenciasEvaluacion   EvidenciaEvaluacion[]  @relation("EvidenciaEvaluacionCreadaPor")
+  evidenciasEvaluacion    EvidenciaEvaluacion[] @relation("EvidenciaEvaluacionCreadaPor")
 
   // Estado
   activo Boolean @default(true)
