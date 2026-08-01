@@ -48,6 +48,7 @@ model Empresa {
   // Relaciones
   usuarios                  Usuario[]
   asignacionesProfesionales EmpresaProfesional[]
+  periodosSgsst             EmpresaPeriodo[]
 
   // Auditoría
   creadoEn      DateTime @default(now())
@@ -93,6 +94,9 @@ model Profesional {
 
   // Empresas asignadas
   asignacionesEmpresas EmpresaProfesional[]
+
+  // Gestiones SG-SST realizadas
+  gestionesSgsst GestionSgsst[]
 
   // Auditoría
   creadoEn      DateTime @default(now())
@@ -162,6 +166,12 @@ model Usuario {
 
   // Historial de cambios realizados sobre la Supermatriz
   historialCambiosSupermatriz HistorialCambioSupermatriz[]
+
+  // Operación SG-SST por empresa
+  periodosSgsstCreados    EmpresaPeriodo[]      @relation("EmpresaPeriodoCreadoPor")
+  gestionesSgsstCreadas   GestionSgsst[]        @relation("GestionSgsstCreadaPor")
+  evaluacionesRegistradas EvaluacionAspecto[]   @relation("EvaluacionRegistradaPor")
+  historialEvaluaciones   HistorialEvaluacion[] @relation("HistorialEvaluacionUsuario")
 
   // Estado
   activo Boolean @default(true)
@@ -260,6 +270,24 @@ enum ModalidadGestion {
   REMOTA
   OFICINA
   SEGUIMIENTO_PUNTUAL
+}
+
+enum EstadoPeriodoSgsst {
+  ABIERTO
+  CERRADO
+}
+
+enum EstadoGestionSgsst {
+  BORRADOR
+  FINALIZADA
+  INVALIDADA
+}
+
+enum EstadoCumplimientoAspecto {
+  CUMPLIDO
+  PARCIAL
+  NO_CUMPLIDO
+  NO_APLICA
 }
 
 // ======================================================
@@ -380,6 +408,7 @@ model Aspecto {
   requisitosNormativos        AspectoRequisitoNormativo[]
   reglasAprobacion            ReglaAprobacionGestion[]
   vigencias                   VigenciaAspecto[]
+  evaluaciones                EvaluacionAspecto[]
 
   @@unique([versionSupermatrizId, estandarId, nombre])
   @@index([versionSupermatrizId])
@@ -425,6 +454,7 @@ model VersionSupermatriz {
   requisitosNormativos RequisitoNormativo[]
   tareas               SupermatrizTarea[]
   cambios              HistorialCambioSupermatriz[]
+  periodosEmpresa      EmpresaPeriodo[]
 
   @@index([clonadaDeId])
   @@index([estado])
@@ -451,10 +481,11 @@ model SupermatrizTarea {
   createdAt DateTime       @default(now()) @db.DateTime(3)
   updatedAt DateTime       @updatedAt @db.DateTime(3)
 
-  versionSupermatriz VersionSupermatriz                 @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  aspecto            Aspecto                            @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  proceso            Proceso                            @relation(fields: [procesoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  categoriasGestion  SupermatrizTareaCategoriaGestion[]
+  versionSupermatriz   VersionSupermatriz                 @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  aspecto              Aspecto                            @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  proceso              Proceso                            @relation(fields: [procesoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  categoriasGestion    SupermatrizTareaCategoriaGestion[]
+  evaluacionesContexto EvaluacionAspecto[]
 
   @@unique([versionSupermatrizId, aspectoId, procesoId])
   @@index([versionSupermatrizId, orden])
@@ -479,6 +510,7 @@ model CategoriaGestion {
 
   tareas                  SupermatrizTareaCategoriaGestion[]
   asignacionesProfesional EmpresaProfesionalCategoriaGestion[]
+  gestiones               GestionSgsst[]
 
   @@index([estado])
   @@map("categorias_gestion")
@@ -722,6 +754,121 @@ model AspectoRequisitoNormativo {
   @@id([aspectoId, requisitoNormativoId])
   @@index([requisitoNormativoId])
   @@map("aspecto_requisitos_normativos")
+}
+
+// ======================================================
+// OPERACIÓN SG-SST POR EMPRESA
+// ======================================================
+
+model EmpresaPeriodo {
+  id                   String             @id @default(uuid())
+  empresaId            String
+  versionSupermatrizId Int
+  anio                 Int
+  estado               EstadoPeriodoSgsst @default(ABIERTO)
+  fechaApertura        DateTime           @default(now()) @db.DateTime(3)
+  fechaCierre          DateTime?          @db.DateTime(3)
+  creadoPorUsuarioId   String
+  createdAt            DateTime           @default(now()) @db.DateTime(3)
+  updatedAt            DateTime           @updatedAt @db.DateTime(3)
+
+  empresa            Empresa            @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  versionSupermatriz VersionSupermatriz @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor          Usuario            @relation("EmpresaPeriodoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  gestiones          GestionSgsst[]
+
+  @@unique([empresaId, anio], map: "uq_empresa_periodo_anio")
+  @@index([empresaId, estado])
+  @@index([versionSupermatrizId])
+  @@index([anio])
+  @@index([creadoPorUsuarioId])
+  @@map("empresa_periodos_sgsst")
+}
+
+model GestionSgsst {
+  id                 String             @id @default(uuid())
+  empresaPeriodoId   String
+  profesionalId      String?
+  categoriaGestionId Int?
+  usuarioCreadorId   String
+  fechaGestion       DateTime           @db.Date
+  modalidad          ModalidadGestion
+  tipoActividad      String             @db.VarChar(191)
+  observacionGeneral String?            @db.Text
+  estado             EstadoGestionSgsst @default(BORRADOR)
+  valida             Boolean            @default(true)
+  finalizadaEn       DateTime?          @db.DateTime(3)
+  invalidadaEn       DateTime?          @db.DateTime(3)
+  motivoInvalidacion String?            @db.Text
+  createdAt          DateTime           @default(now()) @db.DateTime(3)
+  updatedAt          DateTime           @updatedAt @db.DateTime(3)
+
+  empresaPeriodo   EmpresaPeriodo        @relation(fields: [empresaPeriodoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  profesional      Profesional?          @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  categoriaGestion CategoriaGestion?     @relation(fields: [categoriaGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioCreador   Usuario               @relation("GestionSgsstCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluaciones     EvaluacionAspecto[]
+  historial        HistorialEvaluacion[]
+
+  @@index([empresaPeriodoId, fechaGestion])
+  @@index([profesionalId])
+  @@index([categoriaGestionId])
+  @@index([usuarioCreadorId])
+  @@index([estado, valida])
+  @@map("gestiones_sgsst")
+}
+
+model EvaluacionAspecto {
+  id                         String                    @id @default(uuid())
+  gestionId                  String
+  aspectoId                  Int
+  supermatrizTareaId         Int?
+  usuarioRegistradorId       String
+  estadoCumplimiento         EstadoCumplimientoAspecto
+  calificacionAdministrativa Decimal                   @db.Decimal(3, 2)
+  observacion                String?                   @db.Text
+  fechaDocumento             DateTime?                 @db.Date
+  fechaVencimientoCalculada  DateTime?                 @db.Date
+  justificacionNoAplica      String?                   @db.Text
+  marcadaRevisionTecnica     Boolean                   @default(false)
+  createdAt                  DateTime                  @default(now()) @db.DateTime(3)
+  updatedAt                  DateTime                  @updatedAt @db.DateTime(3)
+
+  gestion            GestionSgsst          @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  aspecto            Aspecto               @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supermatrizTarea   SupermatrizTarea?     @relation(fields: [supermatrizTareaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  usuarioRegistrador Usuario               @relation("EvaluacionRegistradaPor", fields: [usuarioRegistradorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  historial          HistorialEvaluacion[]
+
+  @@unique([gestionId, aspectoId], map: "uq_gestion_aspecto")
+  @@index([gestionId])
+  @@index([aspectoId, createdAt])
+  @@index([supermatrizTareaId])
+  @@index([usuarioRegistradorId])
+  @@index([estadoCumplimiento])
+  @@index([fechaVencimientoCalculada])
+  @@map("evaluaciones_aspecto")
+}
+
+model HistorialEvaluacion {
+  id           String   @id @default(uuid())
+  gestionId    String
+  evaluacionId String?
+  usuarioId    String
+  accion       String   @db.VarChar(100)
+  descripcion  String?  @db.Text
+  datosAntes   Json?
+  datosDespues Json?
+  createdAt    DateTime @default(now()) @db.DateTime(3)
+
+  gestion    GestionSgsst       @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacion EvaluacionAspecto? @relation(fields: [evaluacionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  usuario    Usuario            @relation("HistorialEvaluacionUsuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([gestionId, createdAt])
+  @@index([evaluacionId])
+  @@index([usuarioId])
+  @@map("historial_evaluaciones")
 }
 
 // ======================================================

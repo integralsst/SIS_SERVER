@@ -1,4 +1,4 @@
-import { RolUsuario } from "@prisma/client";
+import type { RolUsuario } from "@prisma/client";
 
 declare global {
   namespace Express {
@@ -28,7 +28,8 @@ declare global {
      * Alias temporal para controladores anteriores que usan:
      * Express.AuthenticatedUser
      */
-    interface AuthenticatedUser extends UsuarioAutenticado {}
+    interface AuthenticatedUser
+      extends UsuarioAutenticado {}
 
     interface Request {
       user?: UsuarioAutenticado;
