@@ -64,77 +64,50 @@ export function agregarPeriodicidadVigencia(
   cantidad: number,
   unidad: UnidadPeriodicidad
 ): Date {
-  const resultado =
-    normalizarFechaUtc(fechaBase);
+  const resultado = normalizarFechaUtc(fechaBase);
 
   switch (unidad) {
     case UnidadPeriodicidad.DIA:
-      resultado.setUTCDate(
-        resultado.getUTCDate() + cantidad
-      );
+      resultado.setUTCDate(resultado.getUTCDate() + cantidad);
       return resultado;
 
     case UnidadPeriodicidad.SEMANA:
       resultado.setUTCDate(
-        resultado.getUTCDate() +
-          cantidad * 7
+        resultado.getUTCDate() + cantidad * 7
       );
       return resultado;
 
     case UnidadPeriodicidad.MES: {
-      const diaOriginal =
-        resultado.getUTCDate();
+      const diaOriginal = resultado.getUTCDate();
 
       resultado.setUTCDate(1);
-      resultado.setUTCMonth(
-        resultado.getUTCMonth() +
-          cantidad
+      resultado.setUTCMonth(resultado.getUTCMonth() + cantidad);
+
+      const ultimoDia = ultimoDiaMesUtc(
+        resultado.getUTCFullYear(),
+        resultado.getUTCMonth()
       );
 
-      const ultimoDia =
-        ultimoDiaMesUtc(
-          resultado.getUTCFullYear(),
-          resultado.getUTCMonth()
-        );
-
-      resultado.setUTCDate(
-        Math.min(
-          diaOriginal,
-          ultimoDia
-        )
-      );
-
+      resultado.setUTCDate(Math.min(diaOriginal, ultimoDia));
       return resultado;
     }
 
     case UnidadPeriodicidad.ANIO: {
-      const mesOriginal =
-        resultado.getUTCMonth();
-      const diaOriginal =
-        resultado.getUTCDate();
+      const mesOriginal = resultado.getUTCMonth();
+      const diaOriginal = resultado.getUTCDate();
 
       resultado.setUTCDate(1);
       resultado.setUTCFullYear(
-        resultado.getUTCFullYear() +
-          cantidad
+        resultado.getUTCFullYear() + cantidad
       );
-      resultado.setUTCMonth(
+      resultado.setUTCMonth(mesOriginal);
+
+      const ultimoDia = ultimoDiaMesUtc(
+        resultado.getUTCFullYear(),
         mesOriginal
       );
 
-      const ultimoDia =
-        ultimoDiaMesUtc(
-          resultado.getUTCFullYear(),
-          mesOriginal
-        );
-
-      resultado.setUTCDate(
-        Math.min(
-          diaOriginal,
-          ultimoDia
-        )
-      );
-
+      resultado.setUTCDate(Math.min(diaOriginal, ultimoDia));
       return resultado;
     }
   }
@@ -143,16 +116,12 @@ export function agregarPeriodicidadVigencia(
 export function calcularFechaVencimientoEvaluacion(
   gestionFecha: Date,
   fechaDocumento: Date | null,
-  configuracion:
-    | ConfiguracionVigenciaCalculable
-    | null,
+  configuracion: ConfiguracionVigenciaCalculable | null,
   esEvergreen: boolean,
-  estadoCumplimiento:
-    EstadoCumplimientoAspecto
+  estadoCumplimiento: EstadoCumplimientoAspecto
 ): Date | null {
   if (
-    estadoCumplimiento ===
-      EstadoCumplimientoAspecto.NO_APLICA ||
+    estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA ||
     esEvergreen ||
     !configuracion
   ) {
@@ -180,10 +149,7 @@ export function calcularFechaVencimientoEvaluacion(
     );
   }
 
-  if (
-    !configuracion.cantidad ||
-    !configuracion.unidad
-  ) {
+  if (!configuracion.cantidad || !configuracion.unidad) {
     return null;
   }
 
@@ -208,23 +174,11 @@ function diferenciaDias(
   fechaFinal: Date,
   fechaInicial: Date
 ): number {
-  const milisegundosDia =
-    24 * 60 * 60 * 1000;
+  const milisegundosDia = 24 * 60 * 60 * 1000;
+  const final = normalizarFechaUtc(fechaFinal).getTime();
+  const inicial = normalizarFechaUtc(fechaInicial).getTime();
 
-  const final =
-    normalizarFechaUtc(
-      fechaFinal
-    ).getTime();
-
-  const inicial =
-    normalizarFechaUtc(
-      fechaInicial
-    ).getTime();
-
-  return Math.ceil(
-    (final - inicial) /
-      milisegundosDia
-  );
+  return Math.ceil((final - inicial) / milisegundosDia);
 }
 
 export function resolverVigenciaEvaluacion({
@@ -234,12 +188,8 @@ export function resolverVigenciaEvaluacion({
   provisional = false,
   hoy = new Date(),
 }: {
-  evaluacion:
-    | EvaluacionParaVigencia
-    | null;
-  configuracion:
-    | ConfiguracionVigenciaCalculable
-    | null;
+  evaluacion: EvaluacionParaVigencia | null;
+  configuracion: ConfiguracionVigenciaCalculable | null;
   esEvergreen: boolean;
   provisional?: boolean;
   hoy?: Date;
@@ -275,10 +225,8 @@ export function resolverVigenciaEvaluacion({
 
   if (esEvergreen) {
     return {
-      estado:
-        "VIGENTE_PERMANENTE",
-      titulo:
-        "Vigente permanente",
+      estado: "VIGENTE_PERMANENTE",
+      titulo: "Vigente permanente",
       descripcion:
         "Es un aspecto Evergreen. Permanece activo y debe revisarse cuando exista un cambio significativo.",
       fechaVencimiento: null,
@@ -290,10 +238,8 @@ export function resolverVigenciaEvaluacion({
 
   if (!configuracion) {
     return {
-      estado:
-        "PERIODICIDAD_NO_CONFIGURADA",
-      titulo:
-        "Periodicidad pendiente",
+      estado: "PERIODICIDAD_NO_CONFIGURADA",
+      titulo: "Periodicidad pendiente",
       descripcion:
         "El aspecto no tiene una regla de vigencia configurada en la Supermatriz.",
       fechaVencimiento: null,
@@ -309,10 +255,8 @@ export function resolverVigenciaEvaluacion({
     !evaluacion.fechaDocumento
   ) {
     return {
-      estado:
-        "FALTA_FECHA_DOCUMENTO",
-      titulo:
-        "Falta fecha",
+      estado: "FALTA_FECHA_DOCUMENTO",
+      titulo: "Falta fecha",
       descripcion:
         "Agrega la fecha de elaboración del documento para calcular su vigencia.",
       fechaVencimiento: null,
@@ -325,16 +269,11 @@ export function resolverVigenciaEvaluacion({
   if (
     configuracion.tipoFechaBase ===
       TipoFechaBaseVigencia.FECHA_FIJA_CALENDARIO &&
-    (
-      !configuracion.mesFechaFija ||
-      !configuracion.diaFechaFija
-    )
+    (!configuracion.mesFechaFija || !configuracion.diaFechaFija)
   ) {
     return {
-      estado:
-        "PERIODICIDAD_NO_CONFIGURADA",
-      titulo:
-        "Fecha fija incompleta",
+      estado: "PERIODICIDAD_NO_CONFIGURADA",
+      titulo: "Fecha fija incompleta",
       descripcion:
         "La regla usa una fecha fija, pero el mes o el día no están configurados.",
       fechaVencimiento: null,
@@ -347,16 +286,11 @@ export function resolverVigenciaEvaluacion({
   if (
     configuracion.tipoFechaBase !==
       TipoFechaBaseVigencia.FECHA_FIJA_CALENDARIO &&
-    (
-      !configuracion.cantidad ||
-      !configuracion.unidad
-    )
+    (!configuracion.cantidad || !configuracion.unidad)
   ) {
     return {
-      estado:
-        "PERIODICIDAD_NO_CONFIGURADA",
-      titulo:
-        "Periodicidad pendiente",
+      estado: "PERIODICIDAD_NO_CONFIGURADA",
+      titulo: "Periodicidad pendiente",
       descripcion:
         "La regla no tiene una cantidad y una unidad de periodicidad completas.",
       fechaVencimiento: null,
@@ -366,14 +300,10 @@ export function resolverVigenciaEvaluacion({
     };
   }
 
-  if (
-    !evaluacion.fechaVencimientoCalculada
-  ) {
+  if (!evaluacion.fechaVencimientoCalculada) {
     return {
-      estado:
-        "PERIODICIDAD_NO_CONFIGURADA",
-      titulo:
-        "No se pudo calcular",
+      estado: "PERIODICIDAD_NO_CONFIGURADA",
+      titulo: "No se pudo calcular",
       descripcion:
         "La configuración existe, pero no produjo una fecha de vencimiento. Revisa la regla del aspecto.",
       fechaVencimiento: null,
@@ -383,34 +313,25 @@ export function resolverVigenciaEvaluacion({
     };
   }
 
-  const diasRestantes =
-    diferenciaDias(
-      evaluacion
-        .fechaVencimientoCalculada,
-      hoy
-    );
+  const diasRestantes = diferenciaDias(
+    evaluacion.fechaVencimientoCalculada,
+    hoy
+  );
 
   if (diasRestantes < 0) {
     return {
       estado: "VENCIDO",
       titulo: "Vencido",
-      descripcion:
-        `Venció hace ${Math.abs(
-          diasRestantes
-        )} día(s).`,
+      descripcion: `Venció hace ${Math.abs(diasRestantes)} día(s).`,
       fechaVencimiento:
-        evaluacion
-          .fechaVencimientoCalculada,
+        evaluacion.fechaVencimientoCalculada,
       diasRestantes,
       requiereAccion: true,
       provisional,
     };
   }
 
-  if (
-    diasRestantes <=
-    configuracion.diasAlertaPrevia
-  ) {
+  if (diasRestantes <= configuracion.diasAlertaPrevia) {
     return {
       estado: "POR_VENCER",
       titulo: "Por vencer",
@@ -419,8 +340,7 @@ export function resolverVigenciaEvaluacion({
           ? "Vence hoy."
           : `Faltan ${diasRestantes} día(s) para el vencimiento.`,
       fechaVencimiento:
-        evaluacion
-          .fechaVencimientoCalculada,
+        evaluacion.fechaVencimientoCalculada,
       diasRestantes,
       requiereAccion: true,
       provisional,
@@ -430,11 +350,9 @@ export function resolverVigenciaEvaluacion({
   return {
     estado: "VIGENTE",
     titulo: "Vigente",
-    descripcion:
-      `Faltan ${diasRestantes} día(s) para el vencimiento.`,
+    descripcion: `Faltan ${diasRestantes} día(s) para el vencimiento.`,
     fechaVencimiento:
-      evaluacion
-        .fechaVencimientoCalculada,
+      evaluacion.fechaVencimientoCalculada,
     diasRestantes,
     requiereAccion: false,
     provisional,

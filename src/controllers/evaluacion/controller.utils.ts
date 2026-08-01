@@ -6,10 +6,6 @@ import type {
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 
-/**
- * Obtiene el contexto del usuario que fue agregado a la
- * solicitud por el middleware de autenticación.
- */
 export function obtenerUsuarioSesion(
   req: Request
 ): UsuarioSesionEvaluacion {
@@ -29,11 +25,6 @@ export function obtenerUsuarioSesion(
   };
 }
 
-/**
- * Express 5 puede tipar un parámetro como string o string[].
- * Esta función garantiza que los servicios siempre reciban
- * un string válido.
- */
 export function obtenerParametroRuta(
   req: Request,
   nombre: string
@@ -52,8 +43,7 @@ export function obtenerParametroRuta(
     const primerValor = valor[0];
 
     if (typeof primerValor === "string") {
-      const valorLimpio =
-        primerValor.trim();
+      const valorLimpio = primerValor.trim();
 
       if (valorLimpio) {
         return valorLimpio;
@@ -68,18 +58,11 @@ export function obtenerParametroRuta(
   );
 }
 
-/**
- * Respuesta común para los errores producidos dentro
- * del módulo de evaluación.
- */
 export function responderErrorEvaluacion(
   error: unknown,
   res: Response
 ): void {
-  console.error(
-    "[MODULO-EVALUACION]",
-    error
-  );
+  console.error("[MODULO-EVALUACION]", error);
 
   if (error instanceof ErrorEvaluacion) {
     res.status(error.statusCode).json({

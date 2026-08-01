@@ -17,41 +17,28 @@ export const controladorPeriodosEvaluacion = {
     res: Response
   ): Promise<void> => {
     try {
-      const empresaId =
-        obtenerParametroRuta(
-          req,
-          "empresaId"
-        );
-
-      const usuario =
-        obtenerUsuarioSesion(req);
-
-      const data =
-        req.body as AbrirPeriodoEvaluacionInput;
+      const empresaId = obtenerParametroRuta(
+        req,
+        "empresaId"
+      );
+      const data = req.body as AbrirPeriodoEvaluacionInput;
 
       const periodo =
         await servicioPeriodosEvaluacion.abrir(
           empresaId,
           {
             anio: Number(data.anio),
-
             versionSupermatrizId:
-              data.versionSupermatrizId !=
-              null
-                ? Number(
-                    data.versionSupermatrizId
-                  )
+              data.versionSupermatrizId != null
+                ? Number(data.versionSupermatrizId)
                 : undefined,
           },
-          usuario
+          obtenerUsuarioSesion(req)
         );
 
       res.status(201).json(periodo);
     } catch (error) {
-      responderErrorEvaluacion(
-        error,
-        res
-      );
+      responderErrorEvaluacion(error, res);
     }
   },
 };

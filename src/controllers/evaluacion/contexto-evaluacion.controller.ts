@@ -16,40 +16,31 @@ export const controladorContextoEvaluacion = {
     res: Response
   ): Promise<void> => {
     try {
-      const empresaId =
-        obtenerParametroRuta(
-          req,
-          "empresaId"
-        );
+      const empresaId = obtenerParametroRuta(
+        req,
+        "empresaId"
+      );
 
-      const anioSolicitado =
-        Array.isArray(req.query.anio)
-          ? req.query.anio[0]
-          : req.query.anio;
+      const anioSolicitado = Array.isArray(req.query.anio)
+        ? req.query.anio[0]
+        : req.query.anio;
 
       const anio =
         anioSolicitado != null &&
-        typeof anioSolicitado ===
-          "string"
+        typeof anioSolicitado === "string"
           ? Number(anioSolicitado)
           : new Date().getFullYear();
-
-      const usuario =
-        obtenerUsuarioSesion(req);
 
       const resultado =
         await servicioMatrizEvaluacion.obtenerContexto(
           empresaId,
           anio,
-          usuario
+          obtenerUsuarioSesion(req)
         );
 
       res.status(200).json(resultado);
     } catch (error) {
-      responderErrorEvaluacion(
-        error,
-        res
-      );
+      responderErrorEvaluacion(error, res);
     }
   },
 };

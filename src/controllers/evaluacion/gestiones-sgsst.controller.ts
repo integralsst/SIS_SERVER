@@ -17,31 +17,20 @@ export const controladorGestionesSgsst = {
     res: Response
   ): Promise<void> => {
     try {
-      const periodoId =
-        obtenerParametroRuta(
-          req,
-          "periodoId"
-        );
+      const periodoId = obtenerParametroRuta(
+        req,
+        "periodoId"
+      );
 
-      const usuario =
-        obtenerUsuarioSesion(req);
-
-      const data =
-        req.body as CrearGestionSgsstInput;
-
-      const gestion =
-        await servicioGestionesSgsst.crear(
-          periodoId,
-          data,
-          usuario
-        );
+      const gestion = await servicioGestionesSgsst.crear(
+        periodoId,
+        req.body as CrearGestionSgsstInput,
+        obtenerUsuarioSesion(req)
+      );
 
       res.status(201).json(gestion);
     } catch (error) {
-      responderErrorEvaluacion(
-        error,
-        res
-      );
+      responderErrorEvaluacion(error, res);
     }
   },
 
@@ -50,27 +39,20 @@ export const controladorGestionesSgsst = {
     res: Response
   ): Promise<void> => {
     try {
-      const gestionId =
-        obtenerParametroRuta(
-          req,
-          "gestionId"
-        );
-
-      const usuario =
-        obtenerUsuarioSesion(req);
+      const gestionId = obtenerParametroRuta(
+        req,
+        "gestionId"
+      );
 
       const gestion =
         await servicioGestionesSgsst.finalizar(
           gestionId,
-          usuario
+          obtenerUsuarioSesion(req)
         );
 
       res.status(200).json(gestion);
     } catch (error) {
-      responderErrorEvaluacion(
-        error,
-        res
-      );
+      responderErrorEvaluacion(error, res);
     }
   },
 };

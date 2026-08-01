@@ -39,3 +39,19 @@ export interface EvaluacionAspectoInput {
 export interface GuardarEvaluacionesLoteInput {
   evaluaciones: EvaluacionAspectoInput[];
 }
+
+export interface CrearEvidenciaEvaluacionInput {
+  nombre: string;
+  url: string;
+  descripcion?: string | null;
+  fechaDocumento?: string | null;
+  visibleCliente?: boolean;
+}
+
+export interface ActualizarEvidenciaEvaluacionInput {
+  nombre?: string;
+  url?: string;
+  descripcion?: string | null;
+  fechaDocumento?: string | null;
+  visibleCliente?: boolean;
+}

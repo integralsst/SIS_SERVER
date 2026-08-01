@@ -17,31 +17,21 @@ export const controladorEvaluacionesAspecto = {
     res: Response
   ): Promise<void> => {
     try {
-      const gestionId =
-        obtenerParametroRuta(
-          req,
-          "gestionId"
-        );
-
-      const usuario =
-        obtenerUsuarioSesion(req);
-
-      const data =
-        req.body as GuardarEvaluacionesLoteInput;
+      const gestionId = obtenerParametroRuta(
+        req,
+        "gestionId"
+      );
 
       const resultado =
         await servicioEvaluacionesAspecto.guardarLote(
           gestionId,
-          data,
-          usuario
+          req.body as GuardarEvaluacionesLoteInput,
+          obtenerUsuarioSesion(req)
         );
 
       res.status(200).json(resultado);
     } catch (error) {
-      responderErrorEvaluacion(
-        error,
-        res
-      );
+      responderErrorEvaluacion(error, res);
     }
   },
 };

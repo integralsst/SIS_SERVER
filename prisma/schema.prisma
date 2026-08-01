@@ -172,6 +172,7 @@ model Usuario {
   gestionesSgsstCreadas   GestionSgsst[]        @relation("GestionSgsstCreadaPor")
   evaluacionesRegistradas EvaluacionAspecto[]   @relation("EvaluacionRegistradaPor")
   historialEvaluaciones   HistorialEvaluacion[] @relation("HistorialEvaluacionUsuario")
+  evidenciasEvaluacion   EvidenciaEvaluacion[]  @relation("EvidenciaEvaluacionCreadaPor")
 
   // Estado
   activo Boolean @default(true)
@@ -839,6 +840,7 @@ model EvaluacionAspecto {
   supermatrizTarea   SupermatrizTarea?     @relation(fields: [supermatrizTareaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   usuarioRegistrador Usuario               @relation("EvaluacionRegistradaPor", fields: [usuarioRegistradorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   historial          HistorialEvaluacion[]
+  evidencias         EvidenciaEvaluacion[]
 
   @@unique([gestionId, aspectoId], map: "uq_gestion_aspecto")
   @@index([gestionId])
@@ -848,6 +850,29 @@ model EvaluacionAspecto {
   @@index([estadoCumplimiento])
   @@index([fechaVencimientoCalculada])
   @@map("evaluaciones_aspecto")
+}
+
+model EvidenciaEvaluacion {
+  id               String    @id @default(uuid())
+  evaluacionId     String
+  nombre           String    @db.VarChar(191)
+  url              String    @db.Text
+  descripcion      String?   @db.Text
+  fechaDocumento   DateTime? @db.Date
+  visibleCliente   Boolean   @default(false)
+  activo           Boolean   @default(true)
+  usuarioCreadorId String
+  createdAt        DateTime  @default(now()) @db.DateTime(3)
+  updatedAt        DateTime  @updatedAt @db.DateTime(3)
+
+  evaluacion     EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioCreador Usuario           @relation("EvidenciaEvaluacionCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([evaluacionId, activo])
+  @@index([usuarioCreadorId])
+  @@index([visibleCliente])
+  @@index([fechaDocumento])
+  @@map("evidencias_evaluacion")
 }
 
 model HistorialEvaluacion {
