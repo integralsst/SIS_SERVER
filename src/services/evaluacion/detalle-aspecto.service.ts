@@ -226,6 +226,23 @@ export const servicioDetalleAspecto = {
                     anio: true,
                   },
                 },
+                historial: {
+                  where: {
+                    accion: "INVALIDAR_GESTION",
+                  },
+                  orderBy: {
+                    createdAt: "desc",
+                  },
+                  take: 1,
+                  include: {
+                    usuario: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      },
+                    },
+                  },
+                },
               },
             },
             usuarioRegistrador: {
@@ -253,6 +270,10 @@ export const servicioDetalleAspecto = {
         })
       : null;
 
+    const esCliente =
+      usuario.rol === RolUsuario.ADMIN_CLIENTE ||
+      usuario.rol === RolUsuario.USUARIO_CLIENTE;
+
     const filtroAspectoHistorico: Prisma.EvaluacionAspectoWhereInput = tarea.aspecto.codigo
       ? {
           aspecto: {
@@ -268,11 +289,26 @@ export const servicioDetalleAspecto = {
         where: {
           ...filtroAspectoHistorico,
           gestion: {
-            valida: true,
-            estado: EstadoGestionSgsst.FINALIZADA,
             empresaPeriodo: {
               empresaId,
             },
+            ...(esCliente
+              ? {
+                  valida: true,
+                  estado: EstadoGestionSgsst.FINALIZADA,
+                }
+              : {
+                  OR: [
+                    {
+                      valida: true,
+                      estado: EstadoGestionSgsst.FINALIZADA,
+                    },
+                    {
+                      valida: false,
+                      estado: EstadoGestionSgsst.INVALIDADA,
+                    },
+                  ],
+                }),
           },
         },
         orderBy: [
@@ -317,6 +353,23 @@ export const servicioDetalleAspecto = {
                   anio: true,
                 },
               },
+              historial: {
+                where: {
+                  accion: "INVALIDAR_GESTION",
+                },
+                orderBy: {
+                  createdAt: "desc",
+                },
+                take: 1,
+                include: {
+                  usuario: {
+                    select: {
+                      id: true,
+                      nombre: true,
+                    },
+                  },
+                },
+              },
             },
           },
           usuarioRegistrador: {
@@ -336,13 +389,15 @@ export const servicioDetalleAspecto = {
         },
       });
 
-    const ultimaFinalizada = historial[0] ?? null;
+    const ultimaFinalizada =
+      historial.find(
+        (evaluacion) =>
+          evaluacion.gestion.estado ===
+            EstadoGestionSgsst.FINALIZADA &&
+          evaluacion.gestion.valida
+      ) ?? null;
     const evaluacionObjetivo =
       evaluacionBorrador ?? ultimaFinalizada;
-
-    const esCliente =
-      usuario.rol === RolUsuario.ADMIN_CLIENTE ||
-      usuario.rol === RolUsuario.USUARIO_CLIENTE;
 
     const evidencias = evaluacionObjetivo
       ? await prisma.evidenciaEvaluacion.findMany({
@@ -426,6 +481,17 @@ export const servicioDetalleAspecto = {
             evaluacion.gestion.usuarioCreador.nombre
           ),
           estado: evaluacion.gestion.estado,
+          valida: evaluacion.gestion.valida,
+          finalizadaEn: serializarFecha(
+            evaluacion.gestion.finalizadaEn
+          ),
+          invalidadaEn: serializarFecha(
+            evaluacion.gestion.invalidadaEn
+          ),
+          motivoInvalidacion:
+            evaluacion.gestion.motivoInvalidacion,
+          invalidadaPor:
+            evaluacion.gestion.historial[0]?.usuario ?? null,
         },
         usuarioRegistrador:
           evaluacion.usuarioRegistrador.nombre,

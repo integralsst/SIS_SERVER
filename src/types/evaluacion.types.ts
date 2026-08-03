@@ -25,6 +25,10 @@ export interface CrearGestionSgsstInput {
   profesionalId?: string | null;
 }
 
+export interface InvalidarGestionSgsstInput {
+  motivo: string;
+}
+
 export interface EvaluacionAspectoInput {
   aspectoId: number;
   supermatrizTareaId?: number | null;
