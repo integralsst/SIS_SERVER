@@ -5,6 +5,7 @@ import type {
 
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
 import { validarAnio } from "../../utils/evaluacion";
+import { finalizarMedicionHttp } from "../../utils/rendimiento";
 import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
@@ -16,18 +17,23 @@ export const controladorDetalleAspecto = {
     req: Request,
     res: Response
   ): Promise<void> => {
+    const inicio = process.hrtime.bigint();
+    let empresaId = "desconocida";
+    let tareaId = 0;
+    let anio = new Date().getFullYear();
+
     try {
-      const empresaId = obtenerParametroRuta(
+      empresaId = obtenerParametroRuta(
         req,
         "empresaId"
       );
-      const tareaId = Number(
+      tareaId = Number(
         obtenerParametroRuta(req, "tareaId")
       );
       const anioQuery = Array.isArray(req.query.anio)
         ? req.query.anio[0]
         : req.query.anio;
-      const anio = Number(
+      anio = Number(
         typeof anioQuery === "string"
           ? anioQuery
           : new Date().getFullYear()
@@ -49,8 +55,30 @@ export const controladorDetalleAspecto = {
           obtenerUsuarioSesion(req)
         );
 
+      finalizarMedicionHttp(res, {
+        nombre: "detalle-aspecto",
+        inicio,
+        resultado: "OK",
+        contexto: {
+          empresaId,
+          tareaId,
+          anio,
+        },
+      });
+
       res.status(200).json(resultado);
     } catch (error) {
+      finalizarMedicionHttp(res, {
+        nombre: "detalle-aspecto",
+        inicio,
+        resultado: "ERROR",
+        contexto: {
+          empresaId,
+          tareaId,
+          anio,
+        },
+      });
+
       responderErrorEvaluacion(error, res);
     }
   },
