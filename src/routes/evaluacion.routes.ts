@@ -76,9 +76,27 @@ router.get(
 );
 
 router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/resumen-rapido",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerResumenRapido
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/resumen-configuracion",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerConfiguracionResumen
+);
+
+router.get(
   "/empresas/:empresaId/tareas/:tareaId/detalle/historial",
   autorizar(...rolesLectura),
   controladorDetalleAspecto.obtenerHistorial
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/historial-paginado",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerHistorialPaginado
 );
 
 router.get(
