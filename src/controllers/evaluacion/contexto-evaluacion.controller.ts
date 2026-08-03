@@ -10,13 +10,47 @@ import {
   responderErrorEvaluacion,
 } from "./controller.utils";
 
+function registrarTiempoContexto(
+  res: Response,
+  inicio: bigint,
+  empresaId: string,
+  anio: number,
+  resultado: "OK" | "ERROR"
+): void {
+  const duracionMs =
+    Number(process.hrtime.bigint() - inicio) / 1_000_000;
+  const duracionRedondeada = Number(duracionMs.toFixed(1));
+
+  res.setHeader(
+    "Server-Timing",
+    `contexto-evaluacion;dur=${duracionRedondeada}`
+  );
+  res.setHeader(
+    "X-Response-Time",
+    `${duracionRedondeada}ms`
+  );
+
+  if (duracionMs >= 750) {
+    console.info("[rendimiento] contexto-evaluacion", {
+      empresaId,
+      anio,
+      resultado,
+      duracionMs: duracionRedondeada,
+    });
+  }
+}
+
 export const controladorContextoEvaluacion = {
   obtener: async (
     req: Request,
     res: Response
   ): Promise<void> => {
+    const inicio = process.hrtime.bigint();
+    let empresaId = "desconocida";
+    let anio = new Date().getFullYear();
+
     try {
-      const empresaId = obtenerParametroRuta(
+      empresaId = obtenerParametroRuta(
         req,
         "empresaId"
       );
@@ -25,7 +59,7 @@ export const controladorContextoEvaluacion = {
         ? req.query.anio[0]
         : req.query.anio;
 
-      const anio =
+      anio =
         anioSolicitado != null &&
         typeof anioSolicitado === "string"
           ? Number(anioSolicitado)
@@ -38,8 +72,22 @@ export const controladorContextoEvaluacion = {
           obtenerUsuarioSesion(req)
         );
 
+      registrarTiempoContexto(
+        res,
+        inicio,
+        empresaId,
+        anio,
+        "OK"
+      );
       res.status(200).json(resultado);
     } catch (error) {
+      registrarTiempoContexto(
+        res,
+        inicio,
+        empresaId,
+        anio,
+        "ERROR"
+      );
       responderErrorEvaluacion(error, res);
     }
   },
