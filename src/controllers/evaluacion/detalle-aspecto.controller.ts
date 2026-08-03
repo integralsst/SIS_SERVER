@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { servicioDetalleAspectoRapido } from "../../services/evaluacion/detalle-aspecto-rapido.service";
 import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detalle-aspecto-secciones.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
@@ -54,6 +55,21 @@ function obtenerParametrosDetalle(
     anio,
     usuario: obtenerUsuarioSesion(req),
   };
+}
+
+function obtenerPagina(req: Request): number {
+  const paginaQuery = Array.isArray(req.query.pagina)
+    ? req.query.pagina[0]
+    : req.query.pagina;
+  const pagina = Number(
+    typeof paginaQuery === "string"
+      ? paginaQuery
+      : 1
+  );
+
+  return Number.isInteger(pagina) && pagina > 0
+    ? pagina
+    : 1;
 }
 
 async function responderSeccion(
@@ -135,6 +151,42 @@ export const controladorDetalleAspecto = {
     );
   },
 
+  obtenerResumenRapido: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    await responderSeccion(
+      req,
+      res,
+      "detalle-resumen-rapido",
+      ({ empresaId, tareaId, anio, usuario }) =>
+        servicioDetalleAspectoRapido.obtenerResumenRapido(
+          empresaId,
+          tareaId,
+          anio,
+          usuario
+        )
+    );
+  },
+
+  obtenerConfiguracionResumen: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    await responderSeccion(
+      req,
+      res,
+      "detalle-resumen-configuracion",
+      ({ empresaId, tareaId, anio, usuario }) =>
+        servicioDetalleAspectoRapido.obtenerConfiguracion(
+          empresaId,
+          tareaId,
+          anio,
+          usuario
+        )
+    );
+  },
+
   obtenerHistorial: async (
     req: Request,
     res: Response
@@ -148,6 +200,27 @@ export const controladorDetalleAspecto = {
           empresaId,
           tareaId,
           anio,
+          usuario
+        )
+    );
+  },
+
+  obtenerHistorialPaginado: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    const pagina = obtenerPagina(req);
+
+    await responderSeccion(
+      req,
+      res,
+      "detalle-historial-paginado",
+      ({ empresaId, tareaId, anio, usuario }) =>
+        servicioDetalleAspectoRapido.obtenerHistorialPaginado(
+          empresaId,
+          tareaId,
+          anio,
+          pagina,
           usuario
         )
     );
