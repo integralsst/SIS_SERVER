@@ -5,6 +5,7 @@ import type {
 
 import { servicioDetalleAspectoRapido } from "../../services/evaluacion/detalle-aspecto-rapido.service";
 import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detalle-aspecto-secciones.service";
+import { servicioDetalleResumenDinamico } from "../../services/evaluacion/detalle-resumen-dinamico.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
@@ -160,7 +161,7 @@ export const controladorDetalleAspecto = {
       res,
       "detalle-resumen-rapido",
       ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoRapido.obtenerResumenRapido(
+        servicioDetalleResumenDinamico.obtener(
           empresaId,
           tareaId,
           anio,
