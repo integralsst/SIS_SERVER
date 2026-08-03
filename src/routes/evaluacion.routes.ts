@@ -7,6 +7,7 @@ import { controladorEvidenciasEvaluacion } from "../controllers/evaluacion/evide
 import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evaluaciones-aspecto.controller";
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
 import { controladorPeriodosEvaluacion } from "../controllers/evaluacion/periodos-evaluacion.controller";
+import { controladorRevisionesTecnicas } from "../controllers/evaluacion/revisiones-tecnicas.controller";
 import {
   authenticate as autenticar,
   authorize as autorizar,
@@ -31,6 +32,19 @@ const rolesEvaluacion = [
 ];
 
 const rolesInvalidacion = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
+];
+
+const rolesRevisionLectura = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
+  RolUsuario.PROFESIONAL,
+];
+
+const rolesRevisionResolucion = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
@@ -118,6 +132,22 @@ router.delete(
   "/evidencias/:evidenciaId",
   autorizar(...rolesEvaluacion),
   controladorEvidenciasEvaluacion.desactivar
+);
+
+// ======================================================
+// REVISIONES TÉCNICAS
+// ======================================================
+
+router.get(
+  "/periodos/:periodoId/revisiones-tecnicas",
+  autorizar(...rolesRevisionLectura),
+  controladorRevisionesTecnicas.listarPeriodo
+);
+
+router.post(
+  "/revisiones-tecnicas/:revisionId/resolver",
+  autorizar(...rolesRevisionResolucion),
+  controladorRevisionesTecnicas.resolver
 );
 
 export default router;

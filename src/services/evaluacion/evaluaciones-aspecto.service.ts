@@ -57,6 +57,7 @@ async function guardarUnaEvaluacion(
     include: {
       configuracion: true,
       configuracionVigencia: true,
+      configuracionRevision: true,
     },
   });
 
@@ -86,6 +87,53 @@ async function guardarUnaEvaluacion(
   ) {
     throw new ErrorEvaluacion(
       `Debes justificar por qué el aspecto "${contexto.nombre}" no aplica.`
+    );
+  }
+
+  const revisionObligatoria =
+    contexto.configuracionRevision
+      ?.requiereRevisionTecnica ?? false;
+
+  const marcadaRevisionTecnica =
+    revisionObligatoria ||
+    Boolean(input.marcadaRevisionTecnica);
+
+  const motivoRevisionIngresado =
+    input.motivoRevisionTecnica?.trim() || null;
+
+  const motivoRevisionTecnica =
+    marcadaRevisionTecnica
+      ? motivoRevisionIngresado ||
+        contexto.configuracionRevision?.observaciones?.trim() ||
+        (revisionObligatoria
+          ? "Revisión técnica obligatoria configurada en la Supermatriz."
+          : null)
+      : null;
+
+  if (
+    marcadaRevisionTecnica &&
+    !motivoRevisionTecnica
+  ) {
+    throw new ErrorEvaluacion(
+      `Debes explicar por qué el aspecto "${contexto.nombre}" requiere revisión técnica.`
+    );
+  }
+
+  if (
+    motivoRevisionTecnica &&
+    motivoRevisionTecnica.length < 10
+  ) {
+    throw new ErrorEvaluacion(
+      `El motivo de revisión técnica del aspecto "${contexto.nombre}" debe tener al menos 10 caracteres.`
+    );
+  }
+
+  if (
+    motivoRevisionTecnica &&
+    motivoRevisionTecnica.length > 2000
+  ) {
+    throw new ErrorEvaluacion(
+      `El motivo de revisión técnica del aspecto "${contexto.nombre}" no puede superar los 2000 caracteres.`
     );
   }
 
@@ -141,8 +189,8 @@ async function guardarUnaEvaluacion(
         EstadoCumplimientoAspecto.NO_APLICA
           ? justificacionNoAplica
           : null,
-      marcadaRevisionTecnica:
-        input.marcadaRevisionTecnica ?? false,
+      marcadaRevisionTecnica,
+      motivoRevisionTecnica,
     },
     update: {
       supermatrizTareaId:
@@ -158,8 +206,8 @@ async function guardarUnaEvaluacion(
         EstadoCumplimientoAspecto.NO_APLICA
           ? justificacionNoAplica
           : null,
-      marcadaRevisionTecnica:
-        input.marcadaRevisionTecnica ?? false,
+      marcadaRevisionTecnica,
+      motivoRevisionTecnica,
     },
   });
 

@@ -266,6 +266,22 @@ export const servicioDetalleAspecto = {
                 createdAt: "desc",
               },
             },
+            revisionTecnica: {
+              include: {
+                solicitadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+                revisadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
           },
         })
       : null;
@@ -386,6 +402,22 @@ export const servicioDetalleAspecto = {
               visibleCliente: true,
             },
           },
+          revisionTecnica: {
+            include: {
+              solicitadaPor: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+              revisadaPor: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -459,7 +491,39 @@ export const servicioDetalleAspecto = {
         justificacionNoAplica:
           evaluacion.justificacionNoAplica,
         marcadaRevisionTecnica:
-          evaluacion.marcadaRevisionTecnica,
+          esCliente
+            ? false
+            : evaluacion.marcadaRevisionTecnica,
+        motivoRevisionTecnica:
+          esCliente
+            ? null
+            : evaluacion.motivoRevisionTecnica,
+        revisionTecnica:
+          !esCliente &&
+          evaluacion.revisionTecnica
+          ? {
+              id: evaluacion.revisionTecnica.id,
+              estado: evaluacion.revisionTecnica.estado,
+              motivoSolicitud:
+                evaluacion.revisionTecnica.motivoSolicitud,
+              conceptoTecnico:
+                evaluacion.revisionTecnica.conceptoTecnico,
+              motivoAnulacion:
+                evaluacion.revisionTecnica.motivoAnulacion,
+              solicitadaEn:
+                evaluacion.revisionTecnica.solicitadaEn.toISOString(),
+              revisadaEn: serializarFecha(
+                evaluacion.revisionTecnica.revisadaEn
+              ),
+              anuladaEn: serializarFecha(
+                evaluacion.revisionTecnica.anuladaEn
+              ),
+              solicitadaPor:
+                evaluacion.revisionTecnica.solicitadaPor,
+              revisadaPor:
+                evaluacion.revisionTecnica.revisadaPor,
+            }
+          : null,
         creadaEn: evaluacion.createdAt.toISOString(),
         actualizadaEn:
           evaluacion.updatedAt.toISOString(),
@@ -666,6 +730,7 @@ export const servicioDetalleAspecto = {
         puedeGestionarEvidencias: Boolean(
           evaluacionBorrador
         ),
+        puedeVerRevisionTecnica: !esCliente,
         motivoEvidencias: evaluacionBorrador
           ? null
           : ultimaFinalizada

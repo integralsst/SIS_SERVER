@@ -1,6 +1,7 @@
 import {
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
+  EstadoRevisionTecnica,
   RolUsuario,
 } from "@prisma/client";
 
@@ -117,6 +118,54 @@ export const servicioInvalidacionesGestion = {
           409,
           "GESTION_MODIFICADA_CONCURRENTEMENTE"
         );
+      }
+
+      const revisionesAfectadas =
+        await tx.revisionTecnicaEvaluacion.findMany({
+          where: {
+            evaluacion: {
+              gestionId,
+            },
+            estado: {
+              not: EstadoRevisionTecnica.ANULADA,
+            },
+          },
+          select: {
+            id: true,
+            evaluacionId: true,
+            estado: true,
+          },
+        });
+
+      if (revisionesAfectadas.length > 0) {
+        await tx.revisionTecnicaEvaluacion.updateMany({
+          where: {
+            id: {
+              in: revisionesAfectadas.map(
+                (revision) => revision.id
+              ),
+            },
+          },
+          data: {
+            estado: EstadoRevisionTecnica.ANULADA,
+            anuladaEn: invalidadaEn,
+            motivoAnulacion:
+              "La revisión fue anulada porque la gestión asociada fue invalidada.",
+          },
+        });
+
+        await tx.historialEvaluacion.createMany({
+          data: revisionesAfectadas.map(
+            (revision) => ({
+              gestionId,
+              evaluacionId: revision.evaluacionId,
+              usuarioId: usuario.usuarioId,
+              accion: "ANULAR_REVISION_TECNICA",
+              descripcion:
+                "La revisión técnica fue anulada automáticamente por la invalidación de la gestión.",
+            })
+          ),
+        });
       }
 
       await tx.historialEvaluacion.create({

@@ -1,5 +1,6 @@
 import {
   EstadoCumplimientoAspecto,
+  EstadoRevisionTecnica,
   ModalidadGestion,
   RolUsuario,
 } from "@prisma/client";
@@ -38,6 +39,7 @@ export interface EvaluacionAspectoInput {
   fechaDocumento?: string | null;
   justificacionNoAplica?: string | null;
   marcadaRevisionTecnica?: boolean;
+  motivoRevisionTecnica?: string | null;
 }
 
 export interface GuardarEvaluacionesLoteInput {
@@ -58,4 +60,14 @@ export interface ActualizarEvidenciaEvaluacionInput {
   descripcion?: string | null;
   fechaDocumento?: string | null;
   visibleCliente?: boolean;
+}
+
+export type EstadoResolucionRevisionTecnica = Extract<
+  EstadoRevisionTecnica,
+  "APROBADA" | "REQUIERE_AJUSTES"
+>;
+
+export interface ResolverRevisionTecnicaInput {
+  estado: EstadoResolucionRevisionTecnica;
+  conceptoTecnico: string;
 }

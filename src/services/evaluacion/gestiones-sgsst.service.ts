@@ -176,6 +176,40 @@ export const servicioGestionesSgsst = {
     }
 
     return prisma.$transaction(async (tx) => {
+      const evaluacionesGestion =
+        await tx.evaluacionAspecto.findMany({
+          where: {
+            gestionId,
+          },
+          select: {
+            id: true,
+            usuarioRegistradorId: true,
+            marcadaRevisionTecnica: true,
+            motivoRevisionTecnica: true,
+            aspecto: {
+              select: {
+                nombre: true,
+                configuracionRevision: {
+                  select: {
+                    requiereRevisionTecnica: true,
+                    observaciones: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+      const evaluacionesParaRevision =
+        evaluacionesGestion.filter(
+          (evaluacion) =>
+            evaluacion.marcadaRevisionTecnica ||
+            Boolean(
+              evaluacion.aspecto.configuracionRevision
+                ?.requiereRevisionTecnica
+            )
+        );
+
       const actualizada = await tx.gestionSgsst.update({
         where: {
           id: gestionId,
@@ -186,17 +220,57 @@ export const servicioGestionesSgsst = {
         },
       });
 
+      if (evaluacionesParaRevision.length > 0) {
+        await tx.revisionTecnicaEvaluacion.createMany({
+          data: evaluacionesParaRevision.map(
+            (evaluacion) => ({
+              evaluacionId: evaluacion.id,
+              solicitadaPorUsuarioId:
+                evaluacion.usuarioRegistradorId,
+              motivoSolicitud:
+                evaluacion.motivoRevisionTecnica?.trim() ||
+                evaluacion.aspecto.configuracionRevision
+                  ?.observaciones?.trim() ||
+                (evaluacion.aspecto.configuracionRevision
+                  ?.requiereRevisionTecnica
+                  ? "Revisión técnica obligatoria configurada en la Supermatriz."
+                  : "Evaluación marcada para revisión técnica antes de finalizar la gestión."),
+            })
+          ),
+          skipDuplicates: true,
+        });
+
+        await tx.historialEvaluacion.createMany({
+          data: evaluacionesParaRevision.map(
+            (evaluacion) => ({
+              gestionId,
+              evaluacionId: evaluacion.id,
+              usuarioId:
+                evaluacion.usuarioRegistradorId,
+              accion: "SOLICITAR_REVISION_TECNICA",
+              descripcion: `Se solicitó revisión técnica para el aspecto ${evaluacion.aspecto.nombre}.`,
+            })
+          ),
+        });
+      }
+
       await tx.historialEvaluacion.create({
         data: {
           gestionId,
           usuarioId: usuario.usuarioId,
           accion: "FINALIZAR_GESTION",
           descripcion:
-            "La gestión fue finalizada y sus evaluaciones pasaron a formar parte del estado vigente de la empresa.",
+            evaluacionesParaRevision.length > 0
+              ? `La gestión fue finalizada. Se generaron ${evaluacionesParaRevision.length} revisión(es) técnica(s) pendiente(s).`
+              : "La gestión fue finalizada y sus evaluaciones pasaron a formar parte del estado vigente de la empresa.",
         },
       });
 
-      return actualizada;
+      return {
+        ...actualizada,
+        revisionesTecnicasCreadas:
+          evaluacionesParaRevision.length,
+      };
     });
   },
 };

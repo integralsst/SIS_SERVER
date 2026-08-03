@@ -21,7 +21,8 @@ function serializarFecha(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-function serializarEvaluacion(evaluacion: {
+function serializarEvaluacion(
+  evaluacion: {
   id: string;
   estadoCumplimiento: EstadoCumplimientoAspecto;
   calificacionAdministrativa: { toNumber(): number };
@@ -30,6 +31,25 @@ function serializarEvaluacion(evaluacion: {
   fechaVencimientoCalculada: Date | null;
   justificacionNoAplica: string | null;
   marcadaRevisionTecnica: boolean;
+  motivoRevisionTecnica: string | null;
+  revisionTecnica: {
+    id: string;
+    estado: string;
+    motivoSolicitud: string;
+    conceptoTecnico: string | null;
+    motivoAnulacion: string | null;
+    solicitadaEn: Date;
+    revisadaEn: Date | null;
+    anuladaEn: Date | null;
+    solicitadaPor: {
+      id: string;
+      nombre: string;
+    };
+    revisadaPor: {
+      id: string;
+      nombre: string;
+    } | null;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
   gestion: {
@@ -38,7 +58,9 @@ function serializarEvaluacion(evaluacion: {
     tipoActividad: string;
     estado: EstadoGestionSgsst;
   };
-}) {
+  },
+  incluirRevisionTecnica: boolean
+) {
   return {
     id: evaluacion.id,
     estadoCumplimiento: evaluacion.estadoCumplimiento,
@@ -52,7 +74,39 @@ function serializarEvaluacion(evaluacion: {
     justificacionNoAplica:
       evaluacion.justificacionNoAplica,
     marcadaRevisionTecnica:
-      evaluacion.marcadaRevisionTecnica,
+      incluirRevisionTecnica
+        ? evaluacion.marcadaRevisionTecnica
+        : false,
+    motivoRevisionTecnica:
+      incluirRevisionTecnica
+        ? evaluacion.motivoRevisionTecnica
+        : null,
+    revisionTecnica:
+      incluirRevisionTecnica &&
+      evaluacion.revisionTecnica
+      ? {
+          id: evaluacion.revisionTecnica.id,
+          estado: evaluacion.revisionTecnica.estado,
+          motivoSolicitud:
+            evaluacion.revisionTecnica.motivoSolicitud,
+          conceptoTecnico:
+            evaluacion.revisionTecnica.conceptoTecnico,
+          motivoAnulacion:
+            evaluacion.revisionTecnica.motivoAnulacion,
+          solicitadaEn:
+            evaluacion.revisionTecnica.solicitadaEn.toISOString(),
+          revisadaEn: serializarFecha(
+            evaluacion.revisionTecnica.revisadaEn
+          ),
+          anuladaEn: serializarFecha(
+            evaluacion.revisionTecnica.anuladaEn
+          ),
+          solicitadaPor:
+            evaluacion.revisionTecnica.solicitadaPor,
+          revisadaPor:
+            evaluacion.revisionTecnica.revisadaPor,
+        }
+      : null,
     creadaEn: evaluacion.createdAt.toISOString(),
     actualizadaEn: evaluacion.updatedAt.toISOString(),
     gestion: {
@@ -89,6 +143,10 @@ export const servicioMatrizEvaluacion = {
       empresaId,
       "LECTURA"
     );
+
+    const esCliente =
+      usuario.rol === "ADMIN_CLIENTE" ||
+      usuario.rol === "USUARIO_CLIENTE";
 
     const periodo = await prisma.empresaPeriodo.findUnique({
       where: {
@@ -329,6 +387,22 @@ export const servicioMatrizEvaluacion = {
                 estado: true,
               },
             },
+            revisionTecnica: {
+              include: {
+                solicitadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+                revisadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
           },
         })
       : [];
@@ -345,6 +419,22 @@ export const servicioMatrizEvaluacion = {
                 fechaGestion: true,
                 tipoActividad: true,
                 estado: true,
+              },
+            },
+            revisionTecnica: {
+              include: {
+                solicitadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+                revisadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
               },
             },
           },
@@ -365,7 +455,10 @@ export const servicioMatrizEvaluacion = {
       }
     }
 
-    const borradorPorAspecto = new Map(
+    const borradorPorAspecto = new Map<
+      number,
+      (typeof evaluacionesBorrador)[number]
+    >(
       evaluacionesBorrador.map((evaluacion) => [
         evaluacion.aspectoId,
         evaluacion,
@@ -459,10 +552,16 @@ export const servicioMatrizEvaluacion = {
             tarea.aspecto.configuracionRevision,
         },
         ultimaEvaluacion: ultimaEvaluacion
-          ? serializarEvaluacion(ultimaEvaluacion)
+          ? serializarEvaluacion(
+              ultimaEvaluacion,
+              !esCliente
+            )
           : null,
         evaluacionGestionActiva: evaluacionGestionActiva
-          ? serializarEvaluacion(evaluacionGestionActiva)
+          ? serializarEvaluacion(
+              evaluacionGestionActiva,
+              !esCliente
+            )
           : null,
         estadoVigencia:
           detalleVigencia.estado,
