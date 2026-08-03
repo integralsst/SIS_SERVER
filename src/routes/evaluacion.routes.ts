@@ -62,10 +62,35 @@ router.get(
   controladorContextoEvaluacion.obtener
 );
 
+// Endpoint anterior conservado para compatibilidad.
 router.get(
   "/empresas/:empresaId/tareas/:tareaId/detalle",
   autorizar(...rolesLectura),
   controladorDetalleAspecto.obtener
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/resumen",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerResumen
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/historial",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerHistorial
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/evidencias",
+  autorizar(...rolesLectura),
+  controladorDetalleAspecto.obtenerEvidencias
+);
+
+router.get(
+  "/empresas/:empresaId/tareas/:tareaId/detalle/revision-tecnica",
+  autorizar(...rolesRevisionLectura),
+  controladorDetalleAspecto.obtenerRevisionTecnica
 );
 
 // ======================================================
