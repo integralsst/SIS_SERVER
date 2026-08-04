@@ -3,7 +3,7 @@ import type {
   Response,
 } from "express";
 
-import { servicioMatrizEvaluacion } from "../../services/evaluacion/matriz-evaluacion.service";
+import { servicioMatrizEvaluacionOptimizada } from "../../services/evaluacion/matriz-evaluacion-optimizada.service";
 import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
@@ -66,7 +66,7 @@ export const controladorContextoEvaluacion = {
           : new Date().getFullYear();
 
       const resultado =
-        await servicioMatrizEvaluacion.obtenerContexto(
+        await servicioMatrizEvaluacionOptimizada.obtenerContexto(
           empresaId,
           anio,
           obtenerUsuarioSesion(req)
