@@ -26,6 +26,10 @@ const CACHE_ESTRUCTURA_RESULTADOS_MS = Number(
   process.env.RESULTADOS_ESTRUCTURA_CACHE_MS ?? 10 * 60 * 1000
 );
 
+const NOTA_ADMINISTRATIVA_CUMPLIDO = 5;
+const TOLERANCIA_NOTA = 0.001;
+const TOLERANCIA_PUNTAJE_GRUPO = 0.01;
+
 const seleccionTareaResultados = {
   proceso: {
     select: {
@@ -70,6 +74,7 @@ const seleccionTareaResultados = {
                   id: true,
                   codigo: true,
                   nombre: true,
+                  porcentajeEvaluable: true,
                 },
               },
             },
@@ -112,6 +117,13 @@ interface ConteoEstados {
   noCumplidos: number;
   noAplica: number;
   sinEvaluar: number;
+}
+
+interface GrupoDisponibleResultado {
+  id: number;
+  codigo: CodigoGrupoMinisterial;
+  nombre: string;
+  porcentajeEvaluable: number;
 }
 
 const cacheEstructura = new Map<
@@ -213,11 +225,25 @@ function cumpleMinisterial(
     ids.every((aspectoId) => {
       const evaluacion = evaluaciones.get(aspectoId);
 
+      if (!evaluacion) {
+        return false;
+      }
+
+      if (
+        evaluacion.estadoCumplimiento ===
+        EstadoCumplimientoAspecto.NO_APLICA
+      ) {
+        return true;
+      }
+
+      const nota =
+        evaluacion.calificacionAdministrativa.toNumber();
+
       return (
-        evaluacion?.estadoCumplimiento ===
-          EstadoCumplimientoAspecto.CUMPLIDO ||
-        evaluacion?.estadoCumplimiento ===
-          EstadoCumplimientoAspecto.NO_APLICA
+        evaluacion.estadoCumplimiento ===
+          EstadoCumplimientoAspecto.CUMPLIDO &&
+        Math.abs(nota - NOTA_ADMINISTRATIVA_CUMPLIDO) <=
+          TOLERANCIA_NOTA
       );
     })
   );
@@ -380,6 +406,7 @@ export const servicioResultadosEvaluacion = {
         periodo: null,
         grupo,
         gruposDisponibles: [],
+        validacionGrupo: null,
         resumenEmpresa: null,
         procesos: [],
         estandares: [],
@@ -395,14 +422,21 @@ export const servicioResultadosEvaluacion = {
 
     const gruposDisponibles = new Map<
       CodigoGrupoMinisterial,
-      { id: number; codigo: CodigoGrupoMinisterial; nombre: string }
+      GrupoDisponibleResultado
     >();
 
     for (const tarea of estructuraResultado.tareas) {
       for (const relacion of
         tarea.aspecto.estandar.gruposMinisteriales) {
         const actual = relacion.grupoMinisterial;
-        gruposDisponibles.set(actual.codigo, actual);
+
+        gruposDisponibles.set(actual.codigo, {
+          id: actual.id,
+          codigo: actual.codigo,
+          nombre: actual.nombre,
+          porcentajeEvaluable:
+            actual.porcentajeEvaluable.toNumber(),
+        });
       }
     }
 
@@ -493,7 +527,11 @@ export const servicioResultadosEvaluacion = {
         cicloPhva: estandar.categoriaEstandar.cicloPhva,
         gruposMinisteriales:
           estandar.gruposMinisteriales.map(
-            ({ grupoMinisterial }) => grupoMinisterial
+            ({ grupoMinisterial }) => ({
+              id: grupoMinisterial.id,
+              codigo: grupoMinisterial.codigo,
+              nombre: grupoMinisterial.nombre,
+            })
           ),
         aspectoIds: new Set<number>(),
         procesos: new Map(),
@@ -560,13 +598,6 @@ export const servicioResultadosEvaluacion = {
         a.nombre.localeCompare(b.nombre, "es")
       );
 
-    const estandaresPorId = new Map(
-      resultadosEstandar.map((estandar) => [
-        estandar.id,
-        estandar,
-      ])
-    );
-
     const procesos = [...procesosAcumulados.values()]
       .map((proceso) => {
         const totalAspectos = proceso.aspectoIds.size;
@@ -575,22 +606,6 @@ export const servicioResultadosEvaluacion = {
           evaluaciones
         );
         const evaluados = totalAspectos - estados.sinEvaluar;
-        const estandaresProceso = [...proceso.estandarIds]
-          .map((estandarId) => estandaresPorId.get(estandarId))
-          .filter(
-            (estandar): estandar is NonNullable<typeof estandar> =>
-              Boolean(estandar)
-          );
-        const ministerialObtenida = estandaresProceso.reduce(
-          (total, estandar) =>
-            total + estandar.calificacionMinisterialObtenida,
-          0
-        );
-        const ministerialMaxima = estandaresProceso.reduce(
-          (total, estandar) =>
-            total + estandar.calificacionMinisterialEsperada,
-          0
-        );
 
         return {
           id: proceso.id,
@@ -607,21 +622,7 @@ export const servicioResultadosEvaluacion = {
             evaluaciones
           ),
           estados,
-          totalEstandares: estandaresProceso.length,
-          estandaresCumplidos: estandaresProceso.filter(
-            (estandar) =>
-              estandar.estadoMinisterial === "CUMPLE"
-          ).length,
-          calificacionMinisterial: redondear(
-            ministerialObtenida
-          ),
-          calificacionMinisterialMaxima: redondear(
-            ministerialMaxima
-          ),
-          porcentajeMinisterial: porcentaje(
-            ministerialObtenida,
-            ministerialMaxima
-          ),
+          estandaresRelacionados: proceso.estandarIds.size,
         };
       })
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -643,6 +644,27 @@ export const servicioResultadosEvaluacion = {
           total + estandar.calificacionMinisterialEsperada,
         0
       );
+    const grupoConfigurado =
+      grupo === "TODOS"
+        ? null
+        : gruposDisponibles.get(grupo) ?? null;
+    const validacionGrupo = grupoConfigurado
+      ? {
+          codigo: grupoConfigurado.codigo,
+          nombre: grupoConfigurado.nombre,
+          maximoConfigurado: redondear(
+            grupoConfigurado.porcentajeEvaluable
+          ),
+          maximoCalculado: redondear(
+            calificacionMinisterialMaxima
+          ),
+          coincide:
+            Math.abs(
+              grupoConfigurado.porcentajeEvaluable -
+                calificacionMinisterialMaxima
+            ) <= TOLERANCIA_PUNTAJE_GRUPO,
+        }
+      : null;
     const duracionMs = Number(
       (
         Number(process.hrtime.bigint() - inicio) /
@@ -660,6 +682,7 @@ export const servicioResultadosEvaluacion = {
         totalAspectos,
         totalEstandares: resultadosEstandar.length,
         totalProcesos: procesos.length,
+        validacionGrupo,
       });
     }
 
@@ -677,6 +700,7 @@ export const servicioResultadosEvaluacion = {
       gruposDisponibles: [
         ...gruposDisponibles.values(),
       ].sort((a, b) => a.codigo.localeCompare(b.codigo)),
+      validacionGrupo,
       resumenEmpresa: {
         totalAspectos,
         evaluados,
