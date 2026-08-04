@@ -175,6 +175,7 @@ model Usuario {
   evidenciasEvaluacion          EvidenciaEvaluacion[]       @relation("EvidenciaEvaluacionCreadaPor")
   revisionesTecnicasSolicitadas RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
   revisionesTecnicasResueltas   RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
+  informesPeriodoGenerados     InformePeriodoSgsst[]        @relation("InformePeriodoGeneradoPor")
 
   // Estado
   activo Boolean @default(true)
@@ -542,7 +543,7 @@ model SupermatrizTareaCategoriaGestion {
 model EmpresaProfesionalCategoriaGestion {
   empresaProfesionalId String
   categoriaGestionId   Int
-  createdAt            DateTime @default(now()) @db.DateTime(3)
+  createdAt             DateTime @default(now()) @db.DateTime(3)
 
   empresaProfesional EmpresaProfesional @relation(fields: [empresaProfesionalId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   categoriaGestion   CategoriaGestion   @relation(fields: [categoriaGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -624,8 +625,8 @@ model ConfiguracionVigenciaAspecto {
   diaFechaFija       Int?
   descripcionRegla   String?               @db.Text
   estado             EstadoRegistro        @default(ACTIVO)
-  createdAt          DateTime              @default(now()) @db.DateTime(3)
-  updatedAt          DateTime              @updatedAt @db.DateTime(3)
+  createdAt           DateTime              @default(now()) @db.DateTime(3)
+  updatedAt           DateTime              @updatedAt @db.DateTime(3)
 
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -690,8 +691,8 @@ model ReglaAprobacionGestion {
   vigenteDesde       DateTime?         @db.Date
   vigenteHasta       DateTime?         @db.Date
   estado             EstadoRegistro    @default(ACTIVO)
-  createdAt          DateTime          @default(now()) @db.DateTime(3)
-  updatedAt          DateTime          @updatedAt @db.DateTime(3)
+  createdAt           DateTime          @default(now()) @db.DateTime(3)
+  updatedAt           DateTime          @updatedAt @db.DateTime(3)
 
   aspecto Aspecto? @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -782,10 +783,11 @@ model EmpresaPeriodo {
   createdAt            DateTime           @default(now()) @db.DateTime(3)
   updatedAt            DateTime           @updatedAt @db.DateTime(3)
 
-  empresa            Empresa            @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  versionSupermatriz VersionSupermatriz @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  creadoPor          Usuario            @relation("EmpresaPeriodoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  empresa            Empresa               @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  versionSupermatriz VersionSupermatriz    @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor          Usuario               @relation("EmpresaPeriodoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   gestiones          GestionSgsst[]
+  informes           InformePeriodoSgsst[]
 
   @@unique([empresaId, anio], map: "uq_empresa_periodo_anio")
   @@index([empresaId, estado])
@@ -793,6 +795,39 @@ model EmpresaPeriodo {
   @@index([anio])
   @@index([creadoPorUsuarioId])
   @@map("empresa_periodos_sgsst")
+}
+
+model InformePeriodoSgsst {
+  id                           String                   @id @default(uuid())
+  empresaPeriodoId             String
+  numeroVersion                Int
+  titulo                       String                   @db.VarChar(191)
+  grupoMinisterial             CodigoGrupoMinisterial?
+  categoriasGestion            Json
+  motivoVersion                String?                  @db.Text
+  fechaCorte                   DateTime                 @default(now()) @db.DateTime(3)
+  ultimaActualizacionFuente     DateTime?                @db.DateTime(3)
+  totalGestionesFuente          Int                      @default(0)
+  totalEvaluacionesFuente       Int                      @default(0)
+  registrosHistoricosPosteriores Int                    @default(0)
+  cumplimientoAdministrativo   Decimal?                 @db.Decimal(5, 2)
+  calificacionMinisterial       Decimal?                 @db.Decimal(7, 2)
+  calificacionMinisterialMaxima Decimal?                 @db.Decimal(7, 2)
+  coberturaPorcentaje           Decimal?                 @db.Decimal(5, 2)
+  snapshot                     Json
+  generadoPorUsuarioId         String
+  createdAt                    DateTime                 @default(now()) @db.DateTime(3)
+  updatedAt                    DateTime                 @updatedAt @db.DateTime(3)
+
+  empresaPeriodo EmpresaPeriodo @relation(fields: [empresaPeriodoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  generadoPor    Usuario        @relation("InformePeriodoGeneradoPor", fields: [generadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([empresaPeriodoId, numeroVersion], map: "uq_informe_periodo_version")
+  @@index([empresaPeriodoId, createdAt])
+  @@index([generadoPorUsuarioId])
+  @@index([grupoMinisterial])
+  @@index([fechaCorte])
+  @@map("informes_periodo_sgsst")
 }
 
 model GestionSgsst {
@@ -807,11 +842,11 @@ model GestionSgsst {
   observacionGeneral String?            @db.Text
   estado             EstadoGestionSgsst @default(BORRADOR)
   valida             Boolean            @default(true)
-  finalizadaEn       DateTime?          @db.DateTime(3)
-  invalidadaEn       DateTime?          @db.DateTime(3)
-  motivoInvalidacion String?            @db.Text
-  createdAt          DateTime           @default(now()) @db.DateTime(3)
-  updatedAt          DateTime           @updatedAt @db.DateTime(3)
+  finalizadaEn       DateTime?           @db.DateTime(3)
+  invalidadaEn       DateTime?           @db.DateTime(3)
+  motivoInvalidacion String?             @db.Text
+  createdAt          DateTime            @default(now()) @db.DateTime(3)
+  updatedAt          DateTime            @updatedAt @db.DateTime(3)
 
   empresaPeriodo   EmpresaPeriodo        @relation(fields: [empresaPeriodoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   profesional      Profesional?          @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
