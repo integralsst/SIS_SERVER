@@ -1,4 +1,5 @@
 import {
+  CodigoCategoriaGestion,
   CodigoGrupoMinisterial,
   EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
@@ -14,6 +15,10 @@ import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 export type FiltroGrupoResultados =
   | "TODOS"
   | CodigoGrupoMinisterial;
+
+export interface OpcionesResultadosEvaluacion {
+  categoriasGestion?: CodigoCategoriaGestion[];
+}
 
 export const FILTROS_GRUPO_RESULTADOS: FiltroGrupoResultados[] = [
   "TODOS",
@@ -36,6 +41,16 @@ const seleccionTareaResultados = {
       id: true,
       codigo: true,
       nombre: true,
+    },
+  },
+  categoriasGestion: {
+    select: {
+      categoriaGestion: {
+        select: {
+          codigo: true,
+          nombre: true,
+        },
+      },
     },
   },
   aspecto: {
@@ -369,10 +384,14 @@ export const servicioResultadosEvaluacion = {
     empresaId: string,
     anio: number,
     grupo: FiltroGrupoResultados,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    opciones: OpcionesResultadosEvaluacion = {}
   ) => {
     validarAnio(anio);
     const inicio = process.hrtime.bigint();
+    const categoriasGestionAplicadas = [
+      ...new Set(opciones.categoriasGestion ?? []),
+    ];
 
     const [empresa, periodo] = await Promise.all([
       asegurarAccesoEmpresa(usuario, empresaId, "LECTURA"),
@@ -405,6 +424,7 @@ export const servicioResultadosEvaluacion = {
         empresa,
         periodo: null,
         grupo,
+        categoriasGestionAplicadas,
         gruposDisponibles: [],
         validacionGrupo: null,
         resumenEmpresa: null,
@@ -440,14 +460,23 @@ export const servicioResultadosEvaluacion = {
       }
     }
 
-    const tareas = estructuraResultado.tareas.filter((tarea) =>
-      grupo === "TODOS"
-        ? true
-        : tarea.aspecto.estandar.gruposMinisteriales.some(
-            ({ grupoMinisterial }) =>
-              grupoMinisterial.codigo === grupo
+    const tareas = estructuraResultado.tareas.filter((tarea) => {
+      const coincideGrupo =
+        grupo === "TODOS" ||
+        tarea.aspecto.estandar.gruposMinisteriales.some(
+          ({ grupoMinisterial }) =>
+            grupoMinisterial.codigo === grupo
+        );
+      const coincideCategoria =
+        categoriasGestionAplicadas.length === 0 ||
+        tarea.categoriasGestion.some(({ categoriaGestion }) =>
+          categoriasGestionAplicadas.includes(
+            categoriaGestion.codigo
           )
-    );
+        );
+
+      return coincideGrupo && coincideCategoria;
+    });
 
     const aspectosEmpresa = new Set<number>();
     const procesosAcumulados = new Map<
@@ -677,6 +706,7 @@ export const servicioResultadosEvaluacion = {
         empresaId,
         anio,
         grupo,
+        categoriasGestionAplicadas,
         duracionMs,
         estructuraCacheHit: estructuraResultado.cacheHit,
         totalAspectos,
@@ -697,6 +727,7 @@ export const servicioResultadosEvaluacion = {
         versionSupermatriz: periodo.versionSupermatriz,
       },
       grupo,
+      categoriasGestionAplicadas,
       gruposDisponibles: [
         ...gruposDisponibles.values(),
       ].sort((a, b) => a.codigo.localeCompare(b.codigo)),

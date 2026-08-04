@@ -6,6 +6,7 @@ import { controladorDetalleAspecto } from "../controllers/evaluacion/detalle-asp
 import { controladorEvidenciasEvaluacion } from "../controllers/evaluacion/evidencias-evaluacion.controller";
 import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evaluaciones-aspecto.controller";
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
+import { controladorInformesPeriodo } from "../controllers/evaluacion/informes-periodo.controller";
 import { controladorPeriodosEvaluacion } from "../controllers/evaluacion/periodos-evaluacion.controller";
 import { controladorResultadosEvaluacion } from "../controllers/evaluacion/resultados-evaluacion.controller";
 import { controladorRevisionesTecnicas } from "../controllers/evaluacion/revisiones-tecnicas.controller";
@@ -54,7 +55,7 @@ const rolesRevisionResolucion = [
 router.use(autenticar);
 
 // ======================================================
-// CONTEXTO, RESULTADOS Y DETALLE
+// CONTEXTO, RESULTADOS, INFORMES Y DETALLE
 // ======================================================
 
 router.get(
@@ -67,6 +68,24 @@ router.get(
   "/empresas/:empresaId/resultados",
   autorizar(...rolesLectura),
   controladorResultadosEvaluacion.obtener
+);
+
+router.get(
+  "/empresas/:empresaId/informes",
+  autorizar(...rolesLectura),
+  controladorInformesPeriodo.listar
+);
+
+router.post(
+  "/empresas/:empresaId/informes",
+  autorizar(...rolesEvaluacion),
+  controladorInformesPeriodo.generar
+);
+
+router.get(
+  "/informes/:informeId",
+  autorizar(...rolesLectura),
+  controladorInformesPeriodo.obtenerDetalle
 );
 
 // Endpoint anterior conservado para compatibilidad.
