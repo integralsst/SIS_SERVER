@@ -7,6 +7,7 @@ import { controladorEvidenciasEvaluacion } from "../controllers/evaluacion/evide
 import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evaluaciones-aspecto.controller";
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
 import { controladorPeriodosEvaluacion } from "../controllers/evaluacion/periodos-evaluacion.controller";
+import { controladorResultadosEvaluacion } from "../controllers/evaluacion/resultados-evaluacion.controller";
 import { controladorRevisionesTecnicas } from "../controllers/evaluacion/revisiones-tecnicas.controller";
 import {
   authenticate as autenticar,
@@ -53,13 +54,19 @@ const rolesRevisionResolucion = [
 router.use(autenticar);
 
 // ======================================================
-// CONTEXTO Y DETALLE
+// CONTEXTO, RESULTADOS Y DETALLE
 // ======================================================
 
 router.get(
   "/empresas/:empresaId/contexto",
   autorizar(...rolesLectura),
   controladorContextoEvaluacion.obtener
+);
+
+router.get(
+  "/empresas/:empresaId/resultados",
+  autorizar(...rolesLectura),
+  controladorResultadosEvaluacion.obtener
 );
 
 // Endpoint anterior conservado para compatibilidad.
