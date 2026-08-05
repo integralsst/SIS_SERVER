@@ -97,6 +97,7 @@ export const controladorInformesPeriodo = {
         "Content-Disposition",
         `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
       );
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
       res.setHeader("Content-Length", String(buffer.length));
       res.setHeader("Cache-Control", "private, no-store");
       res.status(200).send(buffer);
