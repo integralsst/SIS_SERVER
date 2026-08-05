@@ -49,6 +49,8 @@ model Empresa {
   usuarios                  Usuario[]
   asignacionesProfesionales EmpresaProfesional[]
   periodosSgsst             EmpresaPeriodo[]
+  compromisos               Compromiso[]
+  permisosClienteAspecto    PermisoClienteAspecto[]
 
   // Auditoría
   creadoEn      DateTime @default(now())
@@ -175,7 +177,23 @@ model Usuario {
   evidenciasEvaluacion          EvidenciaEvaluacion[]       @relation("EvidenciaEvaluacionCreadaPor")
   revisionesTecnicasSolicitadas RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
   revisionesTecnicasResueltas   RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
-  informesPeriodoGenerados     InformePeriodoSgsst[]        @relation("InformePeriodoGeneradoPor")
+  informesPeriodoGenerados         InformePeriodoSgsst[]           @relation("InformePeriodoGeneradoPor")
+
+  // Compromisos y permisos por aspecto
+  compromisosCreados                 Compromiso[]                    @relation("CompromisoCreadoPor")
+  compromisosCancelados              Compromiso[]                    @relation("CompromisoCanceladoPor")
+  responsabilidadesCompromiso        CompromisoResponsable[]         @relation("CompromisoUsuarioResponsable")
+  asignacionesCompromisoRealizadas   CompromisoResponsable[]         @relation("CompromisoResponsableAsignadoPor")
+  actividadesCompromisoAtendidas     ActividadCompromiso[]           @relation("ActividadCompromisoAtendidaPor")
+  seguimientosCompromiso             SeguimientoCompromiso[]         @relation("SeguimientoCompromisoRegistradoPor")
+  evidenciasCompromiso               CompromisoEvidencia[]           @relation("CompromisoEvidenciaCreadaPor")
+  cierresCompromisoSolicitados       SolicitudCierreCompromiso[]     @relation("CierreCompromisoSolicitadoPor")
+  cierresCompromisoDecididos         SolicitudCierreCompromiso[]     @relation("CierreCompromisoDecididoPor")
+  ampliacionesCompromisoSolicitadas  SolicitudAmpliacionCompromiso[] @relation("AmpliacionCompromisoSolicitadaPor")
+  ampliacionesCompromisoDecididas    AprobacionAmpliacionCompromiso[] @relation("AmpliacionCompromisoDecididaPor")
+  historialCompromisos               HistorialCompromiso[]           @relation("HistorialCompromisoUsuario")
+  permisosClienteAspecto             PermisoClienteAspecto[]         @relation("PermisoClienteAspectoUsuario")
+  permisosClienteAspectoOtorgados    PermisoClienteAspecto[]         @relation("PermisoClienteAspectoOtorgadoPor")
 
   // Estado
   activo Boolean @default(true)
@@ -198,6 +216,7 @@ enum RolUsuario {
   USUARIO_CLIENTE
   ADMIN_CLIENTE
   PROFESIONAL
+  COORDINADOR
   ADMIN
   PROPIETARIO
   SUPERADMIN
@@ -301,6 +320,58 @@ enum EstadoRevisionTecnica {
   ANULADA
 }
 
+enum EstadoCompromiso {
+  EN_EJECUCION
+  PENDIENTE_DE_REASIGNACION
+  SOLICITUD_DE_CIERRE
+  CUMPLIDO
+  CANCELADO
+}
+
+enum TipoResponsableCompromiso {
+  PRINCIPAL
+  APOYO
+}
+
+enum EstadoAsignacionCompromiso {
+  ASIGNADA
+  RECHAZADA
+  REEMPLAZADA
+}
+
+enum EstadoActividadCompromiso {
+  PENDIENTE
+  ATENDIDA
+  ANULADA
+}
+
+enum OrigenSeguimientoCompromiso {
+  INTERNO
+  CLIENTE
+}
+
+enum EstadoSolicitudCierreCompromiso {
+  PENDIENTE
+  APROBADA
+  DEVUELTA
+}
+
+enum EstadoSolicitudAmpliacionCompromiso {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+enum TipoAprobadorAmpliacionCompromiso {
+  COORDINADOR
+  ADMINISTRADOR
+}
+
+enum DecisionAmpliacionCompromiso {
+  APROBADA
+  RECHAZADA
+}
+
 // ======================================================
 // SUPERMATRIZ NORMALIZADA
 // ======================================================
@@ -400,9 +471,10 @@ model Aspecto {
   estandarId           Int
   codigo               String?        @db.VarChar(50)
   nombre               String         @db.VarChar(191)
-  descripcion          String?        @db.Text
-  orden                Int
-  estado               EstadoRegistro @default(ACTIVO)
+  descripcion                       String?        @db.Text
+  orden                            Int
+  calificacionMinisterialEsperada Decimal?       @db.Decimal(5, 2)
+  estado                           EstadoRegistro @default(ACTIVO)
   createdAt            DateTime       @default(now()) @db.DateTime(3)
   updatedAt            DateTime       @updatedAt @db.DateTime(3)
 
@@ -420,6 +492,8 @@ model Aspecto {
   reglasAprobacion            ReglaAprobacionGestion[]
   vigencias                   VigenciaAspecto[]
   evaluaciones                EvaluacionAspecto[]
+  compromisos                 Compromiso[]
+  permisosClienteAspecto      PermisoClienteAspecto[]
 
   @@unique([versionSupermatrizId, estandarId, nombre])
   @@index([versionSupermatrizId])
@@ -852,8 +926,9 @@ model GestionSgsst {
   profesional      Profesional?          @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categoriaGestion CategoriaGestion?     @relation(fields: [categoriaGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   usuarioCreador   Usuario               @relation("GestionSgsstCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  evaluaciones     EvaluacionAspecto[]
-  historial        HistorialEvaluacion[]
+  evaluaciones          EvaluacionAspecto[]
+  historial             HistorialEvaluacion[]
+  compromisosOriginados Compromiso[]
 
   @@index([empresaPeriodoId, fechaGestion])
   @@index([profesionalId])
@@ -884,9 +959,12 @@ model EvaluacionAspecto {
   aspecto            Aspecto               @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   supermatrizTarea   SupermatrizTarea?     @relation(fields: [supermatrizTareaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   usuarioRegistrador Usuario               @relation("EvaluacionRegistradaPor", fields: [usuarioRegistradorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  historial          HistorialEvaluacion[]
-  evidencias         EvidenciaEvaluacion[]
-  revisionTecnica    RevisionTecnicaEvaluacion?
+  historial                    HistorialEvaluacion[]
+  evidencias                   EvidenciaEvaluacion[]
+  revisionTecnica              RevisionTecnicaEvaluacion?
+  compromisoOrigen            Compromiso?                     @relation("CompromisoEvaluacionOrigen")
+  seguimientosCompromiso      CompromisoEvaluacionSeguimiento[]
+  solicitudesCierreCompromiso SolicitudCierreCompromiso[]     @relation("CierreCompromisoEvaluacion")
 
   @@unique([gestionId, aspectoId], map: "uq_gestion_aspecto")
   @@index([gestionId])
@@ -911,8 +989,9 @@ model EvidenciaEvaluacion {
   createdAt        DateTime  @default(now()) @db.DateTime(3)
   updatedAt        DateTime  @updatedAt @db.DateTime(3)
 
-  evaluacion     EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  usuarioCreador Usuario           @relation("EvidenciaEvaluacionCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacion            EvaluacionAspecto    @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioCreador        Usuario              @relation("EvidenciaEvaluacionCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evidenciasCompromiso  CompromisoEvidencia[]
 
   @@index([evaluacionId, activo])
   @@index([usuarioCreadorId])
@@ -965,6 +1044,297 @@ model HistorialEvaluacion {
   @@index([evaluacionId])
   @@index([usuarioId])
   @@map("historial_evaluaciones")
+}
+
+
+// ======================================================
+// COMPROMISOS Y SEGUIMIENTO
+// ======================================================
+
+model Compromiso {
+  id                  String           @id @default(uuid())
+  empresaId           String
+  gestionOrigenId     String
+  evaluacionOrigenId  String           @unique
+  aspectoId           Int
+  aspectoCodigo       String?          @db.VarChar(50)
+  creadoPorUsuarioId  String
+
+  descripcion String   @db.Text
+  recursos    String?  @db.Text
+  fechaLimite DateTime @db.Date
+  estado      EstadoCompromiso @default(EN_EJECUCION)
+
+  cerradoEn             DateTime? @db.DateTime(3)
+  canceladoEn           DateTime? @db.DateTime(3)
+  canceladoPorUsuarioId String?
+  motivoCancelacion     String?   @db.Text
+
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  empresa          Empresa           @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  gestionOrigen    GestionSgsst      @relation(fields: [gestionOrigenId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacionOrigen EvaluacionAspecto @relation("CompromisoEvaluacionOrigen", fields: [evaluacionOrigenId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  aspecto          Aspecto           @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor        Usuario           @relation("CompromisoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  canceladoPor     Usuario?          @relation("CompromisoCanceladoPor", fields: [canceladoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  responsables             CompromisoResponsable[]
+  evaluacionesSeguimiento  CompromisoEvaluacionSeguimiento[]
+  seguimientos             SeguimientoCompromiso[]
+  evidencias               CompromisoEvidencia[]
+  solicitudesCierre        SolicitudCierreCompromiso[]
+  solicitudesAmpliacion    SolicitudAmpliacionCompromiso[]
+  historial                HistorialCompromiso[]
+
+  @@index([empresaId, estado, fechaLimite])
+  @@index([gestionOrigenId])
+  @@index([aspectoId, estado])
+  @@index([empresaId, aspectoCodigo, estado])
+  @@index([creadoPorUsuarioId])
+  @@index([canceladoPorUsuarioId])
+  @@map("compromisos")
+}
+
+model CompromisoEvaluacionSeguimiento {
+  compromisoId String
+  evaluacionId String @unique
+  createdAt    DateTime @default(now()) @db.DateTime(3)
+
+  compromiso Compromiso       @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacion EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([compromisoId, evaluacionId])
+  @@index([compromisoId, createdAt])
+  @@map("compromiso_evaluaciones_seguimiento")
+}
+
+model CompromisoResponsable {
+  id                   String @id @default(uuid())
+  compromisoId         String
+  usuarioResponsableId String
+  asignadoPorUsuarioId String
+  reemplazaAId         String? @unique
+
+  tipo   TipoResponsableCompromiso
+  estado EstadoAsignacionCompromiso @default(ASIGNADA)
+
+  asignadoEn    DateTime  @default(now()) @db.DateTime(3)
+  rechazadoEn   DateTime? @db.DateTime(3)
+  motivoRechazo String?   @db.Text
+
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  compromiso        Compromiso            @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioResponsable Usuario               @relation("CompromisoUsuarioResponsable", fields: [usuarioResponsableId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asignadoPor        Usuario               @relation("CompromisoResponsableAsignadoPor", fields: [asignadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reemplazaA         CompromisoResponsable? @relation("ReasignacionCompromiso", fields: [reemplazaAId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reemplazadaPor     CompromisoResponsable? @relation("ReasignacionCompromiso")
+  actividad          ActividadCompromiso?
+
+  @@index([compromisoId, estado])
+  @@index([usuarioResponsableId, estado])
+  @@index([asignadoPorUsuarioId])
+  @@map("compromiso_responsables")
+}
+
+model ActividadCompromiso {
+  id                      String @id @default(uuid())
+  compromisoResponsableId String @unique
+  atendidaPorUsuarioId    String?
+
+  descripcion String @db.Text
+  estado      EstadoActividadCompromiso @default(PENDIENTE)
+  atendidaEn  DateTime? @db.DateTime(3)
+
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  compromisoResponsable CompromisoResponsable @relation(fields: [compromisoResponsableId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  atendidaPor           Usuario?              @relation("ActividadCompromisoAtendidaPor", fields: [atendidaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  seguimientos          SeguimientoCompromiso[]
+
+  @@index([estado])
+  @@index([atendidaPorUsuarioId])
+  @@map("actividades_compromiso")
+}
+
+model SeguimientoCompromiso {
+  id            String @id @default(uuid())
+  compromisoId  String
+  actividadId   String?
+  usuarioId     String
+
+  fechaSeguimiento DateTime @default(now()) @db.DateTime(3)
+  descripcion      String   @db.Text
+  origen           OrigenSeguimientoCompromiso @default(INTERNO)
+  visibleCliente   Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.DateTime(3)
+
+  compromiso Compromiso          @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  actividad  ActividadCompromiso? @relation(fields: [actividadId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuario    Usuario              @relation("SeguimientoCompromisoRegistradoPor", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evidencias CompromisoEvidencia[]
+
+  @@index([compromisoId, fechaSeguimiento])
+  @@index([actividadId])
+  @@index([usuarioId])
+  @@index([origen])
+  @@map("seguimientos_compromiso")
+}
+
+model CompromisoEvidencia {
+  id                          String @id @default(uuid())
+  compromisoId                String
+  seguimientoId               String?
+  evidenciaEvaluacionOrigenId String?
+  creadoPorUsuarioId          String
+
+  nombre         String    @db.VarChar(191)
+  url            String    @db.Text
+  descripcion    String?   @db.Text
+  fechaDocumento DateTime? @db.Date
+  visibleCliente Boolean   @default(false)
+  activa         Boolean   @default(true)
+
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  compromiso               Compromiso             @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  seguimiento              SeguimientoCompromiso? @relation(fields: [seguimientoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evidenciaEvaluacionOrigen EvidenciaEvaluacion?   @relation(fields: [evidenciaEvaluacionOrigenId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor                Usuario                @relation("CompromisoEvidenciaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([compromisoId, activa])
+  @@index([seguimientoId])
+  @@index([evidenciaEvaluacionOrigenId])
+  @@index([creadoPorUsuarioId])
+  @@map("compromiso_evidencias")
+}
+
+model SolicitudCierreCompromiso {
+  id                         String @id @default(uuid())
+  compromisoId               String
+  solicitadaPorId            String
+  decididaPorId              String?
+  evaluacionRecalificacionId String
+  numeroIntento              Int
+
+  estado EstadoSolicitudCierreCompromiso @default(PENDIENTE)
+
+  solicitadaEn            DateTime  @default(now()) @db.DateTime(3)
+  decididaEn              DateTime? @db.DateTime(3)
+  mensajeCierre           String?   @db.Text
+  observacionesDevolucion String?   @db.Text
+
+  compromiso              Compromiso       @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  solicitadaPor           Usuario          @relation("CierreCompromisoSolicitadoPor", fields: [solicitadaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decididaPor             Usuario?         @relation("CierreCompromisoDecididoPor", fields: [decididaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacionRecalificacion EvaluacionAspecto @relation("CierreCompromisoEvaluacion", fields: [evaluacionRecalificacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([compromisoId, numeroIntento])
+  @@index([compromisoId, estado])
+  @@index([solicitadaPorId])
+  @@index([decididaPorId])
+  @@index([evaluacionRecalificacionId])
+  @@map("solicitudes_cierre_compromiso")
+}
+
+model SolicitudAmpliacionCompromiso {
+  id               String @id @default(uuid())
+  compromisoId     String
+  solicitadaPorId  String
+  numeroSolicitud  Int
+
+  fechaLimiteAnterior   DateTime @db.Date
+  fechaLimiteSolicitada DateTime @db.Date
+  justificacion         String   @db.Text
+  estado                EstadoSolicitudAmpliacionCompromiso @default(PENDIENTE)
+
+  solicitadaEn DateTime  @default(now()) @db.DateTime(3)
+  resueltaEn   DateTime? @db.DateTime(3)
+
+  compromiso   Compromiso @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  solicitadaPor Usuario   @relation("AmpliacionCompromisoSolicitadaPor", fields: [solicitadaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decisiones    AprobacionAmpliacionCompromiso[]
+
+  @@unique([compromisoId, numeroSolicitud])
+  @@index([compromisoId, estado])
+  @@index([solicitadaPorId])
+  @@map("solicitudes_ampliacion_compromiso")
+}
+
+model AprobacionAmpliacionCompromiso {
+  id             String @id @default(uuid())
+  solicitudId    String
+  decididaPorId  String
+
+  tipoAprobador TipoAprobadorAmpliacionCompromiso
+  decision      DecisionAmpliacionCompromiso
+  observacion   String? @db.Text
+  decididaEn    DateTime @default(now()) @db.DateTime(3)
+
+  solicitud   SolicitudAmpliacionCompromiso @relation(fields: [solicitudId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decididaPor Usuario                      @relation("AmpliacionCompromisoDecididaPor", fields: [decididaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([solicitudId, tipoAprobador])
+  @@index([decididaPorId])
+  @@map("aprobaciones_ampliacion_compromiso")
+}
+
+model HistorialCompromiso {
+  id            String @id @default(uuid())
+  compromisoId  String
+  entidadTipo   String @db.VarChar(100)
+  entidadId     String?
+  accion        String @db.VarChar(100)
+  descripcion   String? @db.Text
+  datosAntes    Json?
+  datosDespues  Json?
+  usuarioId     String
+  createdAt     DateTime @default(now()) @db.DateTime(3)
+
+  compromiso Compromiso @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuario    Usuario    @relation("HistorialCompromisoUsuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([compromisoId, createdAt])
+  @@index([entidadTipo, entidadId])
+  @@index([usuarioId])
+  @@map("historial_compromisos")
+}
+
+model PermisoClienteAspecto {
+  id               String @id @default(uuid())
+  empresaId        String
+  usuarioClienteId String
+  aspectoId        Int
+  aspectoCodigo    String? @db.VarChar(50)
+  otorgadoPorId    String
+
+  puedeRegistrarAvances     Boolean @default(false)
+  puedeCargarEvidencias     Boolean @default(false)
+  puedeInformarCumplimiento Boolean @default(false)
+  activo                     Boolean @default(true)
+
+  otorgadoEn DateTime  @default(now()) @db.DateTime(3)
+  revocadoEn DateTime? @db.DateTime(3)
+  createdAt  DateTime  @default(now()) @db.DateTime(3)
+  updatedAt  DateTime  @updatedAt @db.DateTime(3)
+
+  empresa        Empresa @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuarioCliente Usuario @relation("PermisoClienteAspectoUsuario", fields: [usuarioClienteId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  aspecto        Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  otorgadoPor    Usuario @relation("PermisoClienteAspectoOtorgadoPor", fields: [otorgadoPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([empresaId, usuarioClienteId, aspectoId])
+  @@index([empresaId, aspectoCodigo, activo])
+  @@index([usuarioClienteId, activo])
+  @@index([aspectoId])
+  @@index([otorgadoPorId])
+  @@map("permisos_cliente_aspecto")
 }
 
 // ======================================================
