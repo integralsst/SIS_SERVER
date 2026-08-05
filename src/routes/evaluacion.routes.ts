@@ -90,6 +90,12 @@ router.post(
 );
 
 router.get(
+  "/informes/:informeId/pdf",
+  autorizar(...rolesLectura),
+  controladorInformesPeriodo.descargarPdf
+);
+
+router.get(
   "/informes/:informeId",
   autorizar(...rolesLectura),
   controladorInformesPeriodo.obtenerDetalle
