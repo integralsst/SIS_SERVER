@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { servicioPdfInformePeriodo } from "../../services/evaluacion/informe-periodo-pdf.service";
 import {
   servicioInformesPeriodo,
   type GenerarInformePeriodoInput,
@@ -75,6 +76,30 @@ export const controladorInformesPeriodo = {
         );
 
       res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
+  descargarPdf: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const { buffer, filename } =
+        await servicioPdfInformePeriodo.generar(
+          obtenerParametroRuta(req, "informeId"),
+          obtenerUsuarioSesion(req)
+        );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      );
+      res.setHeader("Content-Length", String(buffer.length));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).send(buffer);
     } catch (error) {
       responderErrorEvaluacion(error, res);
     }
