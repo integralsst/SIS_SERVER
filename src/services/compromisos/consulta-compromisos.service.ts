@@ -1,5 +1,4 @@
 import {
-  EstadoAsignacionCompromiso,
   EstadoCompromiso,
   Prisma,
 } from "@prisma/client";
@@ -7,308 +6,101 @@ import {
 import { prisma } from "../../lib/prisma";
 import type {
   ConsultaCompromisosInput,
-  FiltroVencimientoCompromiso,
 } from "../../types/compromisos/consulta-compromisos.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
+import { construirAccesoDetalleCompromiso } from "./acceso-compromisos.service";
 import {
-  construirAccesoDetalleCompromiso,
-  construirAccesoListadoCompromisos,
-} from "./acceso-compromisos.service";
+  ESTADOS_COMPROMISO_ABIERTOS,
+  construirFiltroVencimiento,
+  obtenerVentanaVencimiento,
+} from "./fechas-compromiso.service";
+import {
+  construirFiltroEstadoCompromiso,
+  construirFiltrosBaseCompromisos,
+} from "./filtros-consulta-compromisos.service";
+import {
+  seleccionCompromisoListado,
+  serializarCompromisoListado,
+} from "./presentacion-compromiso.service";
 
-const ESTADOS_ABIERTOS: EstadoCompromiso[] = [
-  EstadoCompromiso.EN_EJECUCION,
-  EstadoCompromiso.PENDIENTE_DE_REASIGNACION,
-  EstadoCompromiso.SOLICITUD_DE_CIERRE,
-];
-
-function inicioDiaActual(): Date {
-  const fecha = new Date();
-
-  fecha.setUTCHours(0, 0, 0, 0);
-
-  return fecha;
-}
-
-function limiteProximosDias(
-  fechaBase: Date
-): Date {
-  const limite = new Date(fechaBase);
-
-  limite.setUTCDate(limite.getUTCDate() + 30);
-
-  return limite;
-}
-
-function filtroVencimiento(
-  valor: FiltroVencimientoCompromiso,
-  hoy: Date,
-  limiteProximo: Date
-): Prisma.CompromisoWhereInput {
-  switch (valor) {
-    case "VENCIDOS":
-      return {
-        estado: {
-          in: ESTADOS_ABIERTOS,
-        },
-        fechaLimite: {
-          lt: hoy,
-        },
-      };
-
-    case "PROXIMOS_30_DIAS":
-      return {
-        estado: {
-          in: ESTADOS_ABIERTOS,
-        },
-        fechaLimite: {
-          gte: hoy,
-          lte: limiteProximo,
-        },
-      };
-
-    case "VIGENTES":
-      return {
-        estado: {
-          in: ESTADOS_ABIERTOS,
-        },
-        fechaLimite: {
-          gt: limiteProximo,
-        },
-      };
-
-    case "CERRADOS":
-      return {
-        estado: {
-          in: [
-            EstadoCompromiso.CUMPLIDO,
-            EstadoCompromiso.CANCELADO,
-          ],
-        },
-      };
-
-    default:
-      return {};
-  }
-}
-
-function construirFiltrosBase(
-  consulta: ConsultaCompromisosInput,
-  usuario: UsuarioSesionEvaluacion
-): Prisma.CompromisoWhereInput {
-  const filtros: Prisma.CompromisoWhereInput[] = [
-    construirAccesoListadoCompromisos(
-      usuario,
-      consulta.alcance
-    ),
-  ];
-
-  if (consulta.empresaId) {
-    filtros.push({
-      empresaId: consulta.empresaId,
-    });
-  }
-
-  if (consulta.responsableId) {
-    filtros.push({
-      responsables: {
-        some: {
-          usuarioResponsableId:
-            consulta.responsableId,
-          estado:
-            EstadoAsignacionCompromiso.ASIGNADA,
-        },
-      },
-    });
-  }
-
-  if (consulta.busqueda) {
-    filtros.push({
-      OR: [
-        {
-          descripcion: {
-            contains: consulta.busqueda,
-          },
-        },
-        {
-          aspectoCodigo: {
-            contains: consulta.busqueda,
-          },
-        },
-        {
-          aspecto: {
-            nombre: {
-              contains: consulta.busqueda,
-            },
-          },
-        },
-        {
-          empresa: {
-            nombre: {
-              contains: consulta.busqueda,
-            },
-          },
-        },
-        {
-          empresa: {
-            nit: {
-              contains: consulta.busqueda,
-            },
-          },
-        },
-      ],
-    });
-  }
-
-  return {
-    AND: filtros,
-  };
-}
-
-function construirFiltroEstado(
-  consulta: ConsultaCompromisosInput
-): Prisma.CompromisoWhereInput {
-  if (consulta.estado === "ABIERTOS") {
-    return {
-      estado: {
-        in: ESTADOS_ABIERTOS,
-      },
-    };
-  }
-
-  if (consulta.estado) {
-    return {
-      estado: consulta.estado,
-    };
-  }
-
-  return {};
-}
-
-function calcularSemaforo(
-  estado: EstadoCompromiso,
-  fechaLimite: Date,
-  hoy: Date,
-  limiteProximo: Date
-):
-  | "VENCIDO"
-  | "PROXIMO_A_VENCER"
-  | "VIGENTE"
-  | "CERRADO" {
-  if (!ESTADOS_ABIERTOS.includes(estado)) {
-    return "CERRADO";
-  }
-
-  if (fechaLimite < hoy) {
-    return "VENCIDO";
-  }
-
-  if (fechaLimite <= limiteProximo) {
-    return "PROXIMO_A_VENCER";
-  }
-
-  return "VIGENTE";
-}
-
-const seleccionListado = {
-  id: true,
-  descripcion: true,
-  recursos: true,
-  fechaLimite: true,
-  estado: true,
-  createdAt: true,
-  updatedAt: true,
-  empresa: {
-    select: {
-      id: true,
-      nombre: true,
-      nit: true,
-    },
-  },
-  aspecto: {
-    select: {
-      id: true,
-      codigo: true,
-      nombre: true,
-    },
-  },
-  gestionOrigen: {
-    select: {
-      id: true,
-      fechaGestion: true,
-      tipoActividad: true,
-    },
-  },
-  responsables: {
-    where: {
-      estado:
-        EstadoAsignacionCompromiso.ASIGNADA,
-    },
-    select: {
-      id: true,
-      tipo: true,
-      estado: true,
-      usuarioResponsable: {
-        select: {
-          id: true,
-          nombre: true,
-          correo: true,
-          rol: true,
-        },
-      },
-      actividad: {
-        select: {
-          id: true,
-          descripcion: true,
-          estado: true,
-          atendidaEn: true,
-        },
-      },
-    },
-    orderBy: {
-      asignadoEn: "asc",
-    },
-  },
-} satisfies Prisma.CompromisoSelect;
-
-function serializarListado(
-  compromiso: Prisma.CompromisoGetPayload<{
-    select: typeof seleccionListado;
-  }>,
+async function calcularResumen(
+  filtrosBase: Prisma.CompromisoWhereInput,
   hoy: Date,
   limiteProximo: Date
 ) {
-  const responsables = [
-    ...compromiso.responsables,
-  ].sort((primero, segundo) => {
-    if (primero.tipo === segundo.tipo) {
-      return primero.usuarioResponsable.nombre.localeCompare(
-        segundo.usuarioResponsable.nombre,
-        "es"
-      );
-    }
-
-    return primero.tipo === "PRINCIPAL" ? -1 : 1;
-  });
+  const [
+    total,
+    abiertos,
+    vencidos,
+    proximos,
+    cumplidos,
+  ] = await prisma.$transaction([
+    prisma.compromiso.count({
+      where: filtrosBase,
+    }),
+    prisma.compromiso.count({
+      where: {
+        AND: [
+          filtrosBase,
+          {
+            estado: {
+              in: ESTADOS_COMPROMISO_ABIERTOS,
+            },
+          },
+        ],
+      },
+    }),
+    prisma.compromiso.count({
+      where: {
+        AND: [
+          filtrosBase,
+          {
+            estado: {
+              in: ESTADOS_COMPROMISO_ABIERTOS,
+            },
+            fechaLimite: {
+              lt: hoy,
+            },
+          },
+        ],
+      },
+    }),
+    prisma.compromiso.count({
+      where: {
+        AND: [
+          filtrosBase,
+          {
+            estado: {
+              in: ESTADOS_COMPROMISO_ABIERTOS,
+            },
+            fechaLimite: {
+              gte: hoy,
+              lte: limiteProximo,
+            },
+          },
+        ],
+      },
+    }),
+    prisma.compromiso.count({
+      where: {
+        AND: [
+          filtrosBase,
+          {
+            estado:
+              EstadoCompromiso.CUMPLIDO,
+          },
+        ],
+      },
+    }),
+  ]);
 
   return {
-    ...compromiso,
-    fechaLimite:
-      compromiso.fechaLimite.toISOString(),
-    createdAt: compromiso.createdAt.toISOString(),
-    updatedAt: compromiso.updatedAt.toISOString(),
-    gestionOrigen: {
-      ...compromiso.gestionOrigen,
-      fechaGestion:
-        compromiso.gestionOrigen.fechaGestion.toISOString(),
-    },
-    responsables,
-    semaforo: calcularSemaforo(
-      compromiso.estado,
-      compromiso.fechaLimite,
-      hoy,
-      limiteProximo
-    ),
+    total,
+    abiertos,
+    vencidos,
+    proximosAVencer: proximos,
+    cumplidos,
   };
 }
 
@@ -317,20 +109,25 @@ export const servicioConsultaCompromisos = {
     consulta: ConsultaCompromisosInput,
     usuario: UsuarioSesionEvaluacion
   ) => {
-    const hoy = inicioDiaActual();
-    const limiteProximo =
-      limiteProximosDias(hoy);
-    const filtrosBase = construirFiltrosBase(
-      consulta,
-      usuario
-    );
+    const {
+      hoy,
+      limiteProximo,
+    } = obtenerVentanaVencimiento();
+
+    const filtrosBase =
+      construirFiltrosBaseCompromisos(
+        consulta,
+        usuario
+      );
 
     const whereListado: Prisma.CompromisoWhereInput =
       {
         AND: [
           filtrosBase,
-          construirFiltroEstado(consulta),
-          filtroVencimiento(
+          construirFiltroEstadoCompromiso(
+            consulta
+          ),
+          construirFiltroVencimiento(
             consulta.vencimiento,
             hoy,
             limiteProximo
@@ -341,15 +138,11 @@ export const servicioConsultaCompromisos = {
     const [
       compromisos,
       totalFiltrado,
-      total,
-      abiertos,
-      vencidos,
-      proximos,
-      cumplidos,
-    ] = await prisma.$transaction([
+      resumen,
+    ] = await Promise.all([
       prisma.compromiso.findMany({
         where: whereListado,
-        select: seleccionListado,
+        select: seleccionCompromisoListado,
         orderBy: [
           {
             fechaLimite: "asc",
@@ -366,74 +159,16 @@ export const servicioConsultaCompromisos = {
       prisma.compromiso.count({
         where: whereListado,
       }),
-      prisma.compromiso.count({
-        where: filtrosBase,
-      }),
-      prisma.compromiso.count({
-        where: {
-          AND: [
-            filtrosBase,
-            {
-              estado: {
-                in: ESTADOS_ABIERTOS,
-              },
-            },
-          ],
-        },
-      }),
-      prisma.compromiso.count({
-        where: {
-          AND: [
-            filtrosBase,
-            {
-              estado: {
-                in: ESTADOS_ABIERTOS,
-              },
-              fechaLimite: {
-                lt: hoy,
-              },
-            },
-          ],
-        },
-      }),
-      prisma.compromiso.count({
-        where: {
-          AND: [
-            filtrosBase,
-            {
-              estado: {
-                in: ESTADOS_ABIERTOS,
-              },
-              fechaLimite: {
-                gte: hoy,
-                lte: limiteProximo,
-              },
-            },
-          ],
-        },
-      }),
-      prisma.compromiso.count({
-        where: {
-          AND: [
-            filtrosBase,
-            {
-              estado:
-                EstadoCompromiso.CUMPLIDO,
-            },
-          ],
-        },
-      }),
+      calcularResumen(
+        filtrosBase,
+        hoy,
+        limiteProximo
+      ),
     ]);
 
     return {
       alcance: consulta.alcance,
-      resumen: {
-        total,
-        abiertos,
-        vencidos,
-        proximosAVencer: proximos,
-        cumplidos,
-      },
+      resumen,
       paginacion: {
         pagina: consulta.pagina,
         limite: consulta.limite,
@@ -447,7 +182,7 @@ export const servicioConsultaCompromisos = {
       },
       compromisos: compromisos.map(
         (compromiso) =>
-          serializarListado(
+          serializarCompromisoListado(
             compromiso,
             hoy,
             limiteProximo
@@ -473,7 +208,7 @@ export const servicioConsultaCompromisos = {
           ],
         },
         select: {
-          ...seleccionListado,
+          ...seleccionCompromisoListado,
           evaluacionOrigen: {
             select: {
               id: true,
@@ -575,12 +310,13 @@ export const servicioConsultaCompromisos = {
       );
     }
 
-    const hoy = inicioDiaActual();
-    const limiteProximo =
-      limiteProximosDias(hoy);
+    const {
+      hoy,
+      limiteProximo,
+    } = obtenerVentanaVencimiento();
 
     return {
-      ...serializarListado(
+      ...serializarCompromisoListado(
         compromiso,
         hoy,
         limiteProximo
