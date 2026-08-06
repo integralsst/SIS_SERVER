@@ -12,7 +12,7 @@ import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 export const controladorEvidenciasEvaluacion = {
   crear: async (
