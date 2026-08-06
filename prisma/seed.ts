@@ -2,83 +2,126 @@ import "dotenv/config";
 
 import {
   PrismaClient,
-  RolUsuario,
 } from "@prisma/client";
 
 import bcrypt from "bcryptjs";
 
+import { crearAsignacionesDemo } from "./seeds/asignaciones-demo.seed";
+import {
+  CUENTAS_DEMO,
+  type ContrasenasDemoCifradas,
+} from "./seeds/datos-demo.seed";
+import { crearIdentidadesDemo } from "./seeds/identidades-demo.seed";
+
 const prisma = new PrismaClient();
 
-const CORREO_SUPERADMIN =
-  "superadmin@stack4four.com";
+async function cifrarContrasenas():
+Promise<ContrasenasDemoCifradas> {
+  const [
+    superadmin,
+    coordinador,
+    profesional,
+  ] = await Promise.all([
+    bcrypt.hash(
+      CUENTAS_DEMO.superadmin.contrasena,
+      12
+    ),
+    bcrypt.hash(
+      CUENTAS_DEMO.coordinador.contrasena,
+      12
+    ),
+    bcrypt.hash(
+      CUENTAS_DEMO.profesional.contrasena,
+      12
+    ),
+  ]);
 
-const CONTRASENA_SUPERADMIN =
-  "Stack44Admin2026!";
+  return {
+    superadmin,
+    coordinador,
+    profesional,
+  };
+}
 
 async function main(): Promise<void> {
+  console.log("");
   console.log(
-    "🌱 Creando datos iniciales..."
+    "🌱 Preparando escenario demo Stack44..."
   );
 
-  const contrasenaCifrada =
-    await bcrypt.hash(
-      CONTRASENA_SUPERADMIN,
-      12
+  const contrasenas =
+    await cifrarContrasenas();
+
+  const resultado =
+    await prisma.$transaction(
+      async (tx) => {
+        const identidades =
+          await crearIdentidadesDemo(
+            tx,
+            contrasenas
+          );
+
+        await crearAsignacionesDemo(
+          tx,
+          identidades
+        );
+
+        return identidades;
+      },
+      {
+        maxWait: 5000,
+        timeout: 30000,
+      }
     );
-
-  const superadmin =
-    await prisma.usuario.upsert({
-      where: {
-        correo: CORREO_SUPERADMIN,
-      },
-
-      update: {
-        nombre:
-          "Superadministrador Stack44",
-        contrasena:
-          contrasenaCifrada,
-        rol: RolUsuario.SUPERADMIN,
-        empresaId: null,
-        activo: true,
-      },
-
-      create: {
-        nombre:
-          "Superadministrador Stack44",
-        correo:
-          CORREO_SUPERADMIN,
-        contrasena:
-          contrasenaCifrada,
-        rol: RolUsuario.SUPERADMIN,
-        empresaId: null,
-        activo: true,
-      },
-
-      select: {
-        id: true,
-        nombre: true,
-        correo: true,
-        rol: true,
-        activo: true,
-      },
-    });
 
   console.log("");
   console.log(
-    "✅ Superadministrador disponible:"
+    "✅ Escenario demo creado o actualizado."
   );
   console.log(
-    `Correo: ${superadmin.correo}`
+    "Empresa: " +
+      resultado.empresa.nombre +
+      " · NIT " +
+      resultado.empresa.nit
+  );
+  console.log("");
+  console.table([
+    {
+      rol: "SUPERADMIN",
+      correo:
+        CUENTAS_DEMO.superadmin.correo,
+      contrasena:
+        CUENTAS_DEMO.superadmin.contrasena,
+    },
+    {
+      rol: "COORDINADOR",
+      correo:
+        CUENTAS_DEMO.coordinador.correo,
+      contrasena:
+        CUENTAS_DEMO.coordinador.contrasena,
+    },
+    {
+      rol: "PROFESIONAL",
+      correo:
+        CUENTAS_DEMO.profesional.correo,
+      contrasena:
+        CUENTAS_DEMO.profesional.contrasena,
+    },
+  ]);
+  console.log("");
+  console.log(
+    "ℹ️ El seed no crea compromisos artificiales."
   );
   console.log(
-    `Contraseña: ${CONTRASENA_SUPERADMIN}`
+    "ℹ️ Finaliza una gestión con nota 0 o 3 para probar el flujo real."
   );
 }
 
 main()
   .catch((error: unknown) => {
+    console.error("");
     console.error(
-      "❌ Error ejecutando el seed:",
+      "❌ Error ejecutando el seed demo:",
       error
     );
 
