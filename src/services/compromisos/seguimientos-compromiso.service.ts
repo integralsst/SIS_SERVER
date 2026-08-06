@@ -1,6 +1,6 @@
 import {
+  OrigenSeguimientoCompromiso,
   EstadoAsignacionCompromiso,
-  RolUsuario,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -10,6 +10,7 @@ import { ErrorEvaluacion } from "../../utils/evaluacion";
 import {
   asegurarCompromisoEditable,
   asegurarParticipacionCompromiso,
+  esRolClienteCompromiso,
   esRolSupervisorCompromiso,
   obtenerCompromisoOperacion,
 } from "./acceso-operacion-compromisos.service";
@@ -60,7 +61,6 @@ export async function crearSeguimientoCompromiso(
     }
 
     if (
-      usuario.rol === RolUsuario.PROFESIONAL &&
       !esRolSupervisorCompromiso(usuario.rol) &&
       actividad.compromisoResponsable
         .usuarioResponsableId !== usuario.usuarioId
@@ -81,7 +81,12 @@ export async function crearSeguimientoCompromiso(
           actividadId: input.actividadId,
           usuarioId: usuario.usuarioId,
           descripcion: input.descripcion,
-          visibleCliente: input.visibleCliente,
+          origen: esRolClienteCompromiso(usuario.rol)
+            ? OrigenSeguimientoCompromiso.CLIENTE
+            : OrigenSeguimientoCompromiso.INTERNO,
+          visibleCliente:
+            esRolClienteCompromiso(usuario.rol) ||
+            input.visibleCliente,
         },
         select: {
           id: true,

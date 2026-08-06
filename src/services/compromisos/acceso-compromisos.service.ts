@@ -16,6 +16,11 @@ const ROLES_SUPERVISION_GLOBAL: RolUsuario[] = [
   RolUsuario.ADMIN,
 ];
 
+const ROLES_CLIENTE: RolUsuario[] = [
+  RolUsuario.ADMIN_CLIENTE,
+  RolUsuario.USUARIO_CLIENTE,
+];
+
 function filtroResponsableActual(
   usuarioId: string
 ): Prisma.CompromisoWhereInput {
@@ -71,6 +76,33 @@ function exigirPerfilProfesional(
   return usuario.profesionalId;
 }
 
+function exigirEmpresaCliente(
+  usuario: UsuarioSesionEvaluacion
+): string {
+  if (!usuario.empresaId) {
+    throw new ErrorEvaluacion(
+      "Tu usuario cliente no tiene una empresa asociada.",
+      403,
+      "EMPRESA_CLIENTE_NO_ASOCIADA"
+    );
+  }
+
+  return usuario.empresaId;
+}
+
+function filtroParticipacionCliente(
+  usuario: UsuarioSesionEvaluacion
+): Prisma.CompromisoWhereInput {
+  return {
+    AND: [
+      {
+        empresaId: exigirEmpresaCliente(usuario),
+      },
+      filtroResponsableActual(usuario.usuarioId),
+    ],
+  };
+}
+
 export function construirAccesoListadoCompromisos(
   usuario: UsuarioSesionEvaluacion,
   alcance: AlcanceConsultaCompromisos
@@ -120,6 +152,18 @@ export function construirAccesoListadoCompromisos(
     );
   }
 
+  if (ROLES_CLIENTE.includes(usuario.rol)) {
+    if (alcance !== "MIS_COMPROMISOS") {
+      throw new ErrorEvaluacion(
+        "Los usuarios cliente solo pueden consultar los compromisos que tienen asignados.",
+        403,
+        "SUPERVISION_CLIENTE_NO_AUTORIZADA"
+      );
+    }
+
+    return filtroParticipacionCliente(usuario);
+  }
+
   throw new ErrorEvaluacion(
     "Tu rol no tiene acceso a la bandeja interna de compromisos.",
     403,
@@ -150,6 +194,10 @@ export function construirAccesoDetalleCompromiso(
     return filtroResponsableActual(
       usuario.usuarioId
     );
+  }
+
+  if (ROLES_CLIENTE.includes(usuario.rol)) {
+    return filtroParticipacionCliente(usuario);
   }
 
   throw new ErrorEvaluacion(

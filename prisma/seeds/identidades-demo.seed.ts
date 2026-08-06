@@ -118,6 +118,36 @@ export async function crearIdentidadesDemo(
       },
     });
 
+  const usuarioAdminCliente =
+    await tx.usuario.upsert({
+      where: {
+        correo:
+          CUENTAS_DEMO.adminCliente.correo,
+      },
+      update: {
+        nombre:
+          CUENTAS_DEMO.adminCliente.nombre,
+        contrasena:
+          contrasenas.adminCliente,
+        rol:
+          CUENTAS_DEMO.adminCliente.rol,
+        empresaId: empresa.id,
+        activo: true,
+      },
+      create: {
+        nombre:
+          CUENTAS_DEMO.adminCliente.nombre,
+        correo:
+          CUENTAS_DEMO.adminCliente.correo,
+        contrasena:
+          contrasenas.adminCliente,
+        rol:
+          CUENTAS_DEMO.adminCliente.rol,
+        empresaId: empresa.id,
+        activo: true,
+      },
+    });
+
   const profesionalCoordinador =
     await crearOActualizarProfesional(
       tx,
@@ -165,6 +195,7 @@ export async function crearIdentidadesDemo(
     superadmin,
     usuarioCoordinador,
     usuarioProfesional,
+    usuarioAdminCliente,
     profesionalCoordinador,
     profesionalEjecutor,
   };

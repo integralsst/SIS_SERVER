@@ -8,6 +8,7 @@ import {
 import {
   asegurarCompromisoEditable,
   asegurarParticipacionCompromiso,
+  esRolClienteCompromiso,
   obtenerCompromisoOperacion,
 } from "./acceso-operacion-compromisos.service";
 import { registrarHistorialCompromiso } from "./historial-compromiso.service";
@@ -64,7 +65,9 @@ export async function crearEvidenciaCompromiso(
           url: input.url,
           descripcion: input.descripcion,
           fechaDocumento,
-          visibleCliente: input.visibleCliente,
+          visibleCliente:
+            esRolClienteCompromiso(usuario.rol) ||
+            input.visibleCliente,
         },
         select: {
           id: true,

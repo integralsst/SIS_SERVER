@@ -21,6 +21,7 @@ Promise<ContrasenasDemoCifradas> {
     superadmin,
     coordinador,
     profesional,
+    adminCliente,
   ] = await Promise.all([
     bcrypt.hash(
       CUENTAS_DEMO.superadmin.contrasena,
@@ -34,12 +35,17 @@ Promise<ContrasenasDemoCifradas> {
       CUENTAS_DEMO.profesional.contrasena,
       12
     ),
+    bcrypt.hash(
+      CUENTAS_DEMO.adminCliente.contrasena,
+      12
+    ),
   ]);
 
   return {
     superadmin,
     coordinador,
     profesional,
+    adminCliente,
   };
 }
 
@@ -106,6 +112,13 @@ async function main(): Promise<void> {
         CUENTAS_DEMO.profesional.correo,
       contrasena:
         CUENTAS_DEMO.profesional.contrasena,
+    },
+    {
+      rol: "ADMIN_CLIENTE",
+      correo:
+        CUENTAS_DEMO.adminCliente.correo,
+      contrasena:
+        CUENTAS_DEMO.adminCliente.contrasena,
     },
   ]);
   console.log("");

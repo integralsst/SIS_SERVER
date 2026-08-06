@@ -51,10 +51,19 @@ export const CUENTAS_DEMO = {
     contrasena: "Stack44Demo2026!",
     rol: RolUsuario.PROFESIONAL,
   },
+  adminCliente: {
+    nombre: "Andrea Admin Cliente Demo",
+    correo:
+      "admin.cliente.demo@stack4four.com",
+    contrasena:
+      "Stack44Cliente2026!",
+    rol: RolUsuario.ADMIN_CLIENTE,
+  },
 } as const;
 
 export interface ContrasenasDemoCifradas {
   superadmin: string;
   coordinador: string;
   profesional: string;
+  adminCliente: string;
 }

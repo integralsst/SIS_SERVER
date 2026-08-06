@@ -12,67 +12,77 @@ import {
 
 const router = Router();
 
-const rolesBandejaInterna = [
+const rolesSupervision = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
   RolUsuario.COORDINADOR,
+];
+
+const rolesParticipacionInterna = [
+  ...rolesSupervision,
   RolUsuario.PROFESIONAL,
+];
+
+const rolesParticipacion = [
+  ...rolesParticipacionInterna,
+  RolUsuario.ADMIN_CLIENTE,
+  RolUsuario.USUARIO_CLIENTE,
 ];
 
 router.use(autenticar);
 
 router.get(
   "/",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorConsultaCompromisos.listar
 );
 
 router.get(
   "/:compromisoId",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorConsultaCompromisos.obtenerDetalle
 );
 
 router.post(
   "/:compromisoId/seguimientos",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorOperacionCompromisos.crearSeguimiento
 );
 
 router.patch(
   "/:compromisoId/actividades/:actividadId",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorOperacionCompromisos.cambiarActividad
 );
 
 router.post(
   "/:compromisoId/evidencias",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorOperacionCompromisos.crearEvidencia
 );
 
 router.post(
   "/:compromisoId/rechazar-asignacion",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacionInterna),
   controladorOperacionCompromisos.rechazarAsignacion
 );
 
 router.post(
   "/:compromisoId/reasignaciones",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesSupervision),
   controladorOperacionCompromisos.reasignar
 );
 
 router.post(
   "/:compromisoId/solicitudes-cierre",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesParticipacion),
   controladorOperacionCompromisos.solicitarCierre
 );
 
 router.post(
   "/:compromisoId/solicitudes-cierre/:solicitudId/decision",
-  autorizar(...rolesBandejaInterna),
+  autorizar(...rolesSupervision),
   controladorOperacionCompromisos.decidirCierre
 );
 
