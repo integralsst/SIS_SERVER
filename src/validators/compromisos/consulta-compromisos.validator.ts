@@ -157,8 +157,16 @@ export function normalizarConsultaCompromisos(
       primerValor(query.busqueda) || null,
     empresaId:
       primerValor(query.empresaId) || null,
+    empresa:
+      primerValor(query.empresa) || null,
     responsableId:
       primerValor(query.responsableId) || null,
+    responsable:
+      primerValor(query.responsable) || null,
+    proceso:
+      primerValor(query.proceso) || null,
+    aspecto:
+      primerValor(query.aspecto) || null,
     estado: normalizarEstado(query.estado),
     vencimiento: normalizarVencimiento(
       query.vencimiento
