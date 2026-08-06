@@ -18,6 +18,7 @@ import rutasUsuarios from "./routes/user.routes";
 import rutasProfesionales from "./routes/professional.routes";
 import rutasSupermatriz from "./routes/supermatriz.routes";
 import rutasEvaluacion from "./routes/evaluacion.routes";
+import rutasCompromisos from "./routes/compromisos.routes";
 
 const app = express();
 
@@ -120,6 +121,7 @@ app.get("/", (_req: Request, res: Response) => {
       profesionales: "/api/profesionales",
       supermatriz: "/api/supermatriz",
       evaluacion: "/api/evaluacion",
+      compromisos: "/api/compromisos",
     },
   });
 });
@@ -151,6 +153,7 @@ app.use("/api/usuarios", rutasUsuarios);
 app.use("/api/profesionales", rutasProfesionales);
 app.use("/api/supermatriz", rutasSupermatriz);
 app.use("/api/evaluacion", rutasEvaluacion);
+app.use("/api/compromisos", rutasCompromisos);
 
 // ======================================================
 // ALIAS TEMPORALES PARA EL FRONTEND ACTUAL
@@ -231,5 +234,8 @@ app.listen(PUERTO, "0.0.0.0", () => {
   );
   console.log(
     "Módulo Evaluación disponible en /api/evaluacion"
+  );
+  console.log(
+    "Módulo Compromisos disponible en /api/compromisos"
   );
 });
