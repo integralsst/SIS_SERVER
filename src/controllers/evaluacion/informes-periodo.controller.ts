@@ -13,7 +13,7 @@ import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 function obtenerAnio(req: Request): number {
   const value = Array.isArray(req.query.anio)
