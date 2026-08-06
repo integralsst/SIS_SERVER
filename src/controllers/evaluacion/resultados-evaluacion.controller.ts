@@ -13,7 +13,7 @@ import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 function obtenerGrupo(req: Request): FiltroGrupoResultados {
   const valor = Array.isArray(req.query.grupo)
