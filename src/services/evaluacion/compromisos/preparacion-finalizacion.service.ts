@@ -3,10 +3,7 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "../../../lib/prisma";
-import type {
-  EvaluacionPreparacionCompromiso,
-  UsuarioSesionEvaluacion,
-} from "../../../types/evaluacion/compromisos/finalizacion-gestion.types";
+import type { EvaluacionPreparacionCompromiso } from "../../../types/evaluacion/compromisos/finalizacion-gestion.types";
 import type { UsuarioSesionEvaluacion as SesionEvaluacion } from "../../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../../utils/evaluacion";
 import { validarCalificacionAdministrativa } from "../../../validators/evaluacion/calificacion-administrativa.validator";
