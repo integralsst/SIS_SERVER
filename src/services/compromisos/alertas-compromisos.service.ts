@@ -327,6 +327,7 @@ export const servicioAlertasCompromisos = {
               .anio
           ),
           compromiso: compromiso.id,
+          aspecto: compromiso.aspecto.nombre,
         });
 
         if (tareaId) {
