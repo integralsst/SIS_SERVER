@@ -27,6 +27,25 @@ export function construirFiltrosBaseCompromisos(
     });
   }
 
+  if (consulta.empresa) {
+    filtros.push({
+      empresa: {
+        OR: [
+          {
+            nombre: {
+              contains: consulta.empresa,
+            },
+          },
+          {
+            nit: {
+              contains: consulta.empresa,
+            },
+          },
+        ],
+      },
+    });
+  }
+
   if (consulta.responsableId) {
     filtros.push({
       responsables: {
@@ -35,6 +54,66 @@ export function construirFiltrosBaseCompromisos(
             consulta.responsableId,
           estado:
             EstadoAsignacionCompromiso.ASIGNADA,
+        },
+      },
+    });
+  }
+
+  if (consulta.responsable) {
+    filtros.push({
+      responsables: {
+        some: {
+          estado:
+            EstadoAsignacionCompromiso.ASIGNADA,
+          usuarioResponsable: {
+            OR: [
+              {
+                nombre: {
+                  contains:
+                    consulta.responsable,
+                },
+              },
+              {
+                correo: {
+                  contains:
+                    consulta.responsable,
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+  }
+
+  if (consulta.aspecto) {
+    filtros.push({
+      aspecto: {
+        OR: [
+          {
+            nombre: {
+              contains: consulta.aspecto,
+            },
+          },
+          {
+            codigo: {
+              contains: consulta.aspecto,
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  if (consulta.proceso) {
+    filtros.push({
+      evaluacionOrigen: {
+        supermatrizTarea: {
+          proceso: {
+            nombre: {
+              contains: consulta.proceso,
+            },
+          },
         },
       },
     });
@@ -71,6 +150,17 @@ export function construirFiltrosBaseCompromisos(
           empresa: {
             nit: {
               contains: consulta.busqueda,
+            },
+          },
+        },
+        {
+          evaluacionOrigen: {
+            supermatrizTarea: {
+              proceso: {
+                nombre: {
+                  contains: consulta.busqueda,
+                },
+              },
             },
           },
         },
