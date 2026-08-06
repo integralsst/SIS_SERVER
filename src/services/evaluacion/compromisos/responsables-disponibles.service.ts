@@ -23,7 +23,7 @@ const ROLES_CLIENTE_RESPONSABLES: RolUsuario[] = [
 ];
 
 export async function listarResponsablesDisponibles(
-  tx: Prisma.TransactionClient,
+  tx: Pick<Prisma.TransactionClient, "usuario">,
   empresaId: string
 ): Promise<ResponsableDisponibleCompromiso[]> {
   const ahora = new Date();
