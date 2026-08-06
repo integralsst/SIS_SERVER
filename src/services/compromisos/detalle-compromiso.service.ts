@@ -33,6 +33,17 @@ export async function obtenerDetalleCompromiso(
         evaluacionOrigen: {
           select: {
             id: true,
+            supermatrizTarea: {
+              select: {
+                proceso: {
+                  select: {
+                    id: true,
+                    codigo: true,
+                    nombre: true,
+                  },
+                },
+              },
+            },
             estadoCumplimiento: true,
             calificacionAdministrativa: true,
             observacion: true,
@@ -143,7 +154,11 @@ export async function obtenerDetalleCompromiso(
       limiteProximo
     ),
     evaluacionOrigen: {
-      ...compromiso.evaluacionOrigen,
+      id: compromiso.evaluacionOrigen.id,
+      estadoCumplimiento:
+        compromiso.evaluacionOrigen.estadoCumplimiento,
+      observacion:
+        compromiso.evaluacionOrigen.observacion,
       calificacionAdministrativa:
         compromiso.evaluacionOrigen.calificacionAdministrativa.toNumber(),
       createdAt:
