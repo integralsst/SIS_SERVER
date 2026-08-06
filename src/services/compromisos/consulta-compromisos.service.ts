@@ -8,8 +8,6 @@ import type {
   ConsultaCompromisosInput,
 } from "../../types/compromisos/consulta-compromisos.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
-import { ErrorEvaluacion } from "../../utils/evaluacion";
-import { construirAccesoDetalleCompromiso } from "./acceso-compromisos.service";
 import {
   ESTADOS_COMPROMISO_ABIERTOS,
   construirFiltroVencimiento,
@@ -19,6 +17,7 @@ import {
   construirFiltroEstadoCompromiso,
   construirFiltrosBaseCompromisos,
 } from "./filtros-consulta-compromisos.service";
+import { obtenerDetalleCompromiso } from "./detalle-compromiso.service";
 import {
   seleccionCompromisoListado,
   serializarCompromisoListado,
@@ -104,272 +103,94 @@ async function calcularResumen(
   };
 }
 
-export const servicioConsultaCompromisos = {
-  listar: async (
-    consulta: ConsultaCompromisosInput,
-    usuario: UsuarioSesionEvaluacion
-  ) => {
-    const {
-      hoy,
-      limiteProximo,
-    } = obtenerVentanaVencimiento();
+async function listarCompromisos(
+  consulta: ConsultaCompromisosInput,
+  usuario: UsuarioSesionEvaluacion
+) {
+  const {
+    hoy,
+    limiteProximo,
+  } = obtenerVentanaVencimiento();
 
-    const filtrosBase =
-      construirFiltrosBaseCompromisos(
-        consulta,
-        usuario
-      );
+  const filtrosBase =
+    construirFiltrosBaseCompromisos(
+      consulta,
+      usuario
+    );
 
-    const whereListado: Prisma.CompromisoWhereInput =
-      {
-        AND: [
-          filtrosBase,
-          construirFiltroEstadoCompromiso(
-            consulta
-          ),
-          construirFiltroVencimiento(
-            consulta.vencimiento,
-            hoy,
-            limiteProximo
-          ),
-        ],
-      };
-
-    const [
-      compromisos,
-      totalFiltrado,
-      resumen,
-    ] = await Promise.all([
-      prisma.compromiso.findMany({
-        where: whereListado,
-        select: seleccionCompromisoListado,
-        orderBy: [
-          {
-            fechaLimite: "asc",
-          },
-          {
-            createdAt: "desc",
-          },
-        ],
-        skip:
-          (consulta.pagina - 1) *
-          consulta.limite,
-        take: consulta.limite,
-      }),
-      prisma.compromiso.count({
-        where: whereListado,
-      }),
-      calcularResumen(
+  const whereListado: Prisma.CompromisoWhereInput =
+    {
+      AND: [
         filtrosBase,
-        hoy,
-        limiteProximo
-      ),
-    ]);
-
-    return {
-      alcance: consulta.alcance,
-      resumen,
-      paginacion: {
-        pagina: consulta.pagina,
-        limite: consulta.limite,
-        total: totalFiltrado,
-        totalPaginas: Math.max(
-          1,
-          Math.ceil(
-            totalFiltrado / consulta.limite
-          )
+        construirFiltroEstadoCompromiso(
+          consulta
         ),
-      },
-      compromisos: compromisos.map(
-        (compromiso) =>
-          serializarCompromisoListado(
-            compromiso,
-            hoy,
-            limiteProximo
-          )
-      ),
+        construirFiltroVencimiento(
+          consulta.vencimiento,
+          hoy,
+          limiteProximo
+        ),
+      ],
     };
-  },
 
-  obtenerDetalle: async (
-    compromisoId: string,
-    usuario: UsuarioSesionEvaluacion
-  ) => {
-    const compromiso =
-      await prisma.compromiso.findFirst({
-        where: {
-          AND: [
-            {
-              id: compromisoId,
-            },
-            construirAccesoDetalleCompromiso(
-              usuario
-            ),
-          ],
+  const [
+    compromisos,
+    totalFiltrado,
+    resumen,
+  ] = await Promise.all([
+    prisma.compromiso.findMany({
+      where: whereListado,
+      select: seleccionCompromisoListado,
+      orderBy: [
+        {
+          fechaLimite: "asc",
         },
-        select: {
-          ...seleccionCompromisoListado,
-          evaluacionOrigen: {
-            select: {
-              id: true,
-              estadoCumplimiento: true,
-              calificacionAdministrativa: true,
-              observacion: true,
-              createdAt: true,
-            },
-          },
-          evaluacionesSeguimiento: {
-            select: {
-              createdAt: true,
-              evaluacion: {
-                select: {
-                  id: true,
-                  estadoCumplimiento: true,
-                  calificacionAdministrativa: true,
-                  observacion: true,
-                  createdAt: true,
-                },
-              },
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-          seguimientos: {
-            select: {
-              id: true,
-              fechaSeguimiento: true,
-              descripcion: true,
-              origen: true,
-              visibleCliente: true,
-              usuario: {
-                select: {
-                  id: true,
-                  nombre: true,
-                  rol: true,
-                },
-              },
-            },
-            orderBy: {
-              fechaSeguimiento: "desc",
-            },
-            take: 50,
-          },
-          evidencias: {
-            where: {
-              activa: true,
-            },
-            select: {
-              id: true,
-              nombre: true,
-              url: true,
-              descripcion: true,
-              fechaDocumento: true,
-              visibleCliente: true,
-              createdAt: true,
-              creadoPor: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-          historial: {
-            select: {
-              id: true,
-              entidadTipo: true,
-              entidadId: true,
-              accion: true,
-              descripcion: true,
-              createdAt: true,
-              usuario: {
-                select: {
-                  id: true,
-                  nombre: true,
-                  rol: true,
-                },
-              },
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-            take: 50,
-          },
+        {
+          createdAt: "desc",
         },
-      });
-
-    if (!compromiso) {
-      throw new ErrorEvaluacion(
-        "El compromiso no existe o no está dentro de tu alcance.",
-        404,
-        "COMPROMISO_NO_ENCONTRADO"
-      );
-    }
-
-    const {
+      ],
+      skip:
+        (consulta.pagina - 1) *
+        consulta.limite,
+      take: consulta.limite,
+    }),
+    prisma.compromiso.count({
+      where: whereListado,
+    }),
+    calcularResumen(
+      filtrosBase,
       hoy,
-      limiteProximo,
-    } = obtenerVentanaVencimiento();
+      limiteProximo
+    ),
+  ]);
 
-    return {
-      ...serializarCompromisoListado(
-        compromiso,
-        hoy,
-        limiteProximo
+  return {
+    alcance: consulta.alcance,
+    resumen,
+    paginacion: {
+      pagina: consulta.pagina,
+      limite: consulta.limite,
+      total: totalFiltrado,
+      totalPaginas: Math.max(
+        1,
+        Math.ceil(
+          totalFiltrado / consulta.limite
+        )
       ),
-      evaluacionOrigen: {
-        ...compromiso.evaluacionOrigen,
-        calificacionAdministrativa:
-          compromiso.evaluacionOrigen.calificacionAdministrativa.toNumber(),
-        createdAt:
-          compromiso.evaluacionOrigen.createdAt.toISOString(),
-      },
-      evaluacionesSeguimiento:
-        compromiso.evaluacionesSeguimiento.map(
-          (seguimiento) => ({
-            ...seguimiento,
-            createdAt:
-              seguimiento.createdAt.toISOString(),
-            evaluacion: {
-              ...seguimiento.evaluacion,
-              calificacionAdministrativa:
-                seguimiento.evaluacion.calificacionAdministrativa.toNumber(),
-              createdAt:
-                seguimiento.evaluacion.createdAt.toISOString(),
-            },
-          })
-        ),
-      seguimientos:
-        compromiso.seguimientos.map(
-          (seguimiento) => ({
-            ...seguimiento,
-            fechaSeguimiento:
-              seguimiento.fechaSeguimiento.toISOString(),
-          })
-        ),
-      evidencias:
-        compromiso.evidencias.map(
-          (evidencia) => ({
-            ...evidencia,
-            fechaDocumento:
-              evidencia.fechaDocumento?.toISOString() ??
-              null,
-            createdAt:
-              evidencia.createdAt.toISOString(),
-          })
-        ),
-      historial:
-        compromiso.historial.map(
-          (registro) => ({
-            ...registro,
-            createdAt:
-              registro.createdAt.toISOString(),
-          })
-        ),
-    };
-  },
+    },
+    compromisos: compromisos.map(
+      (compromiso) =>
+        serializarCompromisoListado(
+          compromiso,
+          hoy,
+          limiteProximo
+        )
+    ),
+  };
+}
+
+export const servicioConsultaCompromisos = {
+  listar: listarCompromisos,
+  obtenerDetalle:
+    obtenerDetalleCompromiso,
 };
