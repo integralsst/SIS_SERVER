@@ -23,7 +23,11 @@ export interface ConsultaCompromisosInput {
   limite: number;
   busqueda: string | null;
   empresaId: string | null;
+  empresa: string | null;
   responsableId: string | null;
+  responsable: string | null;
+  proceso: string | null;
+  aspecto: string | null;
   estado: FiltroEstadoCompromiso | null;
   vencimiento: FiltroVencimientoCompromiso;
 }
