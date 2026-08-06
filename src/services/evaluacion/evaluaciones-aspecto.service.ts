@@ -17,6 +17,7 @@ import {
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
 import { calcularFechaVencimientoEvaluacion } from "../../utils/vigencia-evaluacion";
+import { validarCalificacionAdministrativa } from "../../validators/evaluacion/calificacion-administrativa.validator";
 import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
 
 async function guardarUnaEvaluacion(
@@ -25,16 +26,6 @@ async function guardarUnaEvaluacion(
   input: GuardarEvaluacionesLoteInput["evaluaciones"][number],
   usuario: UsuarioSesionEvaluacion
 ) {
-  if (
-    !Number.isFinite(input.calificacionAdministrativa) ||
-    input.calificacionAdministrativa < 0 ||
-    input.calificacionAdministrativa > 5
-  ) {
-    throw new ErrorEvaluacion(
-      "La calificación administrativa debe estar entre 0 y 5."
-    );
-  }
-
   const contexto = await tx.aspecto.findFirst({
     where: {
       id: input.aspectoId,
@@ -143,10 +134,13 @@ async function guardarUnaEvaluacion(
   );
 
   const calificacionAdministrativa =
-    input.estadoCumplimiento ===
-    EstadoCumplimientoAspecto.NO_APLICA
-      ? 5
-      : input.calificacionAdministrativa;
+    validarCalificacionAdministrativa(
+      input.estadoCumplimiento,
+      input.estadoCumplimiento ===
+        EstadoCumplimientoAspecto.NO_APLICA
+        ? 5
+        : input.calificacionAdministrativa
+    );
 
   const fechaVencimientoCalculada =
     calcularFechaVencimientoEvaluacion(
