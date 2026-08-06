@@ -28,71 +28,47 @@ async function calcularResumen(
   hoy: Date,
   limiteProximo: Date
 ) {
-  const [
-    total,
-    abiertos,
-    vencidos,
-    proximos,
-    cumplidos,
-  ] = await prisma.$transaction([
-    prisma.compromiso.count({
-      where: filtrosBase,
-    }),
-    prisma.compromiso.count({
-      where: {
-        AND: [
-          filtrosBase,
-          {
-            estado: {
-              in: ESTADOS_COMPROMISO_ABIERTOS,
-            },
-          },
-        ],
-      },
-    }),
-    prisma.compromiso.count({
-      where: {
-        AND: [
-          filtrosBase,
-          {
-            estado: {
-              in: ESTADOS_COMPROMISO_ABIERTOS,
-            },
-            fechaLimite: {
-              lt: hoy,
-            },
-          },
-        ],
-      },
-    }),
-    prisma.compromiso.count({
-      where: {
-        AND: [
-          filtrosBase,
-          {
-            estado: {
-              in: ESTADOS_COMPROMISO_ABIERTOS,
-            },
-            fechaLimite: {
-              gte: hoy,
-              lte: limiteProximo,
-            },
-          },
-        ],
-      },
-    }),
-    prisma.compromiso.count({
-      where: {
-        AND: [
-          filtrosBase,
-          {
-            estado:
-              EstadoCompromiso.CUMPLIDO,
-          },
-        ],
-      },
-    }),
-  ]);
+  const grupos = await prisma.compromiso.groupBy({
+    by: ["estado", "fechaLimite"],
+    where: filtrosBase,
+    _count: {
+      _all: true,
+    },
+  });
+
+  let total = 0;
+  let abiertos = 0;
+  let vencidos = 0;
+  let proximos = 0;
+  let cumplidos = 0;
+
+  for (const grupo of grupos) {
+    const cantidad = grupo._count._all;
+    const abierto =
+      ESTADOS_COMPROMISO_ABIERTOS.includes(
+        grupo.estado
+      );
+
+    total += cantidad;
+
+    if (abierto) {
+      abiertos += cantidad;
+
+      if (grupo.fechaLimite < hoy) {
+        vencidos += cantidad;
+      } else if (
+        grupo.fechaLimite <= limiteProximo
+      ) {
+        proximos += cantidad;
+      }
+    }
+
+    if (
+      grupo.estado === EstadoCompromiso.CUMPLIDO
+    ) {
+      cumplidos += cantidad;
+    }
+  }
 
   return {
     total,

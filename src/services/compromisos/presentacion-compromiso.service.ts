@@ -60,6 +60,10 @@ export const seleccionCompromisoListado = {
       id: true,
       tipo: true,
       estado: true,
+      asignadoEn: true,
+      rechazadoEn: true,
+      motivoRechazo: true,
+      reemplazaAId: true,
       usuarioResponsable: {
         select: {
           id: true,

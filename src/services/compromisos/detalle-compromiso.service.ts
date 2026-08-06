@@ -1,4 +1,5 @@
 import {
+  EstadoAsignacionCompromiso,
   Prisma,
 } from "@prisma/client";
 
@@ -11,6 +12,9 @@ import {
   seleccionCompromisoListado,
   serializarCompromisoListado,
 } from "./presentacion-compromiso.service";
+import { obtenerProgresoCompromiso } from "./cierre-compromiso.service";
+import { esRolSupervisorCompromiso } from "./acceso-operacion-compromisos.service";
+import { listarResponsablesDisponibles } from "../evaluacion/compromisos/responsables-disponibles.service";
 
 export async function obtenerDetalleCompromiso(
   compromisoId: string,
@@ -30,6 +34,36 @@ export async function obtenerDetalleCompromiso(
       },
       select: {
         ...seleccionCompromisoListado,
+        responsables: {
+          select: {
+            id: true,
+            tipo: true,
+            estado: true,
+            asignadoEn: true,
+            rechazadoEn: true,
+            motivoRechazo: true,
+            reemplazaAId: true,
+            usuarioResponsable: {
+              select: {
+                id: true,
+                nombre: true,
+                correo: true,
+                rol: true,
+              },
+            },
+            actividad: {
+              select: {
+                id: true,
+                descripcion: true,
+                estado: true,
+                atendidaEn: true,
+              },
+            },
+          },
+          orderBy: {
+            asignadoEn: "asc",
+          },
+        },
         evaluacionOrigen: {
           select: {
             id: true,
@@ -74,6 +108,7 @@ export async function obtenerDetalleCompromiso(
             descripcion: true,
             origen: true,
             visibleCliente: true,
+            actividadId: true,
             usuario: {
               select: {
                 id: true,
@@ -131,6 +166,41 @@ export async function obtenerDetalleCompromiso(
           },
           take: 50,
         },
+        solicitudesCierre: {
+          select: {
+            id: true,
+            numeroIntento: true,
+            estado: true,
+            solicitadaEn: true,
+            decididaEn: true,
+            mensajeCierre: true,
+            observacionesDevolucion: true,
+            solicitadaPor: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+            decididaPor: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+            evaluacionRecalificacion: {
+              select: {
+                id: true,
+                calificacionAdministrativa: true,
+                estadoCumplimiento: true,
+                createdAt: true,
+                usuarioRegistradorId: true,
+              },
+            },
+          },
+          orderBy: {
+            numeroIntento: "desc",
+          },
+        },
       },
     });
 
@@ -146,6 +216,45 @@ export async function obtenerDetalleCompromiso(
     hoy,
     limiteProximo,
   } = obtenerVentanaVencimiento();
+
+  const progreso = await obtenerProgresoCompromiso(
+    compromisoId
+  );
+  const supervisor =
+    esRolSupervisorCompromiso(usuario.rol);
+  const asignacionActiva = compromiso.responsables.find(
+    (responsable) =>
+      responsable.estado ===
+        EstadoAsignacionCompromiso.ASIGNADA &&
+      responsable.usuarioResponsable.id ===
+        usuario.usuarioId
+  );
+  const solicitudPendiente =
+    compromiso.solicitudesCierre.find(
+      (solicitud) =>
+        solicitud.estado === "PENDIENTE"
+    ) ?? null;
+  const estadoEditable = [
+    "EN_EJECUCION",
+    "PENDIENTE_DE_REASIGNACION",
+  ].includes(compromiso.estado);
+  const puedeDecidirCierre = Boolean(
+    supervisor &&
+      compromiso.estado ===
+        "SOLICITUD_DE_CIERRE" &&
+      solicitudPendiente &&
+      solicitudPendiente.solicitadaPor.id !==
+        usuario.usuarioId &&
+      solicitudPendiente.evaluacionRecalificacion
+        .usuarioRegistradorId !== usuario.usuarioId
+  );
+
+  const responsablesDisponibles = supervisor
+    ? await listarResponsablesDisponibles(
+        prisma,
+        compromiso.empresa.id
+      )
+    : [];
 
   return {
     ...serializarCompromisoListado(
@@ -206,5 +315,59 @@ export async function obtenerDetalleCompromiso(
             registro.createdAt.toISOString(),
         })
       ),
+    solicitudesCierre:
+      compromiso.solicitudesCierre.map(
+        (solicitud) => ({
+          ...solicitud,
+          solicitadaEn:
+            solicitud.solicitadaEn.toISOString(),
+          decididaEn:
+            solicitud.decididaEn?.toISOString() ??
+            null,
+          evaluacionRecalificacion: {
+            id: solicitud.evaluacionRecalificacion.id,
+            calificacionAdministrativa:
+              solicitud.evaluacionRecalificacion.calificacionAdministrativa.toNumber(),
+            estadoCumplimiento:
+              solicitud.evaluacionRecalificacion.estadoCumplimiento,
+            createdAt:
+              solicitud.evaluacionRecalificacion.createdAt.toISOString(),
+          },
+        })
+      ),
+    progreso,
+    operacion: {
+      puedeRegistrarSeguimiento:
+        estadoEditable &&
+        Boolean(supervisor || asignacionActiva),
+      puedeCargarEvidencia:
+        estadoEditable &&
+        Boolean(supervisor || asignacionActiva),
+      puedeGestionarActividades:
+        compromiso.estado === "EN_EJECUCION" &&
+        Boolean(supervisor || asignacionActiva),
+      puedeRechazarAsignacion:
+        compromiso.estado === "EN_EJECUCION" &&
+        Boolean(asignacionActiva),
+      puedeReasignar:
+        supervisor &&
+        compromiso.estado ===
+          "PENDIENTE_DE_REASIGNACION",
+      puedeSolicitarCierre:
+        compromiso.estado === "EN_EJECUCION" &&
+        Boolean(supervisor || asignacionActiva) &&
+        progreso.listoParaSolicitarCierre,
+      puedeDecidirCierre,
+      esSupervisor: supervisor,
+      usuarioId: usuario.usuarioId,
+      motivoBloqueoCierre: progreso.listoParaSolicitarCierre
+        ? null
+        : progreso.actividadesPendientes > 0
+          ? "Todavía hay actividades pendientes."
+          : !progreso.aspectoRecalificadoEnCinco
+            ? "El aspecto debe ser recalificado en 5 en una evaluación posterior."
+            : "El compromiso todavía no reúne los requisitos de cierre.",
+    },
+    responsablesDisponibles,
   };
 }
