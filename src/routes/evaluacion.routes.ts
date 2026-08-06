@@ -3,6 +3,7 @@ import { Router } from "express";
 
 import { controladorContextoEvaluacion } from "../controllers/evaluacion/contexto-evaluacion.controller";
 import { controladorDetalleAspecto } from "../controllers/evaluacion/detalle-aspecto.controller";
+import { controladorFinalizacionGestion } from "../controllers/evaluacion/compromisos/finalizacion-gestion.controller";
 import { controladorEvidenciasEvaluacion } from "../controllers/evaluacion/evidencias-evaluacion.controller";
 import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evaluaciones-aspecto.controller";
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
@@ -23,6 +24,7 @@ const rolesLectura = [
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
   RolUsuario.PROFESIONAL,
+  RolUsuario.COORDINADOR,
   RolUsuario.ADMIN_CLIENTE,
   RolUsuario.USUARIO_CLIENTE,
 ];
@@ -32,6 +34,7 @@ const rolesEvaluacion = [
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
   RolUsuario.PROFESIONAL,
+  RolUsuario.COORDINADOR,
 ];
 
 const rolesInvalidacion = [
@@ -45,6 +48,7 @@ const rolesRevisionLectura = [
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
   RolUsuario.PROFESIONAL,
+  RolUsuario.COORDINADOR,
 ];
 
 const rolesRevisionResolucion = [
@@ -172,10 +176,16 @@ router.post(
   controladorGestionesSgsst.crear
 );
 
+router.get(
+  "/gestiones/:gestionId/preparacion-finalizacion",
+  autorizar(...rolesEvaluacion),
+  controladorFinalizacionGestion.preparar
+);
+
 router.post(
   "/gestiones/:gestionId/finalizar",
   autorizar(...rolesEvaluacion),
-  controladorGestionesSgsst.finalizar
+  controladorFinalizacionGestion.finalizar
 );
 
 router.post(
