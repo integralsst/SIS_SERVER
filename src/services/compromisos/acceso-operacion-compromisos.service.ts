@@ -16,6 +16,11 @@ const ROLES_SUPERVISION: RolUsuario[] = [
   RolUsuario.COORDINADOR,
 ];
 
+const ROLES_CLIENTE: RolUsuario[] = [
+  RolUsuario.ADMIN_CLIENTE,
+  RolUsuario.USUARIO_CLIENTE,
+];
+
 const ESTADOS_EDITABLES: EstadoCompromiso[] = [
   EstadoCompromiso.EN_EJECUCION,
   EstadoCompromiso.PENDIENTE_DE_REASIGNACION,
@@ -25,6 +30,12 @@ export function esRolSupervisorCompromiso(
   rol: RolUsuario
 ): boolean {
   return ROLES_SUPERVISION.includes(rol);
+}
+
+export function esRolClienteCompromiso(
+  rol: RolUsuario
+): boolean {
+  return ROLES_CLIENTE.includes(rol);
 }
 
 export async function obtenerCompromisoOperacion(
@@ -90,7 +101,10 @@ export async function asegurarParticipacionCompromiso(
     return;
   }
 
-  if (usuario.rol !== RolUsuario.PROFESIONAL) {
+  if (
+    usuario.rol !== RolUsuario.PROFESIONAL &&
+    !esRolClienteCompromiso(usuario.rol)
+  ) {
     throw new ErrorEvaluacion(
       "Tu rol no puede gestionar este compromiso.",
       403,
@@ -101,7 +115,9 @@ export async function asegurarParticipacionCompromiso(
   await asegurarAccesoEmpresa(
     usuario,
     compromiso.empresaId,
-    "ESCRITURA"
+    esRolClienteCompromiso(usuario.rol)
+      ? "LECTURA"
+      : "ESCRITURA"
   );
 
   const asignacion =
