@@ -1,6 +1,7 @@
 import {
   EstadoAsignacionCompromiso,
   Prisma,
+  RolUsuario,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -16,10 +17,18 @@ import { obtenerProgresoCompromiso } from "./cierre-compromiso.service";
 import { esRolSupervisorCompromiso } from "./acceso-operacion-compromisos.service";
 import { listarResponsablesDisponibles } from "../evaluacion/compromisos/responsables-disponibles.service";
 
+const ROLES_CLIENTE_DETALLE: RolUsuario[] = [
+  RolUsuario.ADMIN_CLIENTE,
+  RolUsuario.USUARIO_CLIENTE,
+];
+
 export async function obtenerDetalleCompromiso(
   compromisoId: string,
   usuario: UsuarioSesionEvaluacion
 ) {
+  const esUsuarioCliente =
+    ROLES_CLIENTE_DETALLE.includes(usuario.rol);
+
   const compromiso =
     await prisma.compromiso.findFirst({
       where: {
@@ -102,6 +111,18 @@ export async function obtenerDetalleCompromiso(
           },
         },
         seguimientos: {
+          where: esUsuarioCliente
+            ? {
+                OR: [
+                  {
+                    visibleCliente: true,
+                  },
+                  {
+                    usuarioId: usuario.usuarioId,
+                  },
+                ],
+              }
+            : undefined,
           select: {
             id: true,
             fechaSeguimiento: true,
@@ -125,6 +146,19 @@ export async function obtenerDetalleCompromiso(
         evidencias: {
           where: {
             activa: true,
+            ...(esUsuarioCliente
+              ? {
+                  OR: [
+                    {
+                      visibleCliente: true,
+                    },
+                    {
+                      creadoPorUsuarioId:
+                        usuario.usuarioId,
+                    },
+                  ],
+                }
+              : {}),
           },
           select: {
             id: true,
@@ -146,6 +180,11 @@ export async function obtenerDetalleCompromiso(
           },
         },
         historial: {
+          where: esUsuarioCliente
+            ? {
+                usuarioId: usuario.usuarioId,
+              }
+            : undefined,
           select: {
             id: true,
             entidadTipo: true,
@@ -348,6 +387,7 @@ export async function obtenerDetalleCompromiso(
         Boolean(supervisor || asignacionActiva),
       puedeRechazarAsignacion:
         compromiso.estado === "EN_EJECUCION" &&
+        !esUsuarioCliente &&
         Boolean(asignacionActiva),
       puedeReasignar:
         supervisor &&
@@ -359,6 +399,7 @@ export async function obtenerDetalleCompromiso(
         progreso.listoParaSolicitarCierre,
       puedeDecidirCierre,
       esSupervisor: supervisor,
+      esUsuarioCliente,
       usuarioId: usuario.usuarioId,
       motivoBloqueoCierre: progreso.listoParaSolicitarCierre
         ? null
