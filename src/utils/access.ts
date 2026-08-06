@@ -21,6 +21,7 @@ const NIVEL_ROL: Record<RolUsuario, number> = {
   [RolUsuario.USUARIO]: 10,
   [RolUsuario.USUARIO_CLIENTE]: 10,
   [RolUsuario.PROFESIONAL]: 20,
+  [RolUsuario.COORDINADOR]: 30,
   [RolUsuario.ADMIN_CLIENTE]: 30,
   [RolUsuario.ADMIN]: 40,
   [RolUsuario.PROPIETARIO]: 50,

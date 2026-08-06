@@ -190,6 +190,8 @@ function rolAnterior(
       "CLIENT_ADMIN",
     [RolUsuario.PROFESIONAL]:
       "PROFESSIONAL",
+    [RolUsuario.COORDINADOR]:
+      "PROFESSIONAL",
     [RolUsuario.ADMIN]: "ADMIN",
     [RolUsuario.PROPIETARIO]:
       "OWNER",
