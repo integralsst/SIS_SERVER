@@ -36,6 +36,21 @@ export const seleccionCompromisoListado = {
       tipoActividad: true,
     },
   },
+  evaluacionOrigen: {
+    select: {
+      supermatrizTarea: {
+        select: {
+          proceso: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+            },
+          },
+        },
+      },
+    },
+  },
   responsables: {
     where: {
       estado:
@@ -88,8 +103,16 @@ export function serializarCompromisoListado(
     return primero.tipo === "PRINCIPAL" ? -1 : 1;
   });
 
+  const {
+    evaluacionOrigen,
+    ...datos
+  } = compromiso;
+
   return {
-    ...compromiso,
+    ...datos,
+    proceso:
+      evaluacionOrigen.supermatrizTarea
+        ?.proceso ?? null,
     fechaLimite:
       compromiso.fechaLimite.toISOString(),
     createdAt: compromiso.createdAt.toISOString(),
