@@ -316,6 +316,325 @@ async function resolverTareaMinima(
   return tarea;
 }
 
+const ACCIONES_HISTORIAL_VISIBLES_CLIENTE = [
+  "CREAR_COMPROMISO",
+  "ACTUALIZAR_ACTIVIDAD",
+  "SOLICITAR_CIERRE",
+  "DEVOLVER_CIERRE",
+  "APROBAR_CIERRE",
+];
+
+async function obtenerCompromisosHistorialAspecto(
+  empresaId: string,
+  tarea: {
+    aspectoId: number;
+    aspecto: {
+      codigo: string | null;
+      nombre: string;
+    };
+  },
+  usuario: UsuarioSesionEvaluacion,
+  esCliente: boolean
+) {
+  const compromisos = await prisma.compromiso.findMany({
+    where: {
+      empresaId,
+      ...(tarea.aspecto.codigo
+        ? {
+            OR: [
+              {
+                aspectoCodigo:
+                  tarea.aspecto.codigo,
+              },
+              {
+                aspecto: {
+                  codigo: tarea.aspecto.codigo,
+                },
+              },
+            ],
+          }
+        : {
+            aspectoId: tarea.aspectoId,
+          }),
+      ...(esCliente
+        ? {
+            responsables: {
+              some: {
+                usuarioResponsableId:
+                  usuario.usuarioId,
+              },
+            },
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      descripcion: true,
+      fechaLimite: true,
+      estado: true,
+      cerradoEn: true,
+      createdAt: true,
+      evaluacionOrigen: {
+        select: {
+          estadoCumplimiento: true,
+          calificacionAdministrativa: true,
+        },
+      },
+      gestionOrigen: {
+        select: {
+          fechaGestion: true,
+          empresaPeriodo: {
+            select: {
+              anio: true,
+            },
+          },
+        },
+      },
+      creadoPor: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+      responsables: {
+        select: {
+          id: true,
+          tipo: true,
+          estado: true,
+          usuarioResponsable: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          actividad: {
+            select: {
+              id: true,
+              descripcion: true,
+              estado: true,
+              atendidaEn: true,
+            },
+          },
+        },
+        orderBy: {
+          asignadoEn: "asc",
+        },
+      },
+      evaluacionesSeguimiento: {
+        select: {
+          createdAt: true,
+          evaluacion: {
+            select: {
+              id: true,
+              estadoCumplimiento: true,
+              calificacionAdministrativa: true,
+              observacion: true,
+              createdAt: true,
+              usuarioRegistrador: {
+                select: {
+                  id: true,
+                  nombre: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      solicitudesCierre: {
+        select: {
+          id: true,
+          numeroIntento: true,
+          estado: true,
+          solicitadaEn: true,
+          decididaEn: true,
+          mensajeCierre: true,
+          observacionesDevolucion: true,
+          solicitadaPor: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+          decididaPor: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+        },
+        orderBy: {
+          numeroIntento: "asc",
+        },
+      },
+      historial: {
+        where: esCliente
+          ? {
+              OR: [
+                {
+                  usuarioId: usuario.usuarioId,
+                },
+                {
+                  accion: {
+                    in: ACCIONES_HISTORIAL_VISIBLES_CLIENTE,
+                  },
+                },
+              ],
+            }
+          : undefined,
+        select: {
+          id: true,
+          accion: true,
+          descripcion: true,
+          createdAt: true,
+          usuario: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+        take: 100,
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    take: 20,
+  });
+
+  return compromisos.map((compromiso) => {
+    const responsablesActivos =
+      compromiso.responsables.filter(
+        (responsable) =>
+          responsable.estado === "ASIGNADA"
+      );
+    const actividades =
+      responsablesActivos.flatMap((responsable) =>
+        responsable.actividad
+          ? [
+              {
+                ...responsable.actividad,
+                tipoResponsable: responsable.tipo,
+                responsable:
+                  responsable.usuarioResponsable,
+                atendidaEn: serializarFecha(
+                  responsable.actividad.atendidaEn
+                ),
+              },
+            ]
+          : []
+      );
+    const recalificaciones =
+      compromiso.evaluacionesSeguimiento.map(
+        (seguimiento) => ({
+          id: seguimiento.evaluacion.id,
+          estadoCumplimiento:
+            seguimiento.evaluacion
+              .estadoCumplimiento,
+          calificacionAdministrativa:
+            seguimiento.evaluacion
+              .calificacionAdministrativa.toNumber(),
+          observacion:
+            seguimiento.evaluacion.observacion,
+          createdAt:
+            seguimiento.evaluacion.createdAt.toISOString(),
+          usuario:
+            seguimiento.evaluacion
+              .usuarioRegistrador,
+        })
+      );
+    const eventos = [
+      ...compromiso.historial.map(
+        (registro) => ({
+          id: registro.id,
+          tipo: "HISTORIAL" as const,
+          accion: registro.accion,
+          descripcion:
+            registro.descripcion ??
+            "Movimiento registrado en el compromiso.",
+          createdAt:
+            registro.createdAt.toISOString(),
+          usuario: registro.usuario,
+          calificacion: null as number | null,
+        })
+      ),
+      ...recalificaciones.map(
+        (recalificacion) => ({
+          id: `RECALIFICACION:${recalificacion.id}`,
+          tipo: "RECALIFICACION" as const,
+          accion: "RECALIFICAR_ASPECTO",
+          descripcion: `El aspecto fue recalificado en ${recalificacion.calificacionAdministrativa} (${recalificacion.estadoCumplimiento.replaceAll(
+            "_",
+            " "
+          )}).`,
+          createdAt: recalificacion.createdAt,
+          usuario: recalificacion.usuario,
+          calificacion:
+            recalificacion.calificacionAdministrativa,
+        })
+      ),
+    ].sort((primero, segundo) =>
+      primero.createdAt.localeCompare(
+        segundo.createdAt
+      )
+    );
+
+    return {
+      id: compromiso.id,
+      descripcion: compromiso.descripcion,
+      estado: compromiso.estado,
+      fechaLimite:
+        compromiso.fechaLimite.toISOString(),
+      creadoEn: compromiso.createdAt.toISOString(),
+      cerradoEn: serializarFecha(
+        compromiso.cerradoEn
+      ),
+      creadoPor: compromiso.creadoPor,
+      gestionOrigen: {
+        fechaGestion:
+          compromiso.gestionOrigen.fechaGestion.toISOString(),
+        anio:
+          compromiso.gestionOrigen.empresaPeriodo.anio,
+      },
+      evaluacionOrigen: {
+        estadoCumplimiento:
+          compromiso.evaluacionOrigen
+            .estadoCumplimiento,
+        calificacionAdministrativa:
+          compromiso.evaluacionOrigen
+            .calificacionAdministrativa.toNumber(),
+      },
+      actividades,
+      progreso: {
+        total: actividades.length,
+        atendidas: actividades.filter(
+          (actividad) =>
+            actividad.estado === "ATENDIDA"
+        ).length,
+      },
+      recalificaciones,
+      solicitudesCierre:
+        compromiso.solicitudesCierre.map(
+          (solicitud) => ({
+            ...solicitud,
+            solicitadaEn:
+              solicitud.solicitadaEn.toISOString(),
+            decididaEn: serializarFecha(
+              solicitud.decididaEn
+            ),
+          })
+        ),
+      eventos,
+    };
+  });
+}
+
 function limpiarCacheVencida(): void {
   const ahora = Date.now();
 
@@ -667,6 +986,15 @@ export const servicioDetalleAspectoRapido = {
       periodo.versionSupermatrizId
     );
     const esCliente = usuarioEsCliente(usuario);
+    const compromisos =
+      paginaValida === 1
+        ? await obtenerCompromisosHistorialAspecto(
+            empresaId,
+            tarea,
+            usuario,
+            esCliente
+          )
+        : [];
 
     const registros =
       await prisma.evaluacionAspecto.findMany({
@@ -801,6 +1129,7 @@ export const servicioDetalleAspectoRapido = {
     );
 
     return {
+      compromisos,
       historial: historial.map((evaluacion) => ({
         id: evaluacion.id,
         estadoCumplimiento:
