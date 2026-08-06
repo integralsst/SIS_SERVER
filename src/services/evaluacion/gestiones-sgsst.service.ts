@@ -1,4 +1,5 @@
 import {
+  EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   EstadoRegistro,
 } from "@prisma/client";
@@ -12,10 +13,7 @@ import {
   convertirFecha,
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
-import {
-  asegurarAccesoGestion,
-  asegurarAccesoPeriodo,
-} from "./acceso-evaluacion.service";
+import { asegurarAccesoPeriodo } from "./acceso-evaluacion.service";
 
 export const servicioGestionesSgsst = {
   crear: async (
@@ -147,5 +145,4 @@ export const servicioGestionesSgsst = {
       },
     });
   },
-
 };
