@@ -1,4 +1,5 @@
 import {
+  EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   Prisma,
@@ -28,11 +29,7 @@ import {
 interface EvaluacionFinalizacion {
   id: string;
   usuarioRegistradorId: string;
-  estadoCumplimiento:
-    | "CUMPLIDO"
-    | "PARCIAL"
-    | "NO_CUMPLIDO"
-    | "NO_APLICA";
+  estadoCumplimiento: EstadoCumplimientoAspecto;
   calificacionAdministrativa: Prisma.Decimal;
   marcadaRevisionTecnica: boolean;
   motivoRevisionTecnica: string | null;
