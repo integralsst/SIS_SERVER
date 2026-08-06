@@ -14,7 +14,7 @@ import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 interface ParametrosDetalle {
   empresaId: string;

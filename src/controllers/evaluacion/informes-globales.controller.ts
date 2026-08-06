@@ -12,7 +12,7 @@ import {
 import {
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 function valorQuery(
   req: Request,

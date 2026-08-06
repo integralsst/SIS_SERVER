@@ -14,7 +14,7 @@ import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
   responderErrorEvaluacion,
-} from "./controller.utils";
+} from "./shared/evaluacion-controller.utils";
 
 export const controladorGestionesSgsst = {
   listar: async (
@@ -56,28 +56,6 @@ export const controladorGestionesSgsst = {
       );
 
       res.status(201).json(gestion);
-    } catch (error) {
-      responderErrorEvaluacion(error, res);
-    }
-  },
-
-  finalizar: async (
-    req: Request,
-    res: Response
-  ): Promise<void> => {
-    try {
-      const gestionId = obtenerParametroRuta(
-        req,
-        "gestionId"
-      );
-
-      const gestion =
-        await servicioGestionesSgsst.finalizar(
-          gestionId,
-          obtenerUsuarioSesion(req)
-        );
-
-      res.status(200).json(gestion);
     } catch (error) {
       responderErrorEvaluacion(error, res);
     }

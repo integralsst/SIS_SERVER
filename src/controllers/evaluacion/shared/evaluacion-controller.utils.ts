@@ -3,8 +3,8 @@ import type {
   Response,
 } from "express";
 
-import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
-import { ErrorEvaluacion } from "../../utils/evaluacion";
+import type { UsuarioSesionEvaluacion } from "../../../types/evaluacion.types";
+import { ErrorEvaluacion } from "../../../utils/evaluacion";
 
 export function obtenerUsuarioSesion(
   req: Request

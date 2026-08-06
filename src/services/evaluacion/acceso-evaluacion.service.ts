@@ -54,10 +54,13 @@ export async function asegurarAccesoEmpresa(
     return empresa;
   }
 
-  if (usuario.rol === RolUsuario.PROFESIONAL) {
+  if (
+    usuario.rol === RolUsuario.PROFESIONAL ||
+    usuario.rol === RolUsuario.COORDINADOR
+  ) {
     if (!usuario.profesionalId) {
       throw new ErrorEvaluacion(
-        "Tu usuario no tiene un perfil profesional asociado.",
+        "Tu usuario profesional o coordinador no tiene un perfil asociado.",
         403,
         "PROFESIONAL_NO_ASOCIADO"
       );
