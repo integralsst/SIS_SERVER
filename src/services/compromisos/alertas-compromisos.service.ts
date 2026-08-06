@@ -327,12 +327,11 @@ export const servicioAlertasCompromisos = {
               .anio
           ),
           compromiso: compromiso.id,
-          ...(tareaId
-            ? {
-                tareaId: String(tareaId),
-              }
-            : {}),
         });
+
+        if (tareaId) {
+          query.set("tareaId", String(tareaId));
+        }
 
         alertas.push({
           ...base,
