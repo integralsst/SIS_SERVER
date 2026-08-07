@@ -797,30 +797,99 @@ export const servicioDetalleAspectoSecciones = {
     const evaluacionObjetivo =
       evaluacionBorrador ?? ultimaFinalizada;
 
-    const evidencias = evaluacionObjetivo
-      ? await prisma.evidenciaEvaluacion.findMany({
+    const [evidencias, evidenciasCompromiso] =
+      await Promise.all([
+        evaluacionObjetivo
+          ? prisma.evidenciaEvaluacion.findMany({
+              where: {
+                evaluacionId: evaluacionObjetivo.id,
+                activo: true,
+                ...(esCliente
+                  ? {
+                      visibleCliente: true,
+                    }
+                  : {}),
+              },
+              include: {
+                usuarioCreador: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: "desc",
+              },
+            })
+          : Promise.resolve([]),
+        prisma.compromisoEvidencia.findMany({
           where: {
-            evaluacionId: evaluacionObjetivo.id,
-            activo: true,
+            activa: true,
             ...(esCliente
               ? {
                   visibleCliente: true,
                 }
               : {}),
+            compromiso: {
+              empresaId,
+              ...(tarea.aspecto.codigo
+                ? {
+                    OR: [
+                      {
+                        aspectoCodigo:
+                          tarea.aspecto.codigo,
+                      },
+                      {
+                        aspecto: {
+                          codigo:
+                            tarea.aspecto.codigo,
+                        },
+                      },
+                    ],
+                  }
+                : {
+                    aspectoId: tarea.aspectoId,
+                  }),
+              ...(esCliente
+                ? {
+                    responsables: {
+                      some: {
+                        usuarioResponsableId:
+                          usuario.usuarioId,
+                      },
+                    },
+                  }
+                : {}),
+            },
           },
-          include: {
-            usuarioCreador: {
+          select: {
+            id: true,
+            nombre: true,
+            url: true,
+            descripcion: true,
+            fechaDocumento: true,
+            visibleCliente: true,
+            createdAt: true,
+            creadoPor: {
               select: {
                 id: true,
                 nombre: true,
+              },
+            },
+            compromiso: {
+              select: {
+                id: true,
+                descripcion: true,
+                estado: true,
               },
             },
           },
           orderBy: {
             createdAt: "desc",
           },
-        })
-      : [];
+        }),
+      ]);
 
     return {
       evidencias: evidencias.map((evidencia) => ({
@@ -839,6 +908,21 @@ export const servicioDetalleAspectoSecciones = {
         createdAt: evidencia.createdAt.toISOString(),
         updatedAt: evidencia.updatedAt.toISOString(),
       })),
+      evidenciasCompromiso:
+        evidenciasCompromiso.map((evidencia) => ({
+          id: evidencia.id,
+          nombre: evidencia.nombre,
+          url: evidencia.url,
+          descripcion: evidencia.descripcion,
+          fechaDocumento: serializarFecha(
+            evidencia.fechaDocumento
+          ),
+          visibleCliente:
+            evidencia.visibleCliente,
+          createdAt: evidencia.createdAt.toISOString(),
+          creadoPor: evidencia.creadoPor,
+          compromiso: evidencia.compromiso,
+        })),
       evidenciaObjetivo: evaluacionObjetivo
         ? {
             evaluacionId: evaluacionObjetivo.id,
