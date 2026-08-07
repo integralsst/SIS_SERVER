@@ -33,6 +33,12 @@ const rolesParticipacion = [
 router.use(autenticar);
 
 router.get(
+  "/alertas",
+  autorizar(...rolesParticipacion),
+  controladorConsultaCompromisos.listarAlertas
+);
+
+router.get(
   "/",
   autorizar(...rolesParticipacion),
   controladorConsultaCompromisos.listar

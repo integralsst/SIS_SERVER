@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { servicioAlertasCompromisos } from "../../services/compromisos/alertas-compromisos.service";
 import { servicioConsultaCompromisos } from "../../services/compromisos/consulta-compromisos.service";
 import { normalizarConsultaCompromisos } from "../../validators/compromisos/consulta-compromisos.validator";
 import {
@@ -12,6 +13,22 @@ import {
 } from "../evaluacion/shared/evaluacion-controller.utils";
 
 export const controladorConsultaCompromisos = {
+  listarAlertas: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const resultado =
+        await servicioAlertasCompromisos.listar(
+          obtenerUsuarioSesion(req)
+        );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
   listar: async (
     req: Request,
     res: Response
