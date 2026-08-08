@@ -48,6 +48,156 @@ function tipoAprobadorParaUsuario(
   );
 }
 
+async function consolidarAmpliacionAprobada(
+  compromisoId: string,
+  solicitudId: string,
+  usuarioId: string
+) {
+  const solicitud =
+    await prisma.solicitudAmpliacionCompromiso.findUnique({
+      where: {
+        id: solicitudId,
+      },
+      include: {
+        decisiones: {
+          where: {
+            decision:
+              DecisionAmpliacionCompromiso.APROBADA,
+          },
+          select: {
+            tipoAprobador: true,
+          },
+        },
+      },
+    });
+
+  if (!solicitud) {
+    throw new ErrorEvaluacion(
+      "La solicitud de ampliación no existe.",
+      404,
+      "SOLICITUD_AMPLIACION_NO_ENCONTRADA"
+    );
+  }
+
+  if (
+    solicitud.estado !==
+    EstadoSolicitudAmpliacionCompromiso.PENDIENTE
+  ) {
+    return {
+      solicitudId,
+      solicitudEstado: solicitud.estado,
+      fechaLimiteActualizada:
+        solicitud.estado ===
+        EstadoSolicitudAmpliacionCompromiso.APROBADA,
+      fechaLimite:
+        solicitud.estado ===
+        EstadoSolicitudAmpliacionCompromiso.APROBADA
+          ? solicitud.fechaLimiteSolicitada.toISOString()
+          : undefined,
+    };
+  }
+
+  const tipos = new Set(
+    solicitud.decisiones.map(
+      (decision) => decision.tipoAprobador
+    )
+  );
+  const completa =
+    tipos.has(
+      TipoAprobadorAmpliacionCompromiso.COORDINADOR
+    ) &&
+    tipos.has(
+      TipoAprobadorAmpliacionCompromiso.ADMINISTRADOR
+    );
+
+  if (!completa) {
+    return {
+      solicitudId,
+      solicitudEstado:
+        EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
+      fechaLimiteActualizada: false,
+    };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const reclamada =
+      await tx.solicitudAmpliacionCompromiso.updateMany({
+        where: {
+          id: solicitudId,
+          estado:
+            EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
+        },
+        data: {
+          estado:
+            EstadoSolicitudAmpliacionCompromiso.APROBADA,
+          resueltaEn: new Date(),
+        },
+      });
+
+    if (reclamada.count === 0) {
+      const resuelta =
+        await tx.solicitudAmpliacionCompromiso.findUnique({
+          where: {
+            id: solicitudId,
+          },
+          select: {
+            estado: true,
+            fechaLimiteSolicitada: true,
+          },
+        });
+
+      return {
+        solicitudId,
+        solicitudEstado:
+          resuelta?.estado ??
+          EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
+        fechaLimiteActualizada:
+          resuelta?.estado ===
+          EstadoSolicitudAmpliacionCompromiso.APROBADA,
+        fechaLimite:
+          resuelta?.estado ===
+          EstadoSolicitudAmpliacionCompromiso.APROBADA
+            ? resuelta.fechaLimiteSolicitada.toISOString()
+            : undefined,
+      };
+    }
+
+    const compromisoActualizado =
+      await tx.compromiso.update({
+        where: {
+          id: compromisoId,
+        },
+        data: {
+          fechaLimite: solicitud.fechaLimiteSolicitada,
+        },
+      });
+
+    await registrarHistorialCompromiso(tx, {
+      compromisoId,
+      entidadTipo: "COMPROMISO",
+      entidadId: compromisoId,
+      accion: "APLICAR_AMPLIACION",
+      descripcion: `La ampliación quedó aprobada por coordinación y administración. Nueva fecha límite: ${solicitud.fechaLimiteSolicitada.toISOString().slice(0, 10)}.`,
+      usuarioId,
+      datosAntes: {
+        fechaLimite: solicitud.fechaLimiteAnterior,
+      },
+      datosDespues: {
+        fechaLimite: compromisoActualizado.fechaLimite,
+      },
+    });
+
+    return {
+      solicitudId,
+      solicitudEstado:
+        EstadoSolicitudAmpliacionCompromiso.APROBADA,
+      fechaLimiteActualizada: true,
+      fechaLimite:
+        compromisoActualizado.fechaLimite.toISOString(),
+    };
+  });
+}
+
 export async function solicitarAmpliacionCompromiso(
   compromisoId: string,
   input: SolicitarAmpliacionCompromisoInput,
@@ -226,74 +376,55 @@ export async function decidirAmpliacionCompromiso(
       ? DecisionAmpliacionCompromiso.APROBADA
       : DecisionAmpliacionCompromiso.RECHAZADA;
 
-  return prisma.$transaction(async (tx) => {
-    const aprobacion =
-      await tx.aprobacionAmpliacionCompromiso.create({
-        data: {
-          solicitudId,
-          decididaPorId: usuario.usuarioId,
-          tipoAprobador,
-          decision,
-          observacion: input.observacion,
-        },
-      });
-
-    await registrarHistorialCompromiso(tx, {
-      compromisoId,
-      entidadTipo: "SOLICITUD_AMPLIACION",
-      entidadId: solicitudId,
-      accion:
-        decision === DecisionAmpliacionCompromiso.APROBADA
-          ? "APROBAR_AMPLIACION_PARCIAL"
-          : "RECHAZAR_AMPLIACION",
-      descripcion:
-        decision === DecisionAmpliacionCompromiso.APROBADA
-          ? `${tipoAprobador} aprobó la solicitud de ampliación.`
-          : `${tipoAprobador} rechazó la solicitud de ampliación.`,
-      usuarioId: usuario.usuarioId,
-      datosDespues: aprobacion,
-    });
-
-    if (decision === DecisionAmpliacionCompromiso.RECHAZADA) {
-      const resuelta =
-        await tx.solicitudAmpliacionCompromiso.update({
-          where: {
-            id: solicitudId,
-          },
+  const resultadoDecision = await prisma.$transaction(
+    async (tx) => {
+      const aprobacion =
+        await tx.aprobacionAmpliacionCompromiso.create({
           data: {
-            estado:
-              EstadoSolicitudAmpliacionCompromiso.RECHAZADA,
-            resueltaEn: new Date(),
+            solicitudId,
+            decididaPorId: usuario.usuarioId,
+            tipoAprobador,
+            decision,
+            observacion: input.observacion,
           },
         });
 
-      return {
-        solicitudId,
-        solicitudEstado: resuelta.estado,
-        fechaLimiteActualizada: false,
-      };
-    }
+      await registrarHistorialCompromiso(tx, {
+        compromisoId,
+        entidadTipo: "SOLICITUD_AMPLIACION",
+        entidadId: solicitudId,
+        accion:
+          decision === DecisionAmpliacionCompromiso.APROBADA
+            ? "APROBAR_AMPLIACION_PARCIAL"
+            : "RECHAZAR_AMPLIACION",
+        descripcion:
+          decision === DecisionAmpliacionCompromiso.APROBADA
+            ? `${tipoAprobador} aprobó la solicitud de ampliación.`
+            : `${tipoAprobador} rechazó la solicitud de ampliación.`,
+        usuarioId: usuario.usuarioId,
+        datosDespues: aprobacion,
+      });
 
-    const tiposAprobados = new Set([
-      ...solicitud.decisiones
-        .filter(
-          (registro) =>
-            registro.decision ===
-            DecisionAmpliacionCompromiso.APROBADA
-        )
-        .map((registro) => registro.tipoAprobador),
-      tipoAprobador,
-    ]);
+      if (decision === DecisionAmpliacionCompromiso.RECHAZADA) {
+        const resuelta =
+          await tx.solicitudAmpliacionCompromiso.update({
+            where: {
+              id: solicitudId,
+            },
+            data: {
+              estado:
+                EstadoSolicitudAmpliacionCompromiso.RECHAZADA,
+              resueltaEn: new Date(),
+            },
+          });
 
-    const aprobacionCompleta =
-      tiposAprobados.has(
-        TipoAprobadorAmpliacionCompromiso.COORDINADOR
-      ) &&
-      tiposAprobados.has(
-        TipoAprobadorAmpliacionCompromiso.ADMINISTRADOR
-      );
+        return {
+          solicitudId,
+          solicitudEstado: resuelta.estado,
+          fechaLimiteActualizada: false,
+        };
+      }
 
-    if (!aprobacionCompleta) {
       return {
         solicitudId,
         solicitudEstado:
@@ -301,51 +432,15 @@ export async function decidirAmpliacionCompromiso(
         fechaLimiteActualizada: false,
       };
     }
+  );
 
-    const [resuelta, compromisoActualizado] =
-      await Promise.all([
-        tx.solicitudAmpliacionCompromiso.update({
-          where: {
-            id: solicitudId,
-          },
-          data: {
-            estado:
-              EstadoSolicitudAmpliacionCompromiso.APROBADA,
-            resueltaEn: new Date(),
-          },
-        }),
-        tx.compromiso.update({
-          where: {
-            id: compromisoId,
-          },
-          data: {
-            fechaLimite:
-              solicitud.fechaLimiteSolicitada,
-          },
-        }),
-      ]);
+  if (decision === DecisionAmpliacionCompromiso.RECHAZADA) {
+    return resultadoDecision;
+  }
 
-    await registrarHistorialCompromiso(tx, {
-      compromisoId,
-      entidadTipo: "COMPROMISO",
-      entidadId: compromisoId,
-      accion: "APLICAR_AMPLIACION",
-      descripcion: `La ampliación quedó aprobada por coordinación y administración. Nueva fecha límite: ${solicitud.fechaLimiteSolicitada.toISOString().slice(0, 10)}.`,
-      usuarioId: usuario.usuarioId,
-      datosAntes: {
-        fechaLimite: solicitud.fechaLimiteAnterior,
-      },
-      datosDespues: {
-        fechaLimite: compromisoActualizado.fechaLimite,
-      },
-    });
-
-    return {
-      solicitudId,
-      solicitudEstado: resuelta.estado,
-      fechaLimiteActualizada: true,
-      fechaLimite:
-        compromisoActualizado.fechaLimite.toISOString(),
-    };
-  });
+  return consolidarAmpliacionAprobada(
+    compromisoId,
+    solicitudId,
+    usuario.usuarioId
+  );
 }
