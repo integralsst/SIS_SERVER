@@ -1,10 +1,13 @@
 import type {
   CambiarEstadoActividadCompromisoInput,
+  CancelarCompromisoInput,
   CrearEvidenciaCompromisoInput,
   CrearSeguimientoCompromisoInput,
+  DecidirAmpliacionCompromisoInput,
   DecidirCierreCompromisoInput,
   ReasignarCompromisoInput,
   RechazarAsignacionCompromisoInput,
+  SolicitarAmpliacionCompromisoInput,
 } from "../../types/compromisos/operacion-compromisos.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 
@@ -81,7 +84,7 @@ function urlHttp(value: unknown): string {
     );
   }
 
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  if (!["http:", "https:"].includes(url.protocol)) {
     throw new ErrorEvaluacion(
       "La evidencia debe usar una URL http o https.",
       400,
@@ -90,6 +93,20 @@ function urlHttp(value: unknown): string {
   }
 
   return url.toString();
+}
+
+function fechaIso(value: unknown, campo: string): string {
+  const fecha = textoObligatorio(value, campo, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    throw new ErrorEvaluacion(
+      `El campo ${campo} debe usar el formato YYYY-MM-DD.`,
+      400,
+      "FECHA_INVALIDA"
+    );
+  }
+
+  return fecha;
 }
 
 export function validarCrearSeguimiento(
@@ -220,6 +237,63 @@ export function validarDecidirCierre(
     mensaje: textoObligatorio(
       data.mensaje,
       "mensaje"
+    ),
+  };
+}
+
+export function validarSolicitarAmpliacion(
+  value: unknown
+): SolicitarAmpliacionCompromisoInput {
+  const data = objeto(value);
+
+  return {
+    fechaLimiteSolicitada: fechaIso(
+      data.fechaLimiteSolicitada,
+      "fechaLimiteSolicitada"
+    ),
+    justificacion: textoObligatorio(
+      data.justificacion,
+      "justificacion"
+    ),
+  };
+}
+
+export function validarDecidirAmpliacion(
+  value: unknown
+): DecidirAmpliacionCompromisoInput {
+  const data = objeto(value);
+  const decision = textoObligatorio(
+    data.decision,
+    "decision",
+    20
+  ).toUpperCase();
+
+  if (decision !== "APROBAR" && decision !== "RECHAZAR") {
+    throw new ErrorEvaluacion(
+      "La decisión de ampliación debe ser APROBAR o RECHAZAR.",
+      400,
+      "DECISION_AMPLIACION_INVALIDA"
+    );
+  }
+
+  return {
+    decision,
+    observacion: textoOpcional(
+      data.observacion,
+      "observacion"
+    ),
+  };
+}
+
+export function validarCancelarCompromiso(
+  value: unknown
+): CancelarCompromisoInput {
+  const data = objeto(value);
+
+  return {
+    motivo: textoObligatorio(
+      data.motivo,
+      "motivo"
     ),
   };
 }
