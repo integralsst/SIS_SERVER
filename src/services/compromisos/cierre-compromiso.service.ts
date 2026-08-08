@@ -12,7 +12,7 @@ import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 import {
   asegurarCompromisoEnEjecucion,
-  asegurarParticipacionCompromiso,
+  asegurarResponsableActivoCompromiso,
   asegurarSupervisionCompromiso,
   obtenerCompromisoOperacion,
 } from "./acceso-operacion-compromisos.service";
@@ -100,7 +100,7 @@ export async function solicitarCierreCompromiso(
     compromisoId
   );
 
-  await asegurarParticipacionCompromiso(
+  await asegurarResponsableActivoCompromiso(
     usuario,
     compromiso
   );

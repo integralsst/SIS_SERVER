@@ -384,7 +384,7 @@ export async function obtenerDetalleCompromiso(
         Boolean(supervisor || asignacionActiva),
       puedeGestionarActividades:
         compromiso.estado === "EN_EJECUCION" &&
-        Boolean(supervisor || asignacionActiva),
+        Boolean(asignacionActiva),
       puedeRechazarAsignacion:
         compromiso.estado === "EN_EJECUCION" &&
         !esUsuarioCliente &&
@@ -395,7 +395,7 @@ export async function obtenerDetalleCompromiso(
           "PENDIENTE_DE_REASIGNACION",
       puedeSolicitarCierre:
         compromiso.estado === "EN_EJECUCION" &&
-        Boolean(supervisor || asignacionActiva) &&
+        Boolean(asignacionActiva) &&
         progreso.listoParaSolicitarCierre,
       puedeDecidirCierre,
       esSupervisor: supervisor,
