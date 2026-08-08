@@ -1,4 +1,5 @@
 import {
+  EstadoCompromiso,
   EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
@@ -179,26 +180,54 @@ export const servicioFinalizacionObligatoria = {
           );
         }
 
-        const compromisosAbiertos =
-          await tx.compromiso.findMany({
-            where: {
-              empresaId:
-                gestion.empresaPeriodo.empresaId,
-              estado: {
-                in: ESTADOS_COMPROMISO_ABIERTO,
-              },
-            },
-            select: {
-              id: true,
-              aspectoId: true,
-              aspectoCodigo: true,
-              aspecto: {
-                select: {
-                  nombre: true,
+        const [compromisosAbiertos, compromisosTerminados] =
+          await Promise.all([
+            tx.compromiso.findMany({
+              where: {
+                empresaId:
+                  gestion.empresaPeriodo.empresaId,
+                estado: {
+                  in: ESTADOS_COMPROMISO_ABIERTO,
                 },
               },
-            },
-          });
+              select: {
+                id: true,
+                aspectoId: true,
+                aspectoCodigo: true,
+                aspecto: {
+                  select: {
+                    nombre: true,
+                  },
+                },
+              },
+            }),
+            tx.compromiso.findMany({
+              where: {
+                empresaId:
+                  gestion.empresaPeriodo.empresaId,
+                estado: {
+                  in: [
+                    EstadoCompromiso.CUMPLIDO,
+                    EstadoCompromiso.CANCELADO,
+                  ],
+                },
+              },
+              select: {
+                id: true,
+                aspectoId: true,
+                aspectoCodigo: true,
+                createdAt: true,
+                aspecto: {
+                  select: {
+                    nombre: true,
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: "desc",
+              },
+            }),
+          ]);
 
         const compromisoPorEvaluacion = new Map<
           string,
@@ -288,6 +317,14 @@ export const servicioFinalizacionObligatoria = {
             );
           }
 
+          const compromisoAnterior =
+            compromisosTerminados.find((compromiso) =>
+              correspondeAlMismoAspecto(
+                compromiso,
+                evaluacion.aspecto
+              )
+            ) ?? null;
+
           const compromiso =
             await tx.compromiso.create({
               data: {
@@ -345,6 +382,19 @@ export const servicioFinalizacionObligatoria = {
               usuarioId: usuario.usuarioId,
             },
           });
+
+          if (compromisoAnterior) {
+            await tx.historialCompromiso.create({
+              data: {
+                compromisoId: compromiso.id,
+                entidadTipo: "COMPROMISO_ANTERIOR",
+                entidadId: compromisoAnterior.id,
+                accion: "RELACIONAR_COMPROMISO_ANTERIOR",
+                descripcion: `El nuevo compromiso conserva continuidad con el compromiso anterior ${compromisoAnterior.id}; el registro anterior no se reabre.`,
+                usuarioId: usuario.usuarioId,
+              },
+            });
+          }
         }
 
         const evaluacionesVinculadas =
