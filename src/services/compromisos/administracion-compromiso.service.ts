@@ -9,7 +9,6 @@ import {
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
-import { correspondeAlMismoAspecto } from "../evaluacion/compromisos/identidad-aspecto-compromiso.service";
 import { construirAccesoDetalleCompromiso } from "./acceso-compromisos.service";
 import { esRolSupervisorCompromiso } from "./acceso-operacion-compromisos.service";
 
@@ -18,6 +17,9 @@ const ROLES_ADMINISTRADOR: RolUsuario[] = [
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
 ];
+
+const ACCION_RELACION_ANTERIOR =
+  "RELACIONAR_COMPROMISO_ANTERIOR";
 
 function tipoDecisionPendiente(
   usuario: UsuarioSesionEvaluacion,
@@ -45,20 +47,20 @@ export async function obtenerAdministracionCompromiso(
   compromisoId: string,
   usuario: UsuarioSesionEvaluacion
 ) {
+  const accesoDetalle =
+    construirAccesoDetalleCompromiso(usuario);
   const compromiso = await prisma.compromiso.findFirst({
     where: {
       AND: [
         {
           id: compromisoId,
         },
-        construirAccesoDetalleCompromiso(usuario),
+        accesoDetalle,
       ],
     },
     select: {
       id: true,
       empresaId: true,
-      aspectoId: true,
-      aspectoCodigo: true,
       descripcion: true,
       fechaLimite: true,
       estado: true,
@@ -68,13 +70,6 @@ export async function obtenerAdministracionCompromiso(
       canceladoPor: {
         select: {
           id: true,
-          nombre: true,
-        },
-      },
-      aspecto: {
-        select: {
-          id: true,
-          codigo: true,
           nombre: true,
         },
       },
@@ -127,6 +122,19 @@ export async function obtenerAdministracionCompromiso(
           numeroSolicitud: "desc",
         },
       },
+      historial: {
+        where: {
+          accion: ACCION_RELACION_ANTERIOR,
+          entidadTipo: "COMPROMISO_ANTERIOR",
+        },
+        select: {
+          entidadId: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 1,
+      },
     },
   });
 
@@ -138,53 +146,94 @@ export async function obtenerAdministracionCompromiso(
     );
   }
 
-  const candidatos = await prisma.compromiso.findMany({
-    where: {
-      empresaId: compromiso.empresaId,
-      id: {
-        not: compromiso.id,
+  const anteriorId =
+    compromiso.historial[0]?.entidadId ?? null;
+  const vinculosPosteriores =
+    await prisma.historialCompromiso.findMany({
+      where: {
+        accion: ACCION_RELACION_ANTERIOR,
+        entidadTipo: "COMPROMISO_ANTERIOR",
+        entidadId: compromiso.id,
       },
-    },
-    select: {
-      id: true,
-      aspectoId: true,
-      aspectoCodigo: true,
-      descripcion: true,
-      estado: true,
-      fechaLimite: true,
-      createdAt: true,
-      cerradoEn: true,
-      canceladoEn: true,
-      aspecto: {
-        select: {
-          nombre: true,
-        },
+      select: {
+        compromisoId: true,
       },
-      gestionOrigen: {
-        select: {
-          empresaPeriodo: {
-            select: {
-              anio: true,
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+  const posterioresIds = vinculosPosteriores.map(
+    (vinculo) => vinculo.compromisoId
+  );
+
+  const [anterior, posteriores] = await Promise.all([
+    anteriorId
+      ? prisma.compromiso.findFirst({
+          where: {
+            AND: [
+              {
+                id: anteriorId,
+              },
+              accesoDetalle,
+            ],
+          },
+          select: {
+            id: true,
+            descripcion: true,
+            estado: true,
+            fechaLimite: true,
+            createdAt: true,
+            cerradoEn: true,
+            canceladoEn: true,
+            gestionOrigen: {
+              select: {
+                empresaPeriodo: {
+                  select: {
+                    anio: true,
+                  },
+                },
+              },
             },
           },
-        },
-      },
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
+        })
+      : Promise.resolve(null),
+    posterioresIds.length > 0
+      ? prisma.compromiso.findMany({
+          where: {
+            AND: [
+              {
+                id: {
+                  in: posterioresIds,
+                },
+              },
+              accesoDetalle,
+            ],
+          },
+          select: {
+            id: true,
+            descripcion: true,
+            estado: true,
+            fechaLimite: true,
+            createdAt: true,
+            cerradoEn: true,
+            canceladoEn: true,
+            gestionOrigen: {
+              select: {
+                empresaPeriodo: {
+                  select: {
+                    anio: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+        })
+      : Promise.resolve([]),
+  ]);
 
-  const relacionados = candidatos.filter((candidato) =>
-    correspondeAlMismoAspecto(candidato, compromiso.aspecto)
-  );
-  const anteriores = relacionados.filter(
-    (candidato) => candidato.createdAt < compromiso.createdAt
-  );
-  const posteriores = relacionados.filter(
-    (candidato) => candidato.createdAt > compromiso.createdAt
-  );
-  const anterior = anteriores.at(-1) ?? null;
   const solicitudPendiente =
     compromiso.solicitudesAmpliacion.find(
       (solicitud) =>
@@ -201,7 +250,7 @@ export async function obtenerAdministracionCompromiso(
     compromiso.estado === EstadoCompromiso.CANCELADO;
 
   const serializarRelacionado = (
-    relacionado: (typeof relacionados)[number]
+    relacionado: NonNullable<typeof anterior>
   ) => ({
     id: relacionado.id,
     descripcion: relacionado.descripcion,
