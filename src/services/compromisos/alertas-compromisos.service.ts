@@ -3,8 +3,10 @@ import {
   EstadoAsignacionCompromiso,
   EstadoCompromiso,
   EstadoCumplimientoAspecto,
+  EstadoSolicitudAmpliacionCompromiso,
   EstadoSolicitudCierreCompromiso,
   RolUsuario,
+  TipoAprobadorAmpliacionCompromiso,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -17,6 +19,12 @@ const ROLES_SUPERVISION: RolUsuario[] = [
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
   RolUsuario.COORDINADOR,
+];
+
+const ROLES_ADMINISTRADOR: RolUsuario[] = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
 ];
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
@@ -45,6 +53,20 @@ interface AlertaCompromiso {
 
 function esRolSupervisor(rol: RolUsuario): boolean {
   return ROLES_SUPERVISION.includes(rol);
+}
+
+function tipoAprobadorAmpliacion(
+  rol: RolUsuario
+): TipoAprobadorAmpliacionCompromiso | null {
+  if (rol === RolUsuario.COORDINADOR) {
+    return TipoAprobadorAmpliacionCompromiso.COORDINADOR;
+  }
+
+  if (ROLES_ADMINISTRADOR.includes(rol)) {
+    return TipoAprobadorAmpliacionCompromiso.ADMINISTRADOR;
+  }
+
+  return null;
 }
 
 function rutaDetalle(
@@ -88,6 +110,9 @@ function prioridad(nivel: NivelAlerta): number {
 export const servicioAlertasCompromisos = {
   listar: async (usuario: UsuarioSesionEvaluacion) => {
     const supervisor = esRolSupervisor(usuario.rol);
+    const tipoAprobador = tipoAprobadorAmpliacion(
+      usuario.rol
+    );
     const hoy = new Date();
     hoy.setUTCHours(0, 0, 0, 0);
 
@@ -188,6 +213,26 @@ export const servicioAlertasCompromisos = {
           },
           take: 1,
         },
+        solicitudesAmpliacion: {
+          where: {
+            estado:
+              EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
+          },
+          select: {
+            id: true,
+            fechaLimiteSolicitada: true,
+            solicitadaPorId: true,
+            decisiones: {
+              select: {
+                tipoAprobador: true,
+              },
+            },
+          },
+          orderBy: {
+            numeroSolicitud: "desc",
+          },
+          take: 1,
+        },
       },
       orderBy: [
         {
@@ -226,6 +271,17 @@ export const servicioAlertasCompromisos = {
         compromiso.evaluacionesSeguimiento.length > 0;
       const ultimaSolicitud =
         compromiso.solicitudesCierre[0] ?? null;
+      const ampliacionPendiente =
+        compromiso.solicitudesAmpliacion[0] ?? null;
+      const faltaDecisionAmpliacion = Boolean(
+        supervisor &&
+          tipoAprobador &&
+          ampliacionPendiente &&
+          !ampliacionPendiente.decisiones.some(
+            (decision) =>
+              decision.tipoAprobador === tipoAprobador
+          )
+      );
       const vencida = compromiso.fechaLimite < hoy;
       const base = {
         compromisoId: compromiso.id,
@@ -275,6 +331,22 @@ export const servicioAlertasCompromisos = {
           descripcion: `${compromiso.empresa.nombre}: revisa la evidencia, la recalificación y decide el cierre.`,
           accion: {
             etiqueta: "Revisar solicitud",
+            ruta,
+          },
+        });
+        continue;
+      }
+
+      if (faltaDecisionAmpliacion && ampliacionPendiente) {
+        alertas.push({
+          ...base,
+          id: `REVISAR_AMPLIACION:${compromiso.id}:${ampliacionPendiente.id}`,
+          tipo: "REVISION_AMPLIACION",
+          nivel: vencida ? "ALTA" : "MEDIA",
+          titulo: "Solicitud de ampliación por revisar",
+          descripcion: `${compromiso.empresa.nombre}: revisa la solicitud para ampliar el plazo de “${compromiso.aspecto.nombre}” hasta ${ampliacionPendiente.fechaLimiteSolicitada.toISOString().slice(0, 10)}.`,
+          accion: {
+            etiqueta: "Revisar ampliación",
             ruta,
           },
         });
