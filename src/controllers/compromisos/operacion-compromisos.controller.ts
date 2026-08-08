@@ -3,11 +3,16 @@ import type {
   Response,
 } from "express";
 
+import {
+  decidirAmpliacionCompromiso,
+  solicitarAmpliacionCompromiso,
+} from "../../services/compromisos/ampliaciones-compromiso.service";
 import { cambiarEstadoActividadCompromiso } from "../../services/compromisos/actividades-compromiso.service";
 import {
   reasignarCompromiso,
   rechazarAsignacionCompromiso,
 } from "../../services/compromisos/asignaciones-compromiso.service";
+import { cancelarCompromiso } from "../../services/compromisos/cancelacion-compromiso.service";
 import {
   decidirCierreCompromiso,
   solicitarCierreCompromiso,
@@ -16,11 +21,14 @@ import { crearEvidenciaCompromiso } from "../../services/compromisos/evidencias-
 import { crearSeguimientoCompromiso } from "../../services/compromisos/seguimientos-compromiso.service";
 import {
   validarCambiarActividad,
+  validarCancelarCompromiso,
   validarCrearEvidencia,
   validarCrearSeguimiento,
+  validarDecidirAmpliacion,
   validarDecidirCierre,
   validarReasignarCompromiso,
   validarRechazarAsignacion,
+  validarSolicitarAmpliacion,
 } from "../../validators/compromisos/operacion-compromisos.validator";
 import {
   obtenerParametroRuta,
@@ -166,6 +174,66 @@ export const controladorOperacionCompromisos = {
           validarDecidirCierre(req.body),
           obtenerUsuarioSesion(req)
         );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
+  solicitarAmpliacion: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const resultado =
+        await solicitarAmpliacionCompromiso(
+          obtenerParametroRuta(
+            req,
+            "compromisoId"
+          ),
+          validarSolicitarAmpliacion(req.body),
+          obtenerUsuarioSesion(req)
+        );
+
+      res.status(201).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
+  decidirAmpliacion: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const resultado =
+        await decidirAmpliacionCompromiso(
+          obtenerParametroRuta(
+            req,
+            "compromisoId"
+          ),
+          obtenerParametroRuta(req, "solicitudId"),
+          validarDecidirAmpliacion(req.body),
+          obtenerUsuarioSesion(req)
+        );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
+  cancelar: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const resultado = await cancelarCompromiso(
+        obtenerParametroRuta(req, "compromisoId"),
+        validarCancelarCompromiso(req.body),
+        obtenerUsuarioSesion(req)
+      );
 
       res.status(200).json(resultado);
     } catch (error) {
