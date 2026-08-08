@@ -30,3 +30,17 @@ export interface DecidirCierreCompromisoInput {
   decision: "APROBAR" | "DEVOLVER";
   mensaje: string;
 }
+
+export interface SolicitarAmpliacionCompromisoInput {
+  fechaLimiteSolicitada: string;
+  justificacion: string;
+}
+
+export interface DecidirAmpliacionCompromisoInput {
+  decision: "APROBAR" | "RECHAZAR";
+  observacion: string | null;
+}
+
+export interface CancelarCompromisoInput {
+  motivo: string;
+}
