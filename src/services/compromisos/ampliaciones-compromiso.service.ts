@@ -230,19 +230,22 @@ export async function solicitarAmpliacionCompromiso(
     );
   }
 
-  const fechaSolicitada = convertirFecha(
-    input.fechaLimiteSolicitada,
-    "fechaLimiteSolicitada",
-    true
-  ) as Date;
+  const fechaLimiteVigente =
+    actual.fechaLimite.toISOString().slice(0, 10);
 
-  if (fechaSolicitada <= actual.fechaLimite) {
+  if (input.fechaLimiteSolicitada <= fechaLimiteVigente) {
     throw new ErrorEvaluacion(
       "La nueva fecha límite debe ser posterior a la fecha límite vigente.",
       400,
       "FECHA_AMPLIACION_INVALIDA"
     );
   }
+
+  const fechaSolicitada = convertirFecha(
+    input.fechaLimiteSolicitada,
+    "fechaLimiteSolicitada",
+    true
+  ) as Date;
 
   const pendiente =
     await prisma.solicitudAmpliacionCompromiso.findFirst({
