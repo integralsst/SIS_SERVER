@@ -50,6 +50,12 @@ router.get(
   controladorConsultaCompromisos.obtenerDetalle
 );
 
+router.get(
+  "/:compromisoId/administracion",
+  autorizar(...rolesParticipacion),
+  controladorConsultaCompromisos.obtenerAdministracion
+);
+
 router.post(
   "/:compromisoId/seguimientos",
   autorizar(...rolesParticipacion),
@@ -90,6 +96,24 @@ router.post(
   "/:compromisoId/solicitudes-cierre/:solicitudId/decision",
   autorizar(...rolesSupervision),
   controladorOperacionCompromisos.decidirCierre
+);
+
+router.post(
+  "/:compromisoId/solicitudes-ampliacion",
+  autorizar(...rolesParticipacion),
+  controladorOperacionCompromisos.solicitarAmpliacion
+);
+
+router.post(
+  "/:compromisoId/solicitudes-ampliacion/:solicitudId/decision",
+  autorizar(...rolesSupervision),
+  controladorOperacionCompromisos.decidirAmpliacion
+);
+
+router.post(
+  "/:compromisoId/cancelacion",
+  autorizar(...rolesSupervision),
+  controladorOperacionCompromisos.cancelar
 );
 
 export default router;
