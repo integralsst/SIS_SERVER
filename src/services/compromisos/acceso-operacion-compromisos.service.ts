@@ -142,6 +142,39 @@ export async function asegurarParticipacionCompromiso(
   }
 }
 
+export async function asegurarResponsableActivoCompromiso(
+  usuario: UsuarioSesionEvaluacion,
+  compromiso: Awaited<
+    ReturnType<typeof obtenerCompromisoOperacion>
+  >
+): Promise<void> {
+  await asegurarParticipacionCompromiso(
+    usuario,
+    compromiso
+  );
+
+  const asignacion =
+    await prisma.compromisoResponsable.findFirst({
+      where: {
+        compromisoId: compromiso.id,
+        usuarioResponsableId: usuario.usuarioId,
+        estado:
+          EstadoAsignacionCompromiso.ASIGNADA,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (!asignacion) {
+    throw new ErrorEvaluacion(
+      "Solo un responsable activo puede realizar esta acción.",
+      403,
+      "RESPONSABLE_COMPROMISO_REQUERIDO"
+    );
+  }
+}
+
 export function asegurarCompromisoEditable(
   compromiso: Awaited<
     ReturnType<typeof obtenerCompromisoOperacion>

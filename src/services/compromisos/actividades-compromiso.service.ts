@@ -9,8 +9,7 @@ import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 import {
   asegurarCompromisoEnEjecucion,
-  asegurarParticipacionCompromiso,
-  esRolSupervisorCompromiso,
+  asegurarResponsableActivoCompromiso,
   obtenerCompromisoOperacion,
 } from "./acceso-operacion-compromisos.service";
 import { registrarHistorialCompromiso } from "./historial-compromiso.service";
@@ -25,7 +24,7 @@ export async function cambiarEstadoActividadCompromiso(
     compromisoId
   );
 
-  await asegurarParticipacionCompromiso(
+  await asegurarResponsableActivoCompromiso(
     usuario,
     compromiso
   );
@@ -59,7 +58,6 @@ export async function cambiarEstadoActividadCompromiso(
   }
 
   if (
-    !esRolSupervisorCompromiso(usuario.rol) &&
     actividad.compromisoResponsable
       .usuarioResponsableId !== usuario.usuarioId
   ) {

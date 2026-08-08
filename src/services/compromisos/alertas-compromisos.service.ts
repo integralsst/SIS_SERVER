@@ -176,6 +176,12 @@ export const servicioAlertasCompromisos = {
           select: {
             estado: true,
             observacionesDevolucion: true,
+            solicitadaPorId: true,
+            evaluacionRecalificacion: {
+              select: {
+                usuarioRegistradorId: true,
+              },
+            },
           },
           orderBy: {
             numeroIntento: "desc",
@@ -221,9 +227,6 @@ export const servicioAlertasCompromisos = {
       const ultimaSolicitud =
         compromiso.solicitudesCierre[0] ?? null;
       const vencida = compromiso.fechaLimite < hoy;
-      const vencePronto =
-        diasHasta(compromiso.fechaLimite, hoy) <= 30;
-
       const base = {
         compromisoId: compromiso.id,
         empresa: compromiso.empresa,
@@ -255,7 +258,13 @@ export const servicioAlertasCompromisos = {
       if (
         supervisor &&
         compromiso.estado ===
-          EstadoCompromiso.SOLICITUD_DE_CIERRE
+          EstadoCompromiso.SOLICITUD_DE_CIERRE &&
+        ultimaSolicitud?.estado ===
+          EstadoSolicitudCierreCompromiso.PENDIENTE &&
+        ultimaSolicitud.solicitadaPorId !==
+          usuario.usuarioId &&
+        ultimaSolicitud.evaluacionRecalificacion
+          .usuarioRegistradorId !== usuario.usuarioId
       ) {
         alertas.push({
           ...base,
@@ -273,7 +282,8 @@ export const servicioAlertasCompromisos = {
       }
 
       if (
-        asignacionPropia &&
+        ultimaSolicitud?.solicitadaPorId ===
+          usuario.usuarioId &&
         ultimaSolicitud?.estado ===
           EstadoSolicitudCierreCompromiso.DEVUELTA
       ) {
@@ -287,7 +297,7 @@ export const servicioAlertasCompromisos = {
             ultimaSolicitud.observacionesDevolucion ??
             "Corrige la gestión solicitada y vuelve a pedir la revisión del cierre.",
           accion: {
-            etiqueta: "Corregir compromiso",
+            etiqueta: "Corregir y volver a solicitar",
             ruta,
           },
         });
@@ -352,7 +362,7 @@ export const servicioAlertasCompromisos = {
       if (
         actividadesPendientes === 0 &&
         recalificada &&
-        (asignacionPropia || supervisor) &&
+        asignacionPropia &&
         compromiso.estado ===
           EstadoCompromiso.EN_EJECUCION
       ) {
@@ -365,55 +375,11 @@ export const servicioAlertasCompromisos = {
           descripcion:
             "Las actividades están completas y la recalificación quedó en 5. Envía la solicitud de cierre.",
           accion: {
-            etiqueta: supervisor
-              ? "Solicitar cierre"
-              : "Solicitar revisión",
+            etiqueta: "Solicitar revisión",
             ruta,
           },
         });
         continue;
-      }
-
-      if (supervisor && vencida) {
-        alertas.push({
-          ...base,
-          id: `VENCIDO:${compromiso.id}`,
-          tipo: "VENCIMIENTO",
-          nivel: "ALTA",
-          titulo: "Compromiso vencido por gestionar",
-          descripcion: `${compromiso.empresa.nombre}: “${compromiso.aspecto.nombre}”. ${descripcionFecha(
-            compromiso.fechaLimite,
-            hoy
-          )}`,
-          accion: {
-            etiqueta: "Revisar compromiso",
-            ruta,
-          },
-        });
-        continue;
-      }
-
-      if (
-        supervisor &&
-        vencePronto &&
-        compromiso.estado ===
-          EstadoCompromiso.EN_EJECUCION
-      ) {
-        alertas.push({
-          ...base,
-          id: `POR_VENCER:${compromiso.id}`,
-          tipo: "VENCIMIENTO",
-          nivel: "BAJA",
-          titulo: "Compromiso próximo a vencer",
-          descripcion: `${compromiso.empresa.nombre}: “${compromiso.aspecto.nombre}”. ${descripcionFecha(
-            compromiso.fechaLimite,
-            hoy
-          )}`,
-          accion: {
-            etiqueta: "Ver compromiso",
-            ruta,
-          },
-        });
       }
     }
 
