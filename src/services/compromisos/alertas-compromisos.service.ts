@@ -2,7 +2,6 @@ import {
   EstadoActividadCompromiso,
   EstadoAsignacionCompromiso,
   EstadoCompromiso,
-  EstadoCumplimientoAspecto,
   EstadoSolicitudAmpliacionCompromiso,
   EstadoSolicitudCierreCompromiso,
   RolUsuario,
@@ -11,6 +10,7 @@ import {
 
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
+import { resolverResultadoEfectivoEvaluacion } from "../evaluacion/resultado-efectivo-evaluacion.service";
 import { construirAccesoListadoCompromisos } from "./acceso-compromisos.service";
 import { ESTADOS_COMPROMISO_ABIERTOS } from "./fechas-compromiso.service";
 
@@ -182,20 +182,32 @@ export const servicioAlertasCompromisos = {
           },
         },
         evaluacionesSeguimiento: {
-          where: {
-            evaluacion: {
-              estadoCumplimiento:
-                EstadoCumplimientoAspecto.CUMPLIDO,
-              calificacionAdministrativa: 5,
-            },
-          },
           select: {
-            evaluacionId: true,
+            evaluacion: {
+              select: {
+                estadoCumplimiento: true,
+                calificacionAdministrativa: true,
+                decisionNoAplica: {
+                  select: {
+                    estado: true,
+                    resultadoEfectivo: true,
+                  },
+                },
+                aprobacionGestion: {
+                  select: {
+                    aprobacionGestion: {
+                      select: {
+                        estado: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
           orderBy: {
             createdAt: "desc",
           },
-          take: 1,
         },
         solicitudesCierre: {
           select: {
@@ -268,7 +280,19 @@ export const servicioAlertasCompromisos = {
             EstadoActividadCompromiso.ATENDIDA
         ).length;
       const recalificada =
-        compromiso.evaluacionesSeguimiento.length > 0;
+        compromiso.evaluacionesSeguimiento.some(
+          (seguimiento) => {
+            const resultado =
+              resolverResultadoEfectivoEvaluacion(
+                seguimiento.evaluacion
+              );
+
+            return (
+              !resultado.provisional &&
+              resultado.calificacion === 5
+            );
+          }
+        );
       const ultimaSolicitud =
         compromiso.solicitudesCierre[0] ?? null;
       const ampliacionPendiente =
@@ -422,7 +446,7 @@ export const servicioAlertasCompromisos = {
           tipo: "RECALIFICACION",
           nivel: vencida ? "ALTA" : "MEDIA",
           titulo: "El aspecto está listo para recalificar",
-          descripcion: `Las actividades están completas. Registra una evaluación posterior en 5 para “${compromiso.aspecto.nombre}”.`,
+          descripcion: `Las actividades están completas. Registra una evaluación posterior con resultado efectivo 5 para “${compromiso.aspecto.nombre}”.`,
           accion: {
             etiqueta: "Ir a recalificar",
             ruta: `/dashboard/empresas/${compromiso.empresa.id}/evaluacion?${query.toString()}`,
@@ -445,7 +469,7 @@ export const servicioAlertasCompromisos = {
           nivel: "MEDIA",
           titulo: "El compromiso está listo para cierre",
           descripcion:
-            "Las actividades están completas y la recalificación quedó en 5. Envía la solicitud de cierre.",
+            "Las actividades están completas y la reevaluación tiene resultado efectivo 5. Envía la solicitud de cierre.",
           accion: {
             etiqueta: "Solicitar revisión",
             ruta,

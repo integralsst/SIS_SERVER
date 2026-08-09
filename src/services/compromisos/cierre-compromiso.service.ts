@@ -2,7 +2,6 @@ import {
   EstadoActividadCompromiso,
   EstadoAsignacionCompromiso,
   EstadoCompromiso,
-  EstadoCumplimientoAspecto,
   EstadoSolicitudCierreCompromiso,
 } from "@prisma/client";
 
@@ -10,6 +9,7 @@ import { prisma } from "../../lib/prisma";
 import type { DecidirCierreCompromisoInput } from "../../types/compromisos/operacion-compromisos.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
+import { resolverResultadoEfectivoEvaluacion } from "../evaluacion/resultado-efectivo-evaluacion.service";
 import {
   asegurarCompromisoEnEjecucion,
   asegurarResponsableActivoCompromiso,
@@ -21,30 +21,57 @@ import { registrarHistorialCompromiso } from "./historial-compromiso.service";
 async function obtenerRecalificacionCumplida(
   compromisoId: string
 ) {
-  return prisma.compromisoEvaluacionSeguimiento.findFirst({
-    where: {
-      compromisoId,
-      evaluacion: {
-        estadoCumplimiento:
-          EstadoCumplimientoAspecto.CUMPLIDO,
-        calificacionAdministrativa: 5,
+  const seguimientos =
+    await prisma.compromisoEvaluacionSeguimiento.findMany({
+      where: {
+        compromisoId,
       },
-    },
-    select: {
-      evaluacion: {
-        select: {
-          id: true,
-          usuarioRegistradorId: true,
-          createdAt: true,
+      select: {
+        evaluacion: {
+          select: {
+            id: true,
+            usuarioRegistradorId: true,
+            createdAt: true,
+            estadoCumplimiento: true,
+            calificacionAdministrativa: true,
+            decisionNoAplica: {
+              select: {
+                estado: true,
+                resultadoEfectivo: true,
+              },
+            },
+            aprobacionGestion: {
+              select: {
+                aprobacionGestion: {
+                  select: {
+                    estado: true,
+                  },
+                },
+              },
+            },
+          },
         },
       },
-    },
-    orderBy: {
-      evaluacion: {
-        createdAt: "desc",
+      orderBy: {
+        evaluacion: {
+          createdAt: "desc",
+        },
       },
-    },
-  });
+    });
+
+  return (
+    seguimientos.find((seguimiento) => {
+      const resultado =
+        resolverResultadoEfectivoEvaluacion(
+          seguimiento.evaluacion
+        );
+
+      return (
+        !resultado.provisional &&
+        resultado.calificacion === 5
+      );
+    }) ?? null
+  );
 }
 
 async function obtenerActividadesPendientes(
@@ -83,7 +110,7 @@ async function asegurarRequisitosCierre(
 
   if (!recalificacion) {
     throw new ErrorEvaluacion(
-      "El aspecto debe contar con una evaluación posterior calificada en 5 antes de solicitar el cierre.",
+      "El aspecto debe contar con una evaluación posterior con resultado efectivo 5 antes de solicitar el cierre.",
       409,
       "RECALIFICACION_CUMPLIDA_REQUERIDA"
     );
@@ -254,7 +281,7 @@ export async function decidirCierreCompromiso(
       solicitud.evaluacionRecalificacionId
     ) {
       throw new ErrorEvaluacion(
-        "La recalificación cambió después de la solicitud. Devuelve el cierre para que sea solicitado nuevamente.",
+        "El resultado efectivo de la recalificación cambió después de la solicitud. Devuelve el cierre para que sea solicitado nuevamente.",
         409,
         "RECALIFICACION_CIERRE_DESACTUALIZADA"
       );

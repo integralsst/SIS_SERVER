@@ -3,8 +3,8 @@ import type {
   Response,
 } from "express";
 
+import { servicioCentroAcciones } from "../../services/alertas/centro-acciones.service";
 import { obtenerAdministracionCompromiso } from "../../services/compromisos/administracion-compromiso.service";
-import { servicioAlertasCompromisos } from "../../services/compromisos/alertas-compromisos.service";
 import { servicioConsultaCompromisos } from "../../services/compromisos/consulta-compromisos.service";
 import { normalizarConsultaCompromisos } from "../../validators/compromisos/consulta-compromisos.validator";
 import {
@@ -19,10 +19,9 @@ export const controladorConsultaCompromisos = {
     res: Response
   ): Promise<void> => {
     try {
-      const resultado =
-        await servicioAlertasCompromisos.listar(
-          obtenerUsuarioSesion(req)
-        );
+      const resultado = await servicioCentroAcciones.listar(
+        obtenerUsuarioSesion(req)
+      );
 
       res.status(200).json(resultado);
     } catch (error) {

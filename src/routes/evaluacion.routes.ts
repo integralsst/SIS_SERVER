@@ -1,6 +1,7 @@
 import { RolUsuario } from "@prisma/client";
 import { Router } from "express";
 
+import { controladorAprobacionesGestion } from "../controllers/evaluacion/aprobaciones-gestion.controller";
 import { controladorContextoEvaluacion } from "../controllers/evaluacion/contexto-evaluacion.controller";
 import { controladorDetalleAspecto } from "../controllers/evaluacion/detalle-aspecto.controller";
 import { controladorFinalizacionGestion } from "../controllers/evaluacion/compromisos/finalizacion-gestion.controller";
@@ -9,6 +10,7 @@ import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evalua
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
 import { controladorInformesGlobales } from "../controllers/evaluacion/informes-globales.controller";
 import { controladorInformesPeriodo } from "../controllers/evaluacion/informes-periodo.controller";
+import { controladorNoAplica } from "../controllers/evaluacion/no-aplica.controller";
 import { controladorPeriodosEvaluacion } from "../controllers/evaluacion/periodos-evaluacion.controller";
 import { controladorResultadosEvaluacion } from "../controllers/evaluacion/resultados-evaluacion.controller";
 import { controladorRevisionesTecnicas } from "../controllers/evaluacion/revisiones-tecnicas.controller";
@@ -35,6 +37,20 @@ const rolesEvaluacion = [
   RolUsuario.ADMIN,
   RolUsuario.PROFESIONAL,
   RolUsuario.COORDINADOR,
+];
+
+const rolesControlEvaluacion = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
+  RolUsuario.PROFESIONAL,
+  RolUsuario.COORDINADOR,
+];
+
+const rolesAdministrador = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
 ];
 
 const rolesInvalidacion = [
@@ -202,6 +218,34 @@ router.put(
   "/gestiones/:gestionId/evaluaciones",
   autorizar(...rolesEvaluacion),
   controladorEvaluacionesAspecto.guardarLote
+);
+
+// ======================================================
+// NO APLICA Y APROBACIÓN DE GESTIONES
+// ======================================================
+
+router.get(
+  "/periodos/:periodoId/no-aplica",
+  autorizar(...rolesControlEvaluacion),
+  controladorNoAplica.listarPeriodo
+);
+
+router.post(
+  "/no-aplica/:decisionId/decision",
+  autorizar(RolUsuario.COORDINADOR),
+  controladorNoAplica.decidir
+);
+
+router.get(
+  "/periodos/:periodoId/aprobaciones-gestion",
+  autorizar(...rolesControlEvaluacion),
+  controladorAprobacionesGestion.listarPeriodo
+);
+
+router.post(
+  "/aprobaciones-gestion/:aprobacionId/decision",
+  autorizar(...rolesAdministrador),
+  controladorAprobacionesGestion.decidir
 );
 
 // ======================================================

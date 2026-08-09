@@ -11,6 +11,7 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
 export type FiltroGrupoResultados =
   | "TODOS"
@@ -32,6 +33,7 @@ const CACHE_ESTRUCTURA_RESULTADOS_MS = Number(
 );
 
 const NOTA_ADMINISTRATIVA_CUMPLIDO = 5;
+const NOTA_ADMINISTRATIVA_PARCIAL = 3;
 const TOLERANCIA_NOTA = 0.001;
 const TOLERANCIA_PUNTAJE_GRUPO = 0.01;
 
@@ -111,6 +113,21 @@ const seleccionEvaluacionResultados = {
       fechaGestion: true,
     },
   },
+  decisionNoAplica: {
+    select: {
+      estado: true,
+      resultadoEfectivo: true,
+    },
+  },
+  aprobacionGestion: {
+    select: {
+      aprobacionGestion: {
+        select: {
+          estado: true,
+        },
+      },
+    },
+  },
 } satisfies Prisma.EvaluacionAspectoSelect;
 
 type TareaResultados = Prisma.SupermatrizTareaGetPayload<{
@@ -175,7 +192,8 @@ function promedio(
 
     if (evaluacion) {
       notas.push(
-        evaluacion.calificacionAdministrativa.toNumber()
+        resolverResultadoEfectivoEvaluacion(evaluacion)
+          .calificacion
       );
     }
   }
@@ -210,20 +228,43 @@ function contarEstados(
       continue;
     }
 
-    switch (evaluacion.estadoCumplimiento) {
-      case EstadoCumplimientoAspecto.CUMPLIDO:
-        conteo.cumplidos += 1;
-        break;
-      case EstadoCumplimientoAspecto.PARCIAL:
-        conteo.parciales += 1;
-        break;
-      case EstadoCumplimientoAspecto.NO_CUMPLIDO:
-        conteo.noCumplidos += 1;
-        break;
-      case EstadoCumplimientoAspecto.NO_APLICA:
-        conteo.noAplica += 1;
-        break;
+    const resultado =
+      resolverResultadoEfectivoEvaluacion(evaluacion);
+
+    if (
+      evaluacion.estadoCumplimiento ===
+        EstadoCumplimientoAspecto.NO_APLICA &&
+      !resultado.provisional &&
+      Math.abs(
+        resultado.calificacion -
+          NOTA_ADMINISTRATIVA_CUMPLIDO
+      ) <= TOLERANCIA_NOTA
+    ) {
+      conteo.noAplica += 1;
+      continue;
     }
+
+    if (
+      Math.abs(
+        resultado.calificacion -
+          NOTA_ADMINISTRATIVA_CUMPLIDO
+      ) <= TOLERANCIA_NOTA
+    ) {
+      conteo.cumplidos += 1;
+      continue;
+    }
+
+    if (
+      Math.abs(
+        resultado.calificacion -
+          NOTA_ADMINISTRATIVA_PARCIAL
+      ) <= TOLERANCIA_NOTA
+    ) {
+      conteo.parciales += 1;
+      continue;
+    }
+
+    conteo.noCumplidos += 1;
   }
 
   return conteo;
@@ -244,21 +285,15 @@ function cumpleMinisterial(
         return false;
       }
 
-      if (
-        evaluacion.estadoCumplimiento ===
-        EstadoCumplimientoAspecto.NO_APLICA
-      ) {
-        return true;
-      }
-
-      const nota =
-        evaluacion.calificacionAdministrativa.toNumber();
+      const resultado =
+        resolverResultadoEfectivoEvaluacion(evaluacion);
 
       return (
-        evaluacion.estadoCumplimiento ===
-          EstadoCumplimientoAspecto.CUMPLIDO &&
-        Math.abs(nota - NOTA_ADMINISTRATIVA_CUMPLIDO) <=
-          TOLERANCIA_NOTA
+        !resultado.provisional &&
+        Math.abs(
+          resultado.calificacion -
+            NOTA_ADMINISTRATIVA_CUMPLIDO
+        ) <= TOLERANCIA_NOTA
       );
     })
   );

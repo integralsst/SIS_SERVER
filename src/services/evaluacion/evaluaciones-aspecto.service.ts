@@ -4,6 +4,7 @@ import {
   EstadoPeriodoSgsst,
   EstadoRegistro,
   Prisma,
+  RolUsuario,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -55,6 +56,18 @@ async function guardarUnaEvaluacion(
   if (!contexto) {
     throw new ErrorEvaluacion(
       `El aspecto ${input.aspectoId} no pertenece a la versión utilizada por el periodo.`
+    );
+  }
+
+  if (
+    input.estadoCumplimiento ===
+      EstadoCumplimientoAspecto.NO_APLICA &&
+    usuario.rol !== RolUsuario.PROFESIONAL
+  ) {
+    throw new ErrorEvaluacion(
+      `El No aplica del aspecto "${contexto.nombre}" debe ser propuesto por un profesional.`,
+      403,
+      "NO_APLICA_REQUIERE_PROFESIONAL"
     );
   }
 
