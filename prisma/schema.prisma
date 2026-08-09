@@ -178,6 +178,9 @@ model Usuario {
   revisionesTecnicasSolicitadas RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
   revisionesTecnicasResueltas   RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
   informesPeriodoGenerados      InformePeriodoSgsst[]       @relation("InformePeriodoGeneradoPor")
+  decisionesNoAplicaSolicitadas DecisionNoAplica[]          @relation("DecisionNoAplicaSolicitadaPor")
+  decisionesNoAplicaResueltas   DecisionNoAplica[]          @relation("DecisionNoAplicaDecididaPor")
+  aprobacionesGestionDecididas  AprobacionGestion[]         @relation("AprobacionGestionDecididaPor")
 
   // Compromisos y permisos por aspecto
   compromisosCreados                Compromiso[]                     @relation("CompromisoCreadoPor")
@@ -320,6 +323,18 @@ enum EstadoRevisionTecnica {
   ANULADA
 }
 
+enum EstadoDecisionNoAplica {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+enum EstadoAprobacionGestion {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
 enum EstadoCompromiso {
   EN_EJECUCION
   PENDIENTE_DE_REASIGNACION
@@ -404,7 +419,7 @@ model CategoriaEstandar {
   codigo               String?        @db.VarChar(50)
   nombre               String         @db.VarChar(191)
   descripcion          String?        @db.Text
-  orden                Int
+  orden                 Int
   porcentajeEsperado   Decimal?       @db.Decimal(5, 2)
   estado               EstadoRegistro @default(ACTIVO)
   createdAt            DateTime       @default(now()) @db.DateTime(3)
@@ -418,7 +433,6 @@ model CategoriaEstandar {
   @@index([versionSupermatrizId])
   @@index([cicloPhvaId, orden])
   @@index([estado])
-  @@map("categorias_estandar")
 }
 
 model Estandar {
@@ -443,7 +457,6 @@ model Estandar {
   @@index([versionSupermatrizId])
   @@index([categoriaEstandarId, orden])
   @@index([estado])
-  @@map("estandares")
 }
 
 model Proceso {
@@ -462,7 +475,6 @@ model Proceso {
   @@unique([versionSupermatrizId, nombre])
   @@index([versionSupermatrizId])
   @@index([estado])
-  @@map("procesos")
 }
 
 model Aspecto {
@@ -499,7 +511,6 @@ model Aspecto {
   @@index([versionSupermatrizId])
   @@index([estandarId, orden])
   @@index([estado])
-  @@map("aspectos")
 }
 
 model PlanAccionEspecifico {
@@ -513,7 +524,6 @@ model PlanAccionEspecifico {
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([estado])
-  @@map("planes_accion_especificos")
 }
 
 model VersionSupermatriz {
@@ -544,7 +554,6 @@ model VersionSupermatriz {
   @@index([clonadaDeId])
   @@index([estado])
   @@index([vigenteDesde, vigenteHasta])
-  @@map("versiones_supermatriz")
 }
 
 model SupermatrizTarea {
@@ -577,7 +586,6 @@ model SupermatrizTarea {
   @@index([aspectoId])
   @@index([procesoId])
   @@index([estado])
-  @@map("supermatriz_tareas")
 }
 
 // ======================================================
@@ -598,7 +606,6 @@ model CategoriaGestion {
   gestiones               GestionSgsst[]
 
   @@index([estado])
-  @@map("categorias_gestion")
 }
 
 model SupermatrizTareaCategoriaGestion {
@@ -611,7 +618,6 @@ model SupermatrizTareaCategoriaGestion {
 
   @@id([supermatrizTareaId, categoriaGestionId])
   @@index([categoriaGestionId])
-  @@map("supermatriz_tarea_categorias_gestion")
 }
 
 model EmpresaProfesionalCategoriaGestion {
@@ -624,7 +630,6 @@ model EmpresaProfesionalCategoriaGestion {
 
   @@id([empresaProfesionalId, categoriaGestionId])
   @@index([categoriaGestionId])
-  @@map("empresa_profesional_categorias_gestion")
 }
 
 // ======================================================
@@ -645,7 +650,6 @@ model GrupoMinisterial {
   estandares EstandarGrupoMinisterial[]
 
   @@index([estado])
-  @@map("grupos_ministeriales")
 }
 
 model EstandarGrupoMinisterial {
@@ -658,7 +662,6 @@ model EstandarGrupoMinisterial {
 
   @@id([estandarId, grupoMinisterialId])
   @@index([grupoMinisterialId])
-  @@map("estandar_grupos_ministeriales")
 }
 
 // ======================================================
@@ -683,7 +686,6 @@ model ConfiguracionAspecto {
   @@index([esEvergreen])
   @@index([tareaEjecucionCotidiana])
   @@index([incluirInformeEstadoTareas])
-  @@map("configuraciones_aspecto")
 }
 
 model ConfiguracionVigenciaAspecto {
@@ -699,14 +701,13 @@ model ConfiguracionVigenciaAspecto {
   diaFechaFija       Int?
   descripcionRegla   String?               @db.Text
   estado             EstadoRegistro        @default(ACTIVO)
-  createdAt          DateTime              @default(now()) @db.DateTime(3)
-  updatedAt          DateTime              @updatedAt @db.DateTime(3)
+  createdAt          DateTime               @default(now()) @db.DateTime(3)
+  updatedAt          DateTime               @updatedAt @db.DateTime(3)
 
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([tipoFechaBase])
   @@index([fuentePeriodicidad])
-  @@map("configuraciones_vigencia_aspecto")
 }
 
 model ConfiguracionTareaCotidiana {
@@ -720,8 +721,6 @@ model ConfiguracionTareaCotidiana {
   updatedAt        DateTime           @updatedAt @db.DateTime(3)
 
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-
-  @@map("configuraciones_tarea_cotidiana")
 }
 
 model ConfiguracionEvidenciaAspecto {
@@ -737,7 +736,6 @@ model ConfiguracionEvidenciaAspecto {
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([requiereEvidencia])
-  @@map("configuraciones_evidencia_aspecto")
 }
 
 model ConfiguracionRevisionTecnica {
@@ -752,7 +750,6 @@ model ConfiguracionRevisionTecnica {
   aspecto Aspecto @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([requiereRevisionTecnica])
-  @@map("configuraciones_revision_tecnica")
 }
 
 model ReglaAprobacionGestion {
@@ -765,15 +762,14 @@ model ReglaAprobacionGestion {
   vigenteDesde       DateTime?         @db.Date
   vigenteHasta       DateTime?         @db.Date
   estado             EstadoRegistro    @default(ACTIVO)
-  createdAt          DateTime          @default(now()) @db.DateTime(3)
-  updatedAt          DateTime          @updatedAt @db.DateTime(3)
+  createdAt          DateTime           @default(now()) @db.DateTime(3)
+  updatedAt          DateTime           @updatedAt @db.DateTime(3)
 
   aspecto Aspecto? @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([aspectoId])
   @@index([modalidad])
   @@index([estado])
-  @@map("reglas_aprobacion_gestion")
 }
 
 // ======================================================
@@ -792,7 +788,6 @@ model PalabraClave {
 
   @@unique([versionSupermatrizId, nombre])
   @@index([versionSupermatrizId])
-  @@map("palabras_clave")
 }
 
 model AspectoPalabraClave {
@@ -805,7 +800,6 @@ model AspectoPalabraClave {
 
   @@id([aspectoId, palabraClaveId])
   @@index([palabraClaveId])
-  @@map("aspecto_palabras_clave")
 }
 
 model RequisitoNormativo {
@@ -825,7 +819,6 @@ model RequisitoNormativo {
   @@unique([versionSupermatrizId, clave])
   @@index([versionSupermatrizId])
   @@index([estado])
-  @@map("requisitos_normativos")
 }
 
 model AspectoRequisitoNormativo {
@@ -838,7 +831,6 @@ model AspectoRequisitoNormativo {
 
   @@id([aspectoId, requisitoNormativoId])
   @@index([requisitoNormativoId])
-  @@map("aspecto_requisitos_normativos")
 }
 
 // ======================================================
@@ -868,7 +860,6 @@ model EmpresaPeriodo {
   @@index([versionSupermatrizId])
   @@index([anio])
   @@index([creadoPorUsuarioId])
-  @@map("empresa_periodos_sgsst")
 }
 
 model InformePeriodoSgsst {
@@ -901,7 +892,6 @@ model InformePeriodoSgsst {
   @@index([generadoPorUsuarioId])
   @@index([grupoMinisterial])
   @@index([fechaCorte])
-  @@map("informes_periodo_sgsst")
 }
 
 model GestionSgsst {
@@ -929,13 +919,13 @@ model GestionSgsst {
   evaluaciones          EvaluacionAspecto[]
   historial             HistorialEvaluacion[]
   compromisosOriginados Compromiso[]
+  aprobacion            AprobacionGestion?
 
   @@index([empresaPeriodoId, fechaGestion])
   @@index([profesionalId])
   @@index([categoriaGestionId])
   @@index([usuarioCreadorId])
   @@index([estado, valida])
-  @@map("gestiones_sgsst")
 }
 
 model EvaluacionAspecto {
@@ -962,6 +952,8 @@ model EvaluacionAspecto {
   historial                   HistorialEvaluacion[]
   evidencias                  EvidenciaEvaluacion[]
   revisionTecnica             RevisionTecnicaEvaluacion?
+  decisionNoAplica            DecisionNoAplica?
+  aprobacionGestion           AprobacionGestionEvaluacion?
   compromisoOrigen            Compromiso?                       @relation("CompromisoEvaluacionOrigen")
   seguimientosCompromiso      CompromisoEvaluacionSeguimiento[]
   solicitudesCierreCompromiso SolicitudCierreCompromiso[]       @relation("CierreCompromisoEvaluacion")
@@ -973,7 +965,6 @@ model EvaluacionAspecto {
   @@index([usuarioRegistradorId])
   @@index([estadoCumplimiento])
   @@index([fechaVencimientoCalculada])
-  @@map("evaluaciones_aspecto")
 }
 
 model EvidenciaEvaluacion {
@@ -997,7 +988,6 @@ model EvidenciaEvaluacion {
   @@index([usuarioCreadorId])
   @@index([visibleCliente])
   @@index([fechaDocumento])
-  @@map("evidencias_evaluacion")
 }
 
 model RevisionTecnicaEvaluacion {
@@ -1022,7 +1012,6 @@ model RevisionTecnicaEvaluacion {
   @@index([estado, solicitadaEn])
   @@index([solicitadaPorUsuarioId])
   @@index([revisadaPorUsuarioId])
-  @@map("revisiones_tecnicas_evaluacion")
 }
 
 model HistorialEvaluacion {
@@ -1043,7 +1032,63 @@ model HistorialEvaluacion {
   @@index([gestionId, createdAt])
   @@index([evaluacionId])
   @@index([usuarioId])
-  @@map("historial_evaluaciones")
+}
+
+model DecisionNoAplica {
+  id                      String                 @id @default(uuid())
+  evaluacionId            String                 @unique
+  solicitadaPorUsuarioId  String
+  decididaPorUsuarioId    String?
+  estado                  EstadoDecisionNoAplica @default(PENDIENTE)
+  resultadoEfectivo       Decimal                @default(3.00) @db.Decimal(3, 2)
+  observacionDecision     String?                @db.Text
+  solicitadaEn            DateTime               @default(now()) @db.DateTime(3)
+  decididaEn              DateTime?              @db.DateTime(3)
+  createdAt               DateTime               @default(now()) @db.DateTime(3)
+  updatedAt               DateTime               @updatedAt @db.DateTime(3)
+
+  evaluacion   EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  solicitadaPor Usuario          @relation("DecisionNoAplicaSolicitadaPor", fields: [solicitadaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decididaPor   Usuario?         @relation("DecisionNoAplicaDecididaPor", fields: [decididaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([estado, solicitadaEn])
+  @@index([solicitadaPorUsuarioId])
+  @@index([decididaPorUsuarioId])
+  @@map("decisiones_no_aplica")
+}
+
+model AprobacionGestion {
+  id                     String                   @id @default(uuid())
+  gestionId              String                   @unique
+  decididaPorUsuarioId   String?
+  estado                 EstadoAprobacionGestion  @default(PENDIENTE)
+  reglasAplicadas        Json
+  observacionDecision    String?                  @db.Text
+  generadaEn             DateTime                 @default(now()) @db.DateTime(3)
+  decididaEn             DateTime?                @db.DateTime(3)
+  createdAt              DateTime                 @default(now()) @db.DateTime(3)
+  updatedAt              DateTime                 @updatedAt @db.DateTime(3)
+
+  gestion      GestionSgsst                  @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decididaPor  Usuario?                      @relation("AprobacionGestionDecididaPor", fields: [decididaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluaciones AprobacionGestionEvaluacion[]
+
+  @@index([estado, generadaEn])
+  @@index([decididaPorUsuarioId])
+  @@map("aprobaciones_gestion")
+}
+
+model AprobacionGestionEvaluacion {
+  aprobacionGestionId String
+  evaluacionId        String   @unique
+  createdAt           DateTime @default(now()) @db.DateTime(3)
+
+  aprobacionGestion AprobacionGestion @relation(fields: [aprobacionGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  evaluacion        EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([aprobacionGestionId, evaluacionId])
+  @@index([evaluacionId])
+  @@map("aprobacion_gestion_evaluaciones")
 }
 
 // ======================================================
@@ -1093,7 +1138,6 @@ model Compromiso {
   @@index([empresaId, aspectoCodigo, estado])
   @@index([creadoPorUsuarioId])
   @@index([canceladoPorUsuarioId])
-  @@map("compromisos")
 }
 
 model CompromisoEvaluacionSeguimiento {
@@ -1106,7 +1150,6 @@ model CompromisoEvaluacionSeguimiento {
 
   @@id([compromisoId, evaluacionId])
   @@index([compromisoId, createdAt])
-  @@map("compromiso_evaluaciones_seguimiento")
 }
 
 model CompromisoResponsable {
@@ -1136,7 +1179,6 @@ model CompromisoResponsable {
   @@index([compromisoId, estado])
   @@index([usuarioResponsableId, estado])
   @@index([asignadoPorUsuarioId])
-  @@map("compromiso_responsables")
 }
 
 model ActividadCompromiso {
@@ -1151,13 +1193,12 @@ model ActividadCompromiso {
   createdAt DateTime @default(now()) @db.DateTime(3)
   updatedAt DateTime @updatedAt @db.DateTime(3)
 
-  compromisoResponsable CompromisoResponsable   @relation(fields: [compromisoResponsableId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  atendidaPor           Usuario?                @relation("ActividadCompromisoAtendidaPor", fields: [atendidaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  compromisoResponsable CompromisoResponsable @relation(fields: [compromisoResponsableId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  atendidaPor           Usuario?              @relation("ActividadCompromisoAtendidaPor", fields: [atendidaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   seguimientos          SeguimientoCompromiso[]
 
   @@index([estado])
   @@index([atendidaPorUsuarioId])
-  @@map("actividades_compromiso")
 }
 
 model SeguimientoCompromiso {
@@ -1173,16 +1214,15 @@ model SeguimientoCompromiso {
 
   createdAt DateTime @default(now()) @db.DateTime(3)
 
-  compromiso Compromiso            @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  actividad  ActividadCompromiso?  @relation(fields: [actividadId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  usuario    Usuario               @relation("SeguimientoCompromisoRegistradoPor", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  compromiso Compromiso           @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  actividad  ActividadCompromiso? @relation(fields: [actividadId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuario    Usuario              @relation("SeguimientoCompromisoRegistradoPor", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   evidencias CompromisoEvidencia[]
 
   @@index([compromisoId, fechaSeguimiento])
   @@index([actividadId])
   @@index([usuarioId])
   @@index([origen])
-  @@map("seguimientos_compromiso")
 }
 
 model CompromisoEvidencia {
@@ -1211,7 +1251,6 @@ model CompromisoEvidencia {
   @@index([seguimientoId])
   @@index([evidenciaEvaluacionOrigenId])
   @@index([creadoPorUsuarioId])
-  @@map("compromiso_evidencias")
 }
 
 model SolicitudCierreCompromiso {
@@ -1239,7 +1278,6 @@ model SolicitudCierreCompromiso {
   @@index([solicitadaPorId])
   @@index([decididaPorId])
   @@index([evaluacionRecalificacionId])
-  @@map("solicitudes_cierre_compromiso")
 }
 
 model SolicitudAmpliacionCompromiso {
@@ -1263,7 +1301,6 @@ model SolicitudAmpliacionCompromiso {
   @@unique([compromisoId, numeroSolicitud])
   @@index([compromisoId, estado])
   @@index([solicitadaPorId])
-  @@map("solicitudes_ampliacion_compromiso")
 }
 
 model AprobacionAmpliacionCompromiso {
@@ -1281,7 +1318,6 @@ model AprobacionAmpliacionCompromiso {
 
   @@unique([solicitudId, tipoAprobador])
   @@index([decididaPorId])
-  @@map("aprobaciones_ampliacion_compromiso")
 }
 
 model HistorialCompromiso {
@@ -1302,7 +1338,6 @@ model HistorialCompromiso {
   @@index([compromisoId, createdAt])
   @@index([entidadTipo, entidadId])
   @@index([usuarioId])
-  @@map("historial_compromisos")
 }
 
 model PermisoClienteAspecto {
@@ -1333,7 +1368,6 @@ model PermisoClienteAspecto {
   @@index([usuarioClienteId, activo])
   @@index([aspectoId])
   @@index([otorgadoPorId])
-  @@map("permisos_cliente_aspecto")
 }
 
 // ======================================================
@@ -1354,7 +1388,6 @@ model VigenciaAspecto {
 
   @@index([aspectoId, vigenteDesde, vigenteHasta])
   @@index([estado])
-  @@map("vigencias_aspecto")
 }
 
 model HistorialCambioSupermatriz {
@@ -1376,5 +1409,4 @@ model HistorialCambioSupermatriz {
   @@index([tipoEntidad, entidadId])
   @@index([usuarioId])
   @@index([createdAt])
-  @@map("historial_cambios_supermatriz")
 }
