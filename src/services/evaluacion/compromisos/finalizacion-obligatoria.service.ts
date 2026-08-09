@@ -18,6 +18,7 @@ import {
 import { validarCalificacionAdministrativa } from "../../../validators/evaluacion/calificacion-administrativa.validator";
 import { normalizarFinalizacionGestion } from "../../../validators/evaluacion/compromisos/finalizacion-gestion.validator";
 import { asegurarAccesoGestion } from "../acceso-evaluacion.service";
+import { registrarControlesFinalizacion } from "../controles-finalizacion.service";
 import {
   correspondeAlMismoAspecto,
   ESTADOS_COMPROMISO_ABIERTO,
@@ -497,6 +498,28 @@ export const servicioFinalizacionObligatoria = {
             ),
           });
         }
+
+        await registrarControlesFinalizacion(
+          tx,
+          {
+            id: gestion.id,
+            fechaGestion: gestion.fechaGestion,
+            modalidad: gestion.modalidad,
+            tipoActividad: gestion.tipoActividad,
+          },
+          evaluaciones.map((evaluacion) => ({
+            id: evaluacion.id,
+            aspectoId: evaluacion.aspecto.id,
+            usuarioRegistradorId:
+              evaluacion.usuarioRegistradorId,
+            estadoCumplimiento:
+              evaluacion.estadoCumplimiento,
+            aspecto: {
+              nombre: evaluacion.aspecto.nombre,
+            },
+          })),
+          usuario
+        );
 
         const actualizada =
           await tx.gestionSgsst.update({
