@@ -236,7 +236,9 @@ async function alertasQueRequierenCorreccion(
 
   return revisiones
     .filter((revision) => {
-      if (!revision.revisadaEn) return false;
+      const revisadaEn = revision.revisadaEn;
+
+      if (!revisadaEn) return false;
 
       return !correcciones.some(
         (correccion) =>
@@ -244,7 +246,7 @@ async function alertasQueRequierenCorreccion(
             revision.evaluacion.aspectoId &&
           correccion.gestion.empresaPeriodoId ===
             revision.evaluacion.gestion.empresaPeriodoId &&
-          correccion.createdAt > revision.revisadaEn
+          correccion.createdAt > revisadaEn
       );
     })
     .map((revision) => {
