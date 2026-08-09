@@ -4,6 +4,7 @@ import {
   servicioAlertasControlEvaluacion,
   type AlertaControlEvaluacion,
 } from "../evaluacion/alertas-control-evaluacion.service";
+import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/alertas-revisiones-tecnicas.service";
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
 
@@ -17,15 +18,20 @@ function prioridad(nivel: NivelAlerta): number {
 
 export const servicioCentroAcciones = {
   listar: async (usuario: UsuarioSesionEvaluacion) => {
-    const [compromisos, controlesEvaluacion] =
-      await Promise.all([
-        servicioAlertasCompromisos.listar(usuario),
-        servicioAlertasControlEvaluacion.listar(usuario),
-      ]);
+    const [
+      compromisos,
+      controlesEvaluacion,
+      revisionesTecnicas,
+    ] = await Promise.all([
+      servicioAlertasCompromisos.listar(usuario),
+      servicioAlertasControlEvaluacion.listar(usuario),
+      servicioAlertasRevisionesTecnicas.listar(usuario),
+    ]);
 
     const alertas = [
       ...(compromisos.alertas as AlertaCentro[]),
       ...controlesEvaluacion,
+      ...revisionesTecnicas,
     ].sort((a, b) => {
       const nivel =
         prioridad(a.nivel) - prioridad(b.nivel);
@@ -35,14 +41,19 @@ export const servicioCentroAcciones = {
       return a.fechaLimite.localeCompare(b.fechaLimite);
     });
 
+    const alertasControl = [
+      ...controlesEvaluacion,
+      ...revisionesTecnicas,
+    ];
+
     return {
       resumen: {
         total:
           compromisos.resumen.total +
-          controlesEvaluacion.length,
+          alertasControl.length,
         urgentes:
           compromisos.resumen.urgentes +
-          controlesEvaluacion.filter(
+          alertasControl.filter(
             (alerta) => alerta.nivel === "ALTA"
           ).length,
       },
