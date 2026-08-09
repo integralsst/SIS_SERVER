@@ -68,7 +68,6 @@ async function alertasPendientesDeResolver(
       select: {
         id: true,
         solicitadaEn: true,
-        motivoSolicitud: true,
         solicitadaPor: {
           select: {
             nombre: true,
@@ -198,39 +197,42 @@ async function alertasQueRequierenCorreccion(
     return [];
   }
 
-  const correcciones = await prisma.evaluacionAspecto.findMany({
-    where: {
-      OR: revisiones
-        .filter(
-          (
-            revision
-          ): revision is typeof revision & {
-            revisadaEn: Date;
-          } => Boolean(revision.revisadaEn)
-        )
-        .map((revision) => ({
-          aspectoId: revision.evaluacion.aspectoId,
-          createdAt: {
-            gt: revision.revisadaEn,
-          },
-          gestion: {
-            empresaPeriodoId:
-              revision.evaluacion.gestion.empresaPeriodoId,
-            estado: EstadoGestionSgsst.FINALIZADA,
-            valida: true,
-          },
-        })),
-    },
-    select: {
-      aspectoId: true,
-      createdAt: true,
-      gestion: {
-        select: {
-          empresaPeriodoId: true,
+  const condicionesCorreccion = revisiones.flatMap(
+    (revision) =>
+      revision.revisadaEn
+        ? [
+            {
+              aspectoId: revision.evaluacion.aspectoId,
+              createdAt: {
+                gt: revision.revisadaEn,
+              },
+              gestion: {
+                empresaPeriodoId:
+                  revision.evaluacion.gestion.empresaPeriodoId,
+                estado: EstadoGestionSgsst.FINALIZADA,
+                valida: true,
+              },
+            },
+          ]
+        : []
+  );
+
+  const correcciones = condicionesCorreccion.length
+    ? await prisma.evaluacionAspecto.findMany({
+        where: {
+          OR: condicionesCorreccion,
         },
-      },
-    },
-  });
+        select: {
+          aspectoId: true,
+          createdAt: true,
+          gestion: {
+            select: {
+              empresaPeriodoId: true,
+            },
+          },
+        },
+      })
+    : [];
 
   return revisiones
     .filter((revision) => {
