@@ -1,5 +1,4 @@
 import {
-  EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoRegistro,
   Prisma,
@@ -17,6 +16,7 @@ import {
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 import { servicioPeriodosEvaluacion } from "./periodos-evaluacion.service";
+import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
 const CACHE_ESTRUCTURA_MS = Number(
   process.env.MATRIZ_ESTRUCTURA_CACHE_MS ?? 10 * 60 * 1000
@@ -132,6 +132,47 @@ const seleccionEvaluacionMatriz = {
       },
     },
   },
+  decisionNoAplica: {
+    select: {
+      id: true,
+      estado: true,
+      resultadoEfectivo: true,
+      observacionDecision: true,
+      solicitadaEn: true,
+      decididaEn: true,
+      solicitadaPor: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+      decididaPor: {
+        select: {
+          id: true,
+          nombre: true,
+        },
+      },
+    },
+  },
+  aprobacionGestion: {
+    select: {
+      aprobacionGestion: {
+        select: {
+          id: true,
+          estado: true,
+          observacionDecision: true,
+          generadaEn: true,
+          decididaEn: true,
+          decididaPor: {
+            select: {
+              id: true,
+              nombre: true,
+            },
+          },
+        },
+      },
+    },
+  },
 } satisfies Prisma.EvaluacionAspectoSelect;
 
 const seleccionCategoriasGestion = {
@@ -190,11 +231,17 @@ function serializarEvaluacion(
   evaluacion: EvaluacionMatriz,
   incluirRevisionTecnica: boolean
 ) {
+  const resultadoEfectivo =
+    resolverResultadoEfectivoEvaluacion(evaluacion);
+
   return {
     id: evaluacion.id,
     estadoCumplimiento: evaluacion.estadoCumplimiento,
     calificacionAdministrativa:
       evaluacion.calificacionAdministrativa.toNumber(),
+    calificacionEfectiva: resultadoEfectivo.calificacion,
+    resultadoProvisional: resultadoEfectivo.provisional,
+    causaResultadoEfectivo: resultadoEfectivo.causa,
     observacion: evaluacion.observacion,
     fechaDocumento: serializarFecha(evaluacion.fechaDocumento),
     fechaVencimientoCalculada: serializarFecha(
@@ -202,6 +249,42 @@ function serializarEvaluacion(
     ),
     justificacionNoAplica:
       evaluacion.justificacionNoAplica,
+    decisionNoAplica: evaluacion.decisionNoAplica
+      ? {
+          id: evaluacion.decisionNoAplica.id,
+          estado: evaluacion.decisionNoAplica.estado,
+          resultadoEfectivo:
+            evaluacion.decisionNoAplica.resultadoEfectivo.toNumber(),
+          observacionDecision:
+            evaluacion.decisionNoAplica.observacionDecision,
+          solicitadaEn:
+            evaluacion.decisionNoAplica.solicitadaEn.toISOString(),
+          decididaEn: serializarFecha(
+            evaluacion.decisionNoAplica.decididaEn
+          ),
+          solicitadaPor:
+            evaluacion.decisionNoAplica.solicitadaPor,
+          decididaPor:
+            evaluacion.decisionNoAplica.decididaPor,
+        }
+      : null,
+    aprobacionGestion:
+      evaluacion.aprobacionGestion
+        ? {
+            id: evaluacion.aprobacionGestion.aprobacionGestion.id,
+            estado:
+              evaluacion.aprobacionGestion.aprobacionGestion.estado,
+            observacionDecision:
+              evaluacion.aprobacionGestion.aprobacionGestion.observacionDecision,
+            generadaEn:
+              evaluacion.aprobacionGestion.aprobacionGestion.generadaEn.toISOString(),
+            decididaEn: serializarFecha(
+              evaluacion.aprobacionGestion.aprobacionGestion.decididaEn
+            ),
+            decididaPor:
+              evaluacion.aprobacionGestion.aprobacionGestion.decididaPor,
+          }
+        : null,
     marcadaRevisionTecnica:
       incluirRevisionTecnica
         ? evaluacion.marcadaRevisionTecnica
@@ -749,7 +832,7 @@ export const servicioMatrizEvaluacionOptimizada = {
             (acumulado, fila) =>
               acumulado +
               (fila.ultimaEvaluacion
-                ?.calificacionAdministrativa ?? 0),
+                ?.calificacionEfectiva ?? 0),
             0
           ) / evaluadas.length
         : 0;
@@ -783,11 +866,14 @@ export const servicioMatrizEvaluacionOptimizada = {
         (aspectoId) => {
           const evaluacion = ultimaPorAspecto.get(aspectoId);
 
+          if (!evaluacion) return false;
+
+          const resultado =
+            resolverResultadoEfectivoEvaluacion(evaluacion);
+
           return (
-            evaluacion?.estadoCumplimiento ===
-              EstadoCumplimientoAspecto.CUMPLIDO ||
-            evaluacion?.estadoCumplimiento ===
-              EstadoCumplimientoAspecto.NO_APLICA
+            !resultado.provisional &&
+            resultado.calificacion === 5
           );
         }
       );
