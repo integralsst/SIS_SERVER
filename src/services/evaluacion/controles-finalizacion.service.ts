@@ -138,13 +138,25 @@ export async function registrarControlesFinalizacion(
     }
   }
 
-  if (evaluaciones.length === 0) {
+  // No aplica ya tiene un flujo de decisión propio a cargo del COORDINADOR.
+  // Las reglas generales de aprobación solo se congelan para evaluaciones
+  // ordinarias, evitando que una misma evaluación quede sujeta a dos
+  // decisiones independientes y potencialmente contradictorias.
+  const evaluacionesParaAprobacion = evaluaciones.filter(
+    (evaluacion) =>
+      evaluacion.estadoCumplimiento !==
+      EstadoCumplimientoAspecto.NO_APLICA
+  );
+
+  if (evaluacionesParaAprobacion.length === 0) {
     return;
   }
 
   const aspectoIds = [
     ...new Set(
-      evaluaciones.map((evaluacion) => evaluacion.aspectoId)
+      evaluacionesParaAprobacion.map(
+        (evaluacion) => evaluacion.aspectoId
+      )
     ),
   ];
 
@@ -198,7 +210,7 @@ export async function registrarControlesFinalizacion(
     },
   });
 
-  const reglasPorEvaluacion = evaluaciones
+  const reglasPorEvaluacion = evaluacionesParaAprobacion
     .map((evaluacion) => ({
       evaluacion,
       reglas: reglas.filter((regla) =>
