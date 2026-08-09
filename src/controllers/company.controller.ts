@@ -118,6 +118,38 @@ function enteroNoNegativo(
   return numero;
 }
 
+function esRolProfesionalConAsignacion(
+  rol: RolUsuario
+): boolean {
+  return (
+    rol === RolUsuario.PROFESIONAL ||
+    rol === RolUsuario.COORDINADOR
+  );
+}
+
+function construirFiltroAsignacionVigente(
+  profesionalId: string,
+  empresaId?: string
+): Prisma.EmpresaProfesionalWhereInput {
+  const ahora = new Date();
+
+  return {
+    ...(empresaId ? { empresaId } : {}),
+    profesionalId,
+    activo: true,
+    OR: [
+      {
+        fechaFin: null,
+      },
+      {
+        fechaFin: {
+          gte: ahora,
+        },
+      },
+    ],
+  };
+}
+
 function construirDatosEmpresa(
   body: Record<string, unknown>,
   parcial = false
@@ -501,24 +533,19 @@ async function puedeAccederEmpresa(
   }
 
   if (
-    usuario.rol ===
-      RolUsuario.PROFESIONAL &&
+    esRolProfesionalConAsignacion(usuario.rol) &&
     usuario.profesionalId
   ) {
     const asignacion =
-      await prisma.empresaProfesional.findFirst(
-        {
-          where: {
-            empresaId,
-            profesionalId:
-              usuario.profesionalId,
-            activo: true,
-          },
-          select: {
-            id: true,
-          },
-        }
-      );
+      await prisma.empresaProfesional.findFirst({
+        where: construirFiltroAsignacionVigente(
+          usuario.profesionalId,
+          empresaId
+        ),
+        select: {
+          id: true,
+        },
+      });
 
     return Boolean(asignacion);
   }
@@ -644,17 +671,16 @@ export const controladorEmpresa = {
 
       if (!esRolInterno(req.user.rol)) {
         if (
-          req.user.rol ===
-            RolUsuario.PROFESIONAL &&
+          esRolProfesionalConAsignacion(
+            req.user.rol
+          ) &&
           req.user.profesionalId
         ) {
           filtros.push({
             asignacionesProfesionales: {
-              some: {
-                profesionalId:
-                  req.user.profesionalId,
-                activo: true,
-              },
+              some: construirFiltroAsignacionVigente(
+                req.user.profesionalId
+              ),
             },
           });
         } else if (req.user.empresaId) {
