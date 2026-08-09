@@ -79,6 +79,19 @@ export async function eliminarDatosOperativos(
   );
 
   await eliminarRegistros(
+    "Evaluaciones sujetas a aprobación de gestión",
+    () =>
+      prisma.aprobacionGestionEvaluacion.deleteMany()
+  );
+  await eliminarRegistros(
+    "Aprobaciones de gestión",
+    () => prisma.aprobacionGestion.deleteMany()
+  );
+  await eliminarRegistros(
+    "Decisiones de No aplica",
+    () => prisma.decisionNoAplica.deleteMany()
+  );
+  await eliminarRegistros(
     "Revisiones técnicas",
     () =>
       prisma.revisionTecnicaEvaluacion.deleteMany()
@@ -112,4 +125,3 @@ export async function eliminarDatosOperativos(
     () => prisma.empresaPeriodo.deleteMany()
   );
 }
-
