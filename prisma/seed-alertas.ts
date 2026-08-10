@@ -164,6 +164,9 @@ async function main(): Promise<void> {
     );
   }
 
+  const profesionalEjecutorId =
+    usuarioProfesional.profesional.id;
+
   const tareasFuente =
     await prisma.supermatrizTarea.findMany({
       where: {
@@ -190,7 +193,7 @@ async function main(): Promise<void> {
       },
     });
 
-  const tareas = [];
+  const tareas: typeof tareasFuente = [];
   const aspectosUsados = new Set<number>();
 
   for (const tarea of tareasFuente) {
@@ -293,8 +296,7 @@ async function main(): Promise<void> {
       const gestionAlDia = await tx.gestionSgsst.create({
         data: {
           empresaPeriodoId: periodoAlDia,
-          profesionalId:
-            usuarioProfesional.profesional.id,
+          profesionalId: profesionalEjecutorId,
           usuarioCreadorId: usuarioProfesional.id,
           fechaGestion: fechaDias(-10),
           modalidad: ModalidadGestion.PRESENCIAL,
@@ -331,17 +333,14 @@ async function main(): Promise<void> {
       const crearEvaluacionCompromiso = async (
         indiceTarea: number,
         calificacion: 0 | 3,
-        estadoCumplimiento:
-          | EstadoCumplimientoAspecto.NO_CUMPLIDO
-          | EstadoCumplimientoAspecto.PARCIAL,
+        estadoCumplimiento: EstadoCumplimientoAspecto,
         etiqueta: string
       ) => {
         const tarea = tareas[indiceTarea];
         const gestion = await tx.gestionSgsst.create({
           data: {
             empresaPeriodoId: periodoCompromisos,
-            profesionalId:
-              usuarioProfesional.profesional.id,
+            profesionalId: profesionalEjecutorId,
             usuarioCreadorId: usuarioProfesional.id,
             fechaGestion: fechaDias(-8 + indiceTarea),
             modalidad: ModalidadGestion.PRESENCIAL,
@@ -513,8 +512,7 @@ async function main(): Promise<void> {
       const gestionNoAplica = await tx.gestionSgsst.create({
         data: {
           empresaPeriodoId: periodoControles,
-          profesionalId:
-            usuarioProfesional.profesional.id,
+          profesionalId: profesionalEjecutorId,
           usuarioCreadorId: usuarioProfesional.id,
           fechaGestion: fechaDias(-4),
           modalidad: ModalidadGestion.OFICINA,
@@ -554,8 +552,7 @@ async function main(): Promise<void> {
       const gestionRevision = await tx.gestionSgsst.create({
         data: {
           empresaPeriodoId: periodoControles,
-          profesionalId:
-            usuarioProfesional.profesional.id,
+          profesionalId: profesionalEjecutorId,
           usuarioCreadorId: usuarioProfesional.id,
           fechaGestion: fechaDias(-3),
           modalidad: ModalidadGestion.PRESENCIAL,
@@ -603,8 +600,7 @@ async function main(): Promise<void> {
       const gestionAprobacion = await tx.gestionSgsst.create({
         data: {
           empresaPeriodoId: periodoAprobaciones,
-          profesionalId:
-            usuarioProfesional.profesional.id,
+          profesionalId: profesionalEjecutorId,
           usuarioCreadorId: usuarioProfesional.id,
           fechaGestion: fechaDias(-2),
           modalidad: ModalidadGestion.REMOTA,
