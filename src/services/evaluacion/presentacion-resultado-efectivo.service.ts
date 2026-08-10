@@ -6,33 +6,36 @@ interface HistorialEvaluacionPresentable {
   calificacionAdministrativa: number;
 }
 
-interface HistorialPaginadoPresentable<
-  T extends HistorialEvaluacionPresentable,
-> {
-  historial: T[];
+interface HistorialPaginadoPresentable {
+  historial: HistorialEvaluacionPresentable[];
 }
 
+type ItemHistorial<
+  R extends HistorialPaginadoPresentable,
+> = R["historial"][number];
+
+type ResultadoEfectivoHistorial = {
+  calificacionRegistrada: number;
+  calificacionEfectiva: number;
+  resultadoProvisional: boolean;
+  causaResultadoEfectivo: string;
+  decisionNoAplica: {
+    estado: string;
+    resultadoEfectivo: number;
+    observacionDecision: string | null;
+  } | null;
+  aprobacionGestion: {
+    estado: string;
+    observacionDecision: string | null;
+  } | null;
+};
+
 export async function enriquecerHistorialConResultadoEfectivo<
-  T extends HistorialEvaluacionPresentable,
-  R extends HistorialPaginadoPresentable<T>,
+  R extends HistorialPaginadoPresentable,
 >(resultado: R): Promise<
   Omit<R, "historial"> & {
     historial: Array<
-      T & {
-        calificacionRegistrada: number;
-        calificacionEfectiva: number;
-        resultadoProvisional: boolean;
-        causaResultadoEfectivo: string;
-        decisionNoAplica: {
-          estado: string;
-          resultadoEfectivo: number;
-          observacionDecision: string | null;
-        } | null;
-        aprobacionGestion: {
-          estado: string;
-          observacionDecision: string | null;
-        } | null;
-      }
+      ItemHistorial<R> & ResultadoEfectivoHistorial
     >;
   }
 > {
@@ -132,6 +135,8 @@ export async function enriquecerHistorialConResultadoEfectivo<
               }
             : null,
       };
-    }),
+    }) as Array<
+      ItemHistorial<R> & ResultadoEfectivoHistorial
+    >,
   };
 }
