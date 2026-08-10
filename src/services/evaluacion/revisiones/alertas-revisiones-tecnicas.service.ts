@@ -8,6 +8,11 @@ import { prisma } from "../../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "../alertas-control-evaluacion.service";
 
+export interface OpcionesAlertasRevisionesTecnicas {
+  empresaId?: string;
+  limiteConsulta?: number | null;
+}
+
 const ROLES_RESOLUCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
@@ -21,6 +26,14 @@ const ROLES_INTERNOS: RolUsuario[] = [
   RolUsuario.COORDINADOR,
   RolUsuario.PROFESIONAL,
 ];
+
+function resolverTake(
+  opciones: OpcionesAlertasRevisionesTecnicas
+): number | undefined {
+  return opciones.limiteConsulta === null
+    ? undefined
+    : opciones.limiteConsulta ?? 100;
+}
 
 function rutaRevisiones(
   empresaId: string,
@@ -39,71 +52,55 @@ function rutaRevisiones(
 }
 
 async function alertasPendientesDeResolver(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasRevisionesTecnicas
 ): Promise<AlertaControlEvaluacion[]> {
   if (!ROLES_RESOLUCION.includes(usuario.rol)) {
     return [];
   }
 
-  const revisiones =
-    await prisma.revisionTecnicaEvaluacion.findMany({
-      where: {
-        estado: EstadoRevisionTecnica.PENDIENTE,
-        evaluacion: {
+  const revisiones = await prisma.revisionTecnicaEvaluacion.findMany({
+    where: {
+      estado: EstadoRevisionTecnica.PENDIENTE,
+      evaluacion: {
+        gestion: {
+          estado: EstadoGestionSgsst.FINALIZADA,
+          valida: true,
+          empresaPeriodo: {
+            empresa: {
+              activo: true,
+              ...(opciones.empresaId ? { id: opciones.empresaId } : {}),
+            },
+          },
+        },
+      },
+    },
+    orderBy: { solicitadaEn: "asc" },
+    take: resolverTake(opciones),
+    select: {
+      id: true,
+      solicitadaEn: true,
+      solicitadaPor: { select: { nombre: true } },
+      evaluacion: {
+        select: {
+          aspecto: { select: { id: true, nombre: true } },
           gestion: {
-            estado: EstadoGestionSgsst.FINALIZADA,
-            valida: true,
-            empresaPeriodo: {
-              empresa: {
-                activo: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        solicitadaEn: "asc",
-      },
-      take: 100,
-      select: {
-        id: true,
-        solicitadaEn: true,
-        solicitadaPor: {
-          select: {
-            nombre: true,
-          },
-        },
-        evaluacion: {
-          select: {
-            aspecto: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            gestion: {
-              select: {
-                empresaPeriodo: {
-                  select: {
-                    anio: true,
-                    empresa: {
-                      select: {
-                        id: true,
-                        nombre: true,
-                      },
-                    },
-                  },
+            select: {
+              empresaPeriodo: {
+                select: {
+                  anio: true,
+                  empresa: { select: { id: true, nombre: true } },
                 },
               },
             },
           },
         },
       },
-    });
+    },
+  });
 
   return revisiones.map((revision) => {
-    const periodo =
-      revision.evaluacion.gestion.empresaPeriodo;
+    const periodo = revision.evaluacion.gestion.empresaPeriodo;
 
     return {
       id: `REVISION_TECNICA_PENDIENTE:${revision.id}`,
@@ -129,107 +126,82 @@ async function alertasPendientesDeResolver(
 }
 
 async function alertasQueRequierenCorreccion(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasRevisionesTecnicas
 ): Promise<AlertaControlEvaluacion[]> {
   if (!ROLES_INTERNOS.includes(usuario.rol)) {
     return [];
   }
 
-  const revisiones =
-    await prisma.revisionTecnicaEvaluacion.findMany({
-      where: {
-        estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
-        solicitadaPorUsuarioId: usuario.usuarioId,
-        revisadaEn: {
-          not: null,
-        },
-        evaluacion: {
-          gestion: {
-            estado: EstadoGestionSgsst.FINALIZADA,
-            valida: true,
-            empresaPeriodo: {
-              empresa: {
-                activo: true,
-              },
+  const revisiones = await prisma.revisionTecnicaEvaluacion.findMany({
+    where: {
+      estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
+      solicitadaPorUsuarioId: usuario.usuarioId,
+      revisadaEn: { not: null },
+      evaluacion: {
+        gestion: {
+          estado: EstadoGestionSgsst.FINALIZADA,
+          valida: true,
+          empresaPeriodo: {
+            empresa: {
+              activo: true,
+              ...(opciones.empresaId ? { id: opciones.empresaId } : {}),
             },
           },
         },
       },
-      orderBy: {
-        revisadaEn: "desc",
-      },
-      take: 100,
-      select: {
-        id: true,
-        revisadaEn: true,
-        conceptoTecnico: true,
-        evaluacion: {
-          select: {
-            aspectoId: true,
-            aspecto: {
-              select: {
-                id: true,
-                nombre: true,
-              },
-            },
-            gestion: {
-              select: {
-                empresaPeriodoId: true,
-                empresaPeriodo: {
-                  select: {
-                    anio: true,
-                    empresa: {
-                      select: {
-                        id: true,
-                        nombre: true,
-                      },
-                    },
-                  },
+    },
+    orderBy: { revisadaEn: "desc" },
+    take: resolverTake(opciones),
+    select: {
+      id: true,
+      revisadaEn: true,
+      conceptoTecnico: true,
+      evaluacion: {
+        select: {
+          aspectoId: true,
+          aspecto: { select: { id: true, nombre: true } },
+          gestion: {
+            select: {
+              empresaPeriodoId: true,
+              empresaPeriodo: {
+                select: {
+                  anio: true,
+                  empresa: { select: { id: true, nombre: true } },
                 },
               },
             },
           },
         },
       },
-    });
+    },
+  });
 
-  if (revisiones.length === 0) {
-    return [];
-  }
+  if (revisiones.length === 0) return [];
 
-  const condicionesCorreccion = revisiones.flatMap(
-    (revision) =>
-      revision.revisadaEn
-        ? [
-            {
-              aspectoId: revision.evaluacion.aspectoId,
-              createdAt: {
-                gt: revision.revisadaEn,
-              },
-              gestion: {
-                empresaPeriodoId:
-                  revision.evaluacion.gestion.empresaPeriodoId,
-                estado: EstadoGestionSgsst.FINALIZADA,
-                valida: true,
-              },
+  const condicionesCorreccion = revisiones.flatMap((revision) =>
+    revision.revisadaEn
+      ? [
+          {
+            aspectoId: revision.evaluacion.aspectoId,
+            createdAt: { gt: revision.revisadaEn },
+            gestion: {
+              empresaPeriodoId: revision.evaluacion.gestion.empresaPeriodoId,
+              estado: EstadoGestionSgsst.FINALIZADA,
+              valida: true,
             },
-          ]
-        : []
+          },
+        ]
+      : []
   );
 
   const correcciones = condicionesCorreccion.length
     ? await prisma.evaluacionAspecto.findMany({
-        where: {
-          OR: condicionesCorreccion,
-        },
+        where: { OR: condicionesCorreccion },
         select: {
           aspectoId: true,
           createdAt: true,
-          gestion: {
-            select: {
-              empresaPeriodoId: true,
-            },
-          },
+          gestion: { select: { empresaPeriodoId: true } },
         },
       })
     : [];
@@ -237,21 +209,18 @@ async function alertasQueRequierenCorreccion(
   return revisiones
     .filter((revision) => {
       const revisadaEn = revision.revisadaEn;
-
       if (!revisadaEn) return false;
 
       return !correcciones.some(
         (correccion) =>
-          correccion.aspectoId ===
-            revision.evaluacion.aspectoId &&
+          correccion.aspectoId === revision.evaluacion.aspectoId &&
           correccion.gestion.empresaPeriodoId ===
             revision.evaluacion.gestion.empresaPeriodoId &&
           correccion.createdAt > revisadaEn
       );
     })
     .map((revision) => {
-      const periodo =
-        revision.evaluacion.gestion.empresaPeriodo;
+      const periodo = revision.evaluacion.gestion.empresaPeriodo;
 
       return {
         id: `REVISION_TECNICA_AJUSTES:${revision.id}`,
@@ -265,8 +234,7 @@ async function alertasQueRequierenCorreccion(
         empresa: periodo.empresa,
         aspecto: revision.evaluacion.aspecto,
         fechaLimite:
-          revision.revisadaEn?.toISOString() ??
-          new Date().toISOString(),
+          revision.revisadaEn?.toISOString() ?? new Date().toISOString(),
         accion: {
           etiqueta: "Ver y corregir",
           ruta: rutaRevisiones(
@@ -282,11 +250,12 @@ async function alertasQueRequierenCorreccion(
 
 export const servicioAlertasRevisionesTecnicas = {
   listar: async (
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    opciones: OpcionesAlertasRevisionesTecnicas = {}
   ): Promise<AlertaControlEvaluacion[]> => {
     const [pendientes, ajustes] = await Promise.all([
-      alertasPendientesDeResolver(usuario),
-      alertasQueRequierenCorreccion(usuario),
+      alertasPendientesDeResolver(usuario, opciones),
+      alertasQueRequierenCorreccion(usuario, opciones),
     ]);
 
     return [...pendientes, ...ajustes];
