@@ -3,7 +3,10 @@ import {
   servicioAlertasCompromisos,
   type AlertaCompromiso,
 } from "../compromisos/alertas-compromisos.service";
-import { listarEmpresasAccesibles, asegurarEmpresaAccesible } from "../empresas/acceso-empresas.service";
+import {
+  asegurarEmpresaAccesible,
+  listarEmpresasAccesibles,
+} from "../empresas/acceso-empresas.service";
 import {
   servicioAlertasControlEvaluacion,
   type AlertaControlEvaluacion,
@@ -50,7 +53,7 @@ async function cargar(
       servicioAlertasCompromisos.listar(usuario, {
         empresaId: opciones.empresaId,
         limiteConsulta,
-        limiteRespuesta: opciones.completa ? null : undefined,
+        limiteRespuesta: null,
       }),
       servicioAlertasControlEvaluacion.listar(usuario, {
         empresaId: opciones.empresaId,
@@ -70,33 +73,22 @@ async function cargar(
     ...revisionesTecnicas,
   ].filter((alerta) => empresasPermitidas.has(alerta.empresa.id));
 
-  return {
-    compromisos,
-    alertasCompromisos,
-    alertasControl,
-    alertas: ordenar([
-      ...alertasCompromisos,
-      ...alertasControl,
-    ]),
-  };
+  return ordenar([
+    ...alertasCompromisos,
+    ...alertasControl,
+  ]);
 }
 
 export const servicioCentroAcciones = {
   listar: async (usuario: UsuarioSesionEvaluacion) => {
-    const resultado = await cargar(usuario, { completa: false });
+    const alertas = await cargar(usuario, { completa: false });
 
     return {
       resumen: {
-        total:
-          resultado.compromisos.resumen.total +
-          resultado.alertasControl.length,
-        urgentes:
-          resultado.compromisos.resumen.urgentes +
-          resultado.alertasControl.filter(
-            (alerta) => alerta.nivel === "ALTA"
-          ).length,
+        total: alertas.length,
+        urgentes: alertas.filter((alerta) => alerta.nivel === "ALTA").length,
       },
-      alertas: resultado.alertas.slice(0, 12),
+      alertas: alertas.slice(0, 12),
       generadasEn: new Date().toISOString(),
     };
   },
@@ -104,12 +96,9 @@ export const servicioCentroAcciones = {
   listarTodas: async (
     usuario: UsuarioSesionEvaluacion,
     empresaId?: string
-  ): Promise<AlertaCentro[]> => {
-    const resultado = await cargar(usuario, {
+  ): Promise<AlertaCentro[]> =>
+    cargar(usuario, {
       completa: true,
       empresaId,
-    });
-
-    return resultado.alertas;
-  },
+    }),
 };
