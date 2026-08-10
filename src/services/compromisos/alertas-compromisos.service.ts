@@ -29,7 +29,7 @@ const ROLES_ADMINISTRADOR: RolUsuario[] = [
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
 
-interface AlertaCompromiso {
+export interface AlertaCompromiso {
   id: string;
   compromisoId: string;
   tipo: string;
@@ -49,6 +49,12 @@ interface AlertaCompromiso {
     etiqueta: string;
     ruta: string;
   };
+}
+
+export interface OpcionesAlertasCompromisos {
+  empresaId?: string;
+  limiteConsulta?: number | null;
+  limiteRespuesta?: number | null;
 }
 
 function esRolSupervisor(rol: RolUsuario): boolean {
@@ -108,11 +114,20 @@ function prioridad(nivel: NivelAlerta): number {
 }
 
 export const servicioAlertasCompromisos = {
-  listar: async (usuario: UsuarioSesionEvaluacion) => {
+  listar: async (
+    usuario: UsuarioSesionEvaluacion,
+    opciones: OpcionesAlertasCompromisos = {}
+  ) => {
     const supervisor = esRolSupervisor(usuario.rol);
-    const tipoAprobador = tipoAprobadorAmpliacion(
-      usuario.rol
-    );
+    const tipoAprobador = tipoAprobadorAmpliacion(usuario.rol);
+    const limiteConsulta =
+      opciones.limiteConsulta === undefined
+        ? 100
+        : opciones.limiteConsulta;
+    const limiteRespuesta =
+      opciones.limiteRespuesta === undefined
+        ? 12
+        : opciones.limiteRespuesta;
     const hoy = new Date();
     hoy.setUTCHours(0, 0, 0, 0);
 
@@ -121,15 +136,16 @@ export const servicioAlertasCompromisos = {
         AND: [
           construirAccesoListadoCompromisos(
             usuario,
-            supervisor
-              ? "SUPERVISION"
-              : "MIS_COMPROMISOS"
+            supervisor ? "SUPERVISION" : "MIS_COMPROMISOS"
           ),
           {
             estado: {
               in: ESTADOS_COMPROMISO_ABIERTOS,
             },
           },
+          ...(opciones.empresaId
+            ? [{ empresaId: opciones.empresaId }]
+            : []),
         ],
       },
       select: {
@@ -227,8 +243,7 @@ export const servicioAlertasCompromisos = {
         },
         solicitudesAmpliacion: {
           where: {
-            estado:
-              EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
+            estado: EstadoSolicitudAmpliacionCompromiso.PENDIENTE,
           },
           select: {
             id: true,
@@ -247,54 +262,38 @@ export const servicioAlertasCompromisos = {
         },
       },
       orderBy: [
-        {
-          fechaLimite: "asc",
-        },
-        {
-          createdAt: "desc",
-        },
+        { fechaLimite: "asc" },
+        { createdAt: "desc" },
       ],
-      take: 100,
+      take: limiteConsulta ?? undefined,
     });
 
     const alertas: AlertaCompromiso[] = [];
 
     for (const compromiso of compromisos) {
-      const ruta = rutaDetalle(
-        compromiso.id,
-        supervisor
+      const ruta = rutaDetalle(compromiso.id, supervisor);
+      const asignacionPropia = compromiso.responsables.find(
+        (responsable) =>
+          responsable.usuarioResponsableId === usuario.usuarioId
       );
-      const asignacionPropia =
-        compromiso.responsables.find(
-          (responsable) =>
-            responsable.usuarioResponsableId ===
-            usuario.usuarioId
-        );
       const actividadPropiaPendiente =
         asignacionPropia?.actividad?.estado ===
         EstadoActividadCompromiso.PENDIENTE;
-      const actividadesPendientes =
-        compromiso.responsables.filter(
-          (responsable) =>
-            responsable.actividad?.estado !==
-            EstadoActividadCompromiso.ATENDIDA
-        ).length;
-      const recalificada =
-        compromiso.evaluacionesSeguimiento.some(
-          (seguimiento) => {
-            const resultado =
-              resolverResultadoEfectivoEvaluacion(
-                seguimiento.evaluacion
-              );
+      const actividadesPendientes = compromiso.responsables.filter(
+        (responsable) =>
+          responsable.actividad?.estado !==
+          EstadoActividadCompromiso.ATENDIDA
+      ).length;
+      const recalificada = compromiso.evaluacionesSeguimiento.some(
+        (seguimiento) => {
+          const resultado = resolverResultadoEfectivoEvaluacion(
+            seguimiento.evaluacion
+          );
 
-            return (
-              !resultado.provisional &&
-              resultado.calificacion === 5
-            );
-          }
-        );
-      const ultimaSolicitud =
-        compromiso.solicitudesCierre[0] ?? null;
+          return !resultado.provisional && resultado.calificacion === 5;
+        }
+      );
+      const ultimaSolicitud = compromiso.solicitudesCierre[0] ?? null;
       const ampliacionPendiente =
         compromiso.solicitudesAmpliacion[0] ?? null;
       const faltaDecisionAmpliacion = Boolean(
@@ -302,8 +301,7 @@ export const servicioAlertasCompromisos = {
           tipoAprobador &&
           ampliacionPendiente &&
           !ampliacionPendiente.decisiones.some(
-            (decision) =>
-              decision.tipoAprobador === tipoAprobador
+            (decision) => decision.tipoAprobador === tipoAprobador
           )
       );
       const vencida = compromiso.fechaLimite < hoy;
@@ -311,14 +309,12 @@ export const servicioAlertasCompromisos = {
         compromisoId: compromiso.id,
         empresa: compromiso.empresa,
         aspecto: compromiso.aspecto,
-        fechaLimite:
-          compromiso.fechaLimite.toISOString(),
+        fechaLimite: compromiso.fechaLimite.toISOString(),
       };
 
       if (
         supervisor &&
-        compromiso.estado ===
-          EstadoCompromiso.PENDIENTE_DE_REASIGNACION
+        compromiso.estado === EstadoCompromiso.PENDIENTE_DE_REASIGNACION
       ) {
         alertas.push({
           ...base,
@@ -337,14 +333,11 @@ export const servicioAlertasCompromisos = {
 
       if (
         supervisor &&
-        compromiso.estado ===
-          EstadoCompromiso.SOLICITUD_DE_CIERRE &&
-        ultimaSolicitud?.estado ===
-          EstadoSolicitudCierreCompromiso.PENDIENTE &&
-        ultimaSolicitud.solicitadaPorId !==
-          usuario.usuarioId &&
-        ultimaSolicitud.evaluacionRecalificacion
-          .usuarioRegistradorId !== usuario.usuarioId
+        compromiso.estado === EstadoCompromiso.SOLICITUD_DE_CIERRE &&
+        ultimaSolicitud?.estado === EstadoSolicitudCierreCompromiso.PENDIENTE &&
+        ultimaSolicitud.solicitadaPorId !== usuario.usuarioId &&
+        ultimaSolicitud.evaluacionRecalificacion.usuarioRegistradorId !==
+          usuario.usuarioId
       ) {
         alertas.push({
           ...base,
@@ -378,10 +371,8 @@ export const servicioAlertasCompromisos = {
       }
 
       if (
-        ultimaSolicitud?.solicitadaPorId ===
-          usuario.usuarioId &&
-        ultimaSolicitud?.estado ===
-          EstadoSolicitudCierreCompromiso.DEVUELTA
+        ultimaSolicitud?.solicitadaPorId === usuario.usuarioId &&
+        ultimaSolicitud?.estado === EstadoSolicitudCierreCompromiso.DEVUELTA
       ) {
         alertas.push({
           ...base,
@@ -419,19 +410,10 @@ export const servicioAlertasCompromisos = {
         continue;
       }
 
-      if (
-        actividadesPendientes === 0 &&
-        !recalificada &&
-        supervisor
-      ) {
-        const tareaId =
-          compromiso.evaluacionOrigen
-            .supermatrizTareaId;
+      if (actividadesPendientes === 0 && !recalificada && supervisor) {
+        const tareaId = compromiso.evaluacionOrigen.supermatrizTareaId;
         const query = new URLSearchParams({
-          anio: String(
-            compromiso.gestionOrigen.empresaPeriodo
-              .anio
-          ),
+          anio: String(compromiso.gestionOrigen.empresaPeriodo.anio),
           compromiso: compromiso.id,
           aspecto: compromiso.aspecto.nombre,
         });
@@ -459,8 +441,7 @@ export const servicioAlertasCompromisos = {
         actividadesPendientes === 0 &&
         recalificada &&
         asignacionPropia &&
-        compromiso.estado ===
-          EstadoCompromiso.EN_EJECUCION
+        compromiso.estado === EstadoCompromiso.EN_EJECUCION
       ) {
         alertas.push({
           ...base,
@@ -475,30 +456,28 @@ export const servicioAlertasCompromisos = {
             ruta,
           },
         });
-        continue;
       }
     }
 
     alertas.sort((primera, segunda) => {
-      const nivel =
-        prioridad(primera.nivel) -
-        prioridad(segunda.nivel);
+      const nivel = prioridad(primera.nivel) - prioridad(segunda.nivel);
 
       if (nivel !== 0) return nivel;
 
-      return primera.fechaLimite.localeCompare(
-        segunda.fechaLimite
-      );
+      return primera.fechaLimite.localeCompare(segunda.fechaLimite);
     });
+
+    const respuestaAlertas =
+      limiteRespuesta === null
+        ? alertas
+        : alertas.slice(0, limiteRespuesta);
 
     return {
       resumen: {
         total: alertas.length,
-        urgentes: alertas.filter(
-          (alerta) => alerta.nivel === "ALTA"
-        ).length,
+        urgentes: alertas.filter((alerta) => alerta.nivel === "ALTA").length,
       },
-      alertas: alertas.slice(0, 12),
+      alertas: respuestaAlertas,
       generadasEn: new Date().toISOString(),
     };
   },
