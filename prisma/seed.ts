@@ -84,11 +84,13 @@ async function main(): Promise<void> {
   console.log(
     "✅ Escenario demo creado o actualizado."
   );
-  console.log(
-    "Empresa: " +
-      resultado.empresa.nombre +
-      " · NIT " +
-      resultado.empresa.nit
+  console.log("");
+  console.table(
+    resultado.empresas.map((empresa) => ({
+      empresa: empresa.nombre,
+      nit: empresa.nit,
+      ciudad: empresa.ciudadPrincipal ?? "-",
+    }))
   );
   console.log("");
   console.table([
@@ -110,8 +112,7 @@ async function main(): Promise<void> {
       rol: "PROFESIONAL",
       correo:
         CUENTAS_DEMO.profesional.correo,
-      contrasena:
-        CUENTAS_DEMO.profesional.contrasena,
+      contrasena: CUENTAS_DEMO.profesional.contrasena,
     },
     {
       rol: "ADMIN_CLIENTE",
@@ -123,10 +124,10 @@ async function main(): Promise<void> {
   ]);
   console.log("");
   console.log(
-    "ℹ️ El seed no crea compromisos artificiales."
+    "ℹ️ Coordinador y profesional quedan asignados a las cuatro empresas demo."
   );
   console.log(
-    "ℹ️ Finaliza una gestión con nota 0 o 3 para probar el flujo real."
+    "ℹ️ Este seed crea identidades y asignaciones; ejecuta npm run seed:alertas para precargar gestiones y acciones pendientes."
   );
 }
 
