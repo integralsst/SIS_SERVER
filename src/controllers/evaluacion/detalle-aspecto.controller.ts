@@ -8,6 +8,7 @@ import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detal
 import { servicioDetalleResumenDinamico } from "../../services/evaluacion/detalle-resumen-dinamico.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
+import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
 import { finalizarMedicionHttp } from "../../utils/rendimiento";
@@ -226,9 +227,13 @@ export const controladorDetalleAspecto = {
             pagina,
             usuario
           );
+        const conResultadoEfectivo =
+          await enriquecerHistorialConResultadoEfectivo(
+            resultado
+          );
 
-        return enriquecerHistorialConResultadoEfectivo(
-          resultado
+        return enriquecerHistorialConTrazabilidad(
+          conResultadoEfectivo
         );
       }
     );
