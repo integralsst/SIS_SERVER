@@ -2,6 +2,7 @@ import {
   EstadoAprobacionGestion,
   EstadoDecisionNoAplica,
   EstadoGestionSgsst,
+  Prisma,
   RolUsuario,
 } from "@prisma/client";
 
@@ -32,11 +33,31 @@ export interface AlertaControlEvaluacion {
   };
 }
 
+export interface OpcionesAlertasControlEvaluacion {
+  empresaId?: string;
+  limiteConsulta?: number | null;
+}
+
+interface CondicionCorreccion {
+  empresaPeriodoId: string;
+  aspectoId: number;
+  despuesDe: Date;
+}
+
 const ROLES_ADMINISTRADOR: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
 ];
+
+function resolverTake(
+  opciones: OpcionesAlertasControlEvaluacion,
+  predeterminado: number
+): number | undefined {
+  return opciones.limiteConsulta === null
+    ? undefined
+    : opciones.limiteConsulta ?? predeterminado;
+}
 
 function rutaEvaluacion(
   empresaId: string,
@@ -51,33 +72,52 @@ function rutaEvaluacion(
   return `/dashboard/empresas/${empresaId}/evaluacion?${query.toString()}`;
 }
 
-async function tieneEvaluacionPosterior(
-  empresaPeriodoId: string,
-  aspectoId: number,
-  despuesDe: Date
-): Promise<boolean> {
-  const posterior = await prisma.evaluacionAspecto.findFirst({
-    where: {
-      aspectoId,
-      createdAt: {
-        gt: despuesDe,
-      },
+async function buscarCorreccionesPosteriores(
+  condiciones: CondicionCorreccion[]
+) {
+  if (condiciones.length === 0) return [];
+
+  const whereOr: Prisma.EvaluacionAspectoWhereInput[] =
+    condiciones.map((condicion) => ({
+      aspectoId: condicion.aspectoId,
+      createdAt: { gt: condicion.despuesDe },
       gestion: {
-        empresaPeriodoId,
+        empresaPeriodoId: condicion.empresaPeriodoId,
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
       },
-    },
+    }));
+
+  return prisma.evaluacionAspecto.findMany({
+    where: { OR: whereOr },
     select: {
-      id: true,
+      aspectoId: true,
+      createdAt: true,
+      gestion: {
+        select: {
+          empresaPeriodoId: true,
+        },
+      },
     },
   });
+}
 
-  return Boolean(posterior);
+function tieneCorreccionPosterior(
+  correcciones: Awaited<ReturnType<typeof buscarCorreccionesPosteriores>>,
+  condicion: CondicionCorreccion
+): boolean {
+  return correcciones.some(
+    (correccion) =>
+      correccion.aspectoId === condicion.aspectoId &&
+      correccion.gestion.empresaPeriodoId ===
+        condicion.empresaPeriodoId &&
+      correccion.createdAt > condicion.despuesDe
+  );
 }
 
 async function alertasNoAplicaPendientes(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasControlEvaluacion
 ): Promise<AlertaControlEvaluacion[]> {
   if (
     usuario.rol !== RolUsuario.COORDINADOR ||
@@ -97,19 +137,16 @@ async function alertasNoAplicaPendientes(
           empresaPeriodo: {
             empresa: {
               activo: true,
+              ...(opciones.empresaId
+                ? { id: opciones.empresaId }
+                : {}),
               asignacionesProfesionales: {
                 some: {
                   profesionalId: usuario.profesionalId,
                   activo: true,
                   OR: [
-                    {
-                      fechaFin: null,
-                    },
-                    {
-                      fechaFin: {
-                        gte: ahora,
-                      },
-                    },
+                    { fechaFin: null },
+                    { fechaFin: { gte: ahora } },
                   ],
                 },
               },
@@ -118,37 +155,21 @@ async function alertasNoAplicaPendientes(
         },
       },
     },
-    orderBy: {
-      solicitadaEn: "asc",
-    },
-    take: 100,
+    orderBy: { solicitadaEn: "asc" },
+    take: resolverTake(opciones, 100),
     select: {
       id: true,
       solicitadaEn: true,
-      solicitadaPor: {
-        select: {
-          nombre: true,
-        },
-      },
+      solicitadaPor: { select: { nombre: true } },
       evaluacion: {
         select: {
-          aspecto: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
+          aspecto: { select: { id: true, nombre: true } },
           gestion: {
             select: {
               empresaPeriodo: {
                 select: {
                   anio: true,
-                  empresa: {
-                    select: {
-                      id: true,
-                      nombre: true,
-                    },
-                  },
+                  empresa: { select: { id: true, nombre: true } },
                 },
               },
             },
@@ -159,8 +180,7 @@ async function alertasNoAplicaPendientes(
   });
 
   return decisiones.map((decision) => {
-    const periodo =
-      decision.evaluacion.gestion.empresaPeriodo;
+    const periodo = decision.evaluacion.gestion.empresaPeriodo;
 
     return {
       id: `NO_APLICA_REVISAR:${decision.id}`,
@@ -174,18 +194,15 @@ async function alertasNoAplicaPendientes(
       fechaLimite: decision.solicitadaEn.toISOString(),
       accion: {
         etiqueta: "Revisar No aplica",
-        ruta: rutaEvaluacion(
-          periodo.empresa.id,
-          periodo.anio,
-          "noAplica"
-        ),
+        ruta: rutaEvaluacion(periodo.empresa.id, periodo.anio, "noAplica"),
       },
     } satisfies AlertaControlEvaluacion;
   });
 }
 
 async function alertasNoAplicaRechazadas(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasControlEvaluacion
 ): Promise<AlertaControlEvaluacion[]> {
   if (usuario.rol !== RolUsuario.PROFESIONAL) {
     return [];
@@ -195,20 +212,23 @@ async function alertasNoAplicaRechazadas(
     where: {
       estado: EstadoDecisionNoAplica.RECHAZADO,
       solicitadaPorUsuarioId: usuario.usuarioId,
-      decididaEn: {
-        not: null,
-      },
+      decididaEn: { not: null },
       evaluacion: {
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
           valida: true,
+          ...(opciones.empresaId
+            ? {
+                empresaPeriodo: {
+                  empresaId: opciones.empresaId,
+                },
+              }
+            : {}),
         },
       },
     },
-    orderBy: {
-      decididaEn: "desc",
-    },
-    take: 50,
+    orderBy: { decididaEn: "desc" },
+    take: resolverTake(opciones, 50),
     select: {
       id: true,
       decididaEn: true,
@@ -216,24 +236,14 @@ async function alertasNoAplicaRechazadas(
       evaluacion: {
         select: {
           aspectoId: true,
-          aspecto: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
+          aspecto: { select: { id: true, nombre: true } },
           gestion: {
             select: {
               empresaPeriodoId: true,
               empresaPeriodo: {
                 select: {
                   anio: true,
-                  empresa: {
-                    select: {
-                      id: true,
-                      nombre: true,
-                    },
-                  },
+                  empresa: { select: { id: true, nombre: true } },
                 },
               },
             },
@@ -243,50 +253,61 @@ async function alertasNoAplicaRechazadas(
     },
   });
 
-  const alertas: AlertaControlEvaluacion[] = [];
-
-  for (const decision of decisiones) {
-    if (!decision.decididaEn) continue;
-
-    const corregida = await tieneEvaluacionPosterior(
-      decision.evaluacion.gestion.empresaPeriodoId,
-      decision.evaluacion.aspectoId,
+  const condiciones: CondicionCorreccion[] = decisiones.flatMap(
+    (decision) =>
       decision.decididaEn
-    );
+        ? [
+            {
+              empresaPeriodoId:
+                decision.evaluacion.gestion.empresaPeriodoId,
+              aspectoId: decision.evaluacion.aspectoId,
+              despuesDe: decision.decididaEn,
+            },
+          ]
+        : []
+  );
+  const correcciones = await buscarCorreccionesPosteriores(condiciones);
 
-    if (corregida) continue;
+  return decisiones.flatMap((decision) => {
+    if (!decision.decididaEn) return [];
 
-    const periodo =
-      decision.evaluacion.gestion.empresaPeriodo;
+    const condicion = {
+      empresaPeriodoId: decision.evaluacion.gestion.empresaPeriodoId,
+      aspectoId: decision.evaluacion.aspectoId,
+      despuesDe: decision.decididaEn,
+    };
 
-    alertas.push({
-      id: `NO_APLICA_RECHAZADO:${decision.id}`,
-      compromisoId: decision.id,
-      tipo: "NO_APLICA_RECHAZADO",
-      nivel: "ALTA",
-      titulo: "No aplica rechazado: requiere nueva evaluación",
-      descripcion:
-        decision.observacionDecision ||
-        `${periodo.empresa.nombre}: registra una nueva gestión para corregir “${decision.evaluacion.aspecto.nombre}”.`,
-      empresa: periodo.empresa,
-      aspecto: decision.evaluacion.aspecto,
-      fechaLimite: decision.decididaEn.toISOString(),
-      accion: {
-        etiqueta: "Revisar decisión",
-        ruta: rutaEvaluacion(
-          periodo.empresa.id,
-          periodo.anio,
-          "noAplica"
-        ),
-      },
-    });
-  }
+    if (tieneCorreccionPosterior(correcciones, condicion)) {
+      return [];
+    }
 
-  return alertas;
+    const periodo = decision.evaluacion.gestion.empresaPeriodo;
+
+    return [
+      {
+        id: `NO_APLICA_RECHAZADO:${decision.id}`,
+        compromisoId: decision.id,
+        tipo: "NO_APLICA_RECHAZADO",
+        nivel: "ALTA",
+        titulo: "No aplica rechazado: requiere nueva evaluación",
+        descripcion:
+          decision.observacionDecision ||
+          `${periodo.empresa.nombre}: registra una nueva gestión para corregir “${decision.evaluacion.aspecto.nombre}”.`,
+        empresa: periodo.empresa,
+        aspecto: decision.evaluacion.aspecto,
+        fechaLimite: decision.decididaEn.toISOString(),
+        accion: {
+          etiqueta: "Revisar decisión",
+          ruta: rutaEvaluacion(periodo.empresa.id, periodo.anio, "noAplica"),
+        },
+      } satisfies AlertaControlEvaluacion,
+    ];
+  });
 }
 
 async function alertasAprobacionPendientes(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasControlEvaluacion
 ): Promise<AlertaControlEvaluacion[]> {
   if (!ROLES_ADMINISTRADOR.includes(usuario.rol)) {
     return [];
@@ -298,40 +319,30 @@ async function alertasAprobacionPendientes(
       gestion: {
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
-        usuarioCreadorId: {
-          not: usuario.usuarioId,
-        },
+        usuarioCreadorId: { not: usuario.usuarioId },
         empresaPeriodo: {
           empresa: {
             activo: true,
+            ...(opciones.empresaId
+              ? { id: opciones.empresaId }
+              : {}),
           },
         },
       },
     },
-    orderBy: {
-      generadaEn: "asc",
-    },
-    take: 100,
+    orderBy: { generadaEn: "asc" },
+    take: resolverTake(opciones, 100),
     select: {
       id: true,
       generadaEn: true,
       gestion: {
         select: {
           tipoActividad: true,
-          usuarioCreador: {
-            select: {
-              nombre: true,
-            },
-          },
+          usuarioCreador: { select: { nombre: true } },
           empresaPeriodo: {
             select: {
               anio: true,
-              empresa: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
+              empresa: { select: { id: true, nombre: true } },
             },
           },
         },
@@ -341,21 +352,12 @@ async function alertasAprobacionPendientes(
         select: {
           evaluacion: {
             select: {
-              aspecto: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
+              aspecto: { select: { id: true, nombre: true } },
             },
           },
         },
       },
-      _count: {
-        select: {
-          evaluaciones: true,
-        },
-      },
+      _count: { select: { evaluaciones: true } },
     },
   });
 
@@ -379,35 +381,35 @@ async function alertasAprobacionPendientes(
       fechaLimite: aprobacion.generadaEn.toISOString(),
       accion: {
         etiqueta: "Revisar gestión",
-        ruta: rutaEvaluacion(
-          periodo.empresa.id,
-          periodo.anio,
-          "aprobaciones"
-        ),
+        ruta: rutaEvaluacion(periodo.empresa.id, periodo.anio, "aprobaciones"),
       },
     } satisfies AlertaControlEvaluacion;
   });
 }
 
 async function alertasAprobacionRechazada(
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  opciones: OpcionesAlertasControlEvaluacion
 ): Promise<AlertaControlEvaluacion[]> {
   const aprobaciones = await prisma.aprobacionGestion.findMany({
     where: {
       estado: EstadoAprobacionGestion.RECHAZADA,
-      decididaEn: {
-        not: null,
-      },
+      decididaEn: { not: null },
       gestion: {
         usuarioCreadorId: usuario.usuarioId,
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
+        ...(opciones.empresaId
+          ? {
+              empresaPeriodo: {
+                empresaId: opciones.empresaId,
+              },
+            }
+          : {}),
       },
     },
-    orderBy: {
-      decididaEn: "desc",
-    },
-    take: 30,
+    orderBy: { decididaEn: "desc" },
+    take: resolverTake(opciones, 30),
     select: {
       id: true,
       decididaEn: true,
@@ -419,12 +421,7 @@ async function alertasAprobacionRechazada(
           empresaPeriodo: {
             select: {
               anio: true,
-              empresa: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
+              empresa: { select: { id: true, nombre: true } },
             },
           },
         },
@@ -434,12 +431,7 @@ async function alertasAprobacionRechazada(
           evaluacion: {
             select: {
               aspectoId: true,
-              aspecto: {
-                select: {
-                  id: true,
-                  nombre: true,
-                },
-              },
+              aspecto: { select: { id: true, nombre: true } },
             },
           },
         },
@@ -447,59 +439,61 @@ async function alertasAprobacionRechazada(
     },
   });
 
-  const alertas: AlertaControlEvaluacion[] = [];
+  const condiciones: CondicionCorreccion[] = aprobaciones.flatMap(
+    (aprobacion) =>
+      aprobacion.decididaEn
+        ? aprobacion.evaluaciones.map((relacion) => ({
+            empresaPeriodoId: aprobacion.gestion.empresaPeriodoId,
+            aspectoId: relacion.evaluacion.aspectoId,
+            despuesDe: aprobacion.decididaEn as Date,
+          }))
+        : []
+  );
+  const correcciones = await buscarCorreccionesPosteriores(condiciones);
 
-  for (const aprobacion of aprobaciones) {
-    if (!aprobacion.decididaEn) continue;
+  return aprobaciones.flatMap((aprobacion) => {
+    if (!aprobacion.decididaEn) return [];
 
-    const pendientesCorreccion = [];
+    const pendientesCorreccion = aprobacion.evaluaciones
+      .filter((relacion) =>
+        !tieneCorreccionPosterior(correcciones, {
+          empresaPeriodoId: aprobacion.gestion.empresaPeriodoId,
+          aspectoId: relacion.evaluacion.aspectoId,
+          despuesDe: aprobacion.decididaEn as Date,
+        })
+      )
+      .map((relacion) => relacion.evaluacion.aspecto);
 
-    for (const relacion of aprobacion.evaluaciones) {
-      const corregida = await tieneEvaluacionPosterior(
-        aprobacion.gestion.empresaPeriodoId,
-        relacion.evaluacion.aspectoId,
-        aprobacion.decididaEn
-      );
-
-      if (!corregida) {
-        pendientesCorreccion.push(relacion.evaluacion.aspecto);
-      }
-    }
-
-    if (pendientesCorreccion.length === 0) continue;
+    if (pendientesCorreccion.length === 0) return [];
 
     const periodo = aprobacion.gestion.empresaPeriodo;
-    const aspecto = pendientesCorreccion[0];
 
-    alertas.push({
-      id: `APROBACION_GESTION_RECHAZADA:${aprobacion.id}`,
-      compromisoId: aprobacion.id,
-      tipo: "APROBACION_GESTION_RECHAZADA",
-      nivel: "ALTA",
-      titulo: "Gestión rechazada: requiere corrección",
-      descripcion:
-        aprobacion.observacionDecision ||
-        `${periodo.empresa.nombre}: corrige ${pendientesCorreccion.length} evaluación(es) mediante una nueva gestión.`,
-      empresa: periodo.empresa,
-      aspecto,
-      fechaLimite: aprobacion.decididaEn.toISOString(),
-      accion: {
-        etiqueta: "Revisar rechazo",
-        ruta: rutaEvaluacion(
-          periodo.empresa.id,
-          periodo.anio,
-          "aprobaciones"
-        ),
-      },
-    });
-  }
-
-  return alertas;
+    return [
+      {
+        id: `APROBACION_GESTION_RECHAZADA:${aprobacion.id}`,
+        compromisoId: aprobacion.id,
+        tipo: "APROBACION_GESTION_RECHAZADA",
+        nivel: "ALTA",
+        titulo: "Gestión rechazada: requiere corrección",
+        descripcion:
+          aprobacion.observacionDecision ||
+          `${periodo.empresa.nombre}: corrige ${pendientesCorreccion.length} evaluación(es) mediante una nueva gestión.`,
+        empresa: periodo.empresa,
+        aspecto: pendientesCorreccion[0],
+        fechaLimite: aprobacion.decididaEn.toISOString(),
+        accion: {
+          etiqueta: "Revisar rechazo",
+          ruta: rutaEvaluacion(periodo.empresa.id, periodo.anio, "aprobaciones"),
+        },
+      } satisfies AlertaControlEvaluacion,
+    ];
+  });
 }
 
 export const servicioAlertasControlEvaluacion = {
   listar: async (
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    opciones: OpcionesAlertasControlEvaluacion = {}
   ): Promise<AlertaControlEvaluacion[]> => {
     const [
       noAplicaPendientes,
@@ -507,10 +501,10 @@ export const servicioAlertasControlEvaluacion = {
       aprobacionesPendientes,
       aprobacionesRechazadas,
     ] = await Promise.all([
-      alertasNoAplicaPendientes(usuario),
-      alertasNoAplicaRechazadas(usuario),
-      alertasAprobacionPendientes(usuario),
-      alertasAprobacionRechazada(usuario),
+      alertasNoAplicaPendientes(usuario, opciones),
+      alertasNoAplicaRechazadas(usuario, opciones),
+      alertasAprobacionPendientes(usuario, opciones),
+      alertasAprobacionRechazada(usuario, opciones),
     ]);
 
     return [
