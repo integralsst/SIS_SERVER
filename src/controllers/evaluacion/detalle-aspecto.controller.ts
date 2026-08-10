@@ -7,6 +7,7 @@ import { servicioDetalleAspectoRapido } from "../../services/evaluacion/detalle-
 import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detalle-aspecto-secciones.service";
 import { servicioDetalleResumenDinamico } from "../../services/evaluacion/detalle-resumen-dinamico.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
+import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
 import { finalizarMedicionHttp } from "../../utils/rendimiento";
@@ -216,14 +217,20 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-historial-paginado",
-      ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoRapido.obtenerHistorialPaginado(
-          empresaId,
-          tareaId,
-          anio,
-          pagina,
-          usuario
-        )
+      async ({ empresaId, tareaId, anio, usuario }) => {
+        const resultado =
+          await servicioDetalleAspectoRapido.obtenerHistorialPaginado(
+            empresaId,
+            tareaId,
+            anio,
+            pagina,
+            usuario
+          );
+
+        return enriquecerHistorialConResultadoEfectivo(
+          resultado
+        );
+      }
     );
   },
 
