@@ -6,6 +6,7 @@ import {
 import {
   CUENTAS_DEMO,
   EMPRESA_DEMO,
+  EMPRESAS_DEMO_ADICIONALES,
   type ContrasenasDemoCifradas,
 } from "./datos-demo.seed";
 
@@ -27,6 +28,26 @@ export async function crearIdentidadesDemo(
         activo: true,
       },
     });
+
+  const empresasAdicionales = [];
+
+  for (const datosEmpresa of EMPRESAS_DEMO_ADICIONALES) {
+    const empresaAdicional = await tx.empresa.upsert({
+      where: {
+        nit: datosEmpresa.nit,
+      },
+      update: {
+        ...datosEmpresa,
+        activo: true,
+      },
+      create: {
+        ...datosEmpresa,
+        activo: true,
+      },
+    });
+
+    empresasAdicionales.push(empresaAdicional);
+  }
 
   const superadmin =
     await tx.usuario.upsert({
@@ -192,6 +213,10 @@ export async function crearIdentidadesDemo(
 
   return {
     empresa,
+    empresas: [
+      empresa,
+      ...empresasAdicionales,
+    ],
     superadmin,
     usuarioCoordinador,
     usuarioProfesional,

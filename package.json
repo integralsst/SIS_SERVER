@@ -15,7 +15,8 @@
     "reset:supermatriz": "ts-node --project tsconfig.seed.json prisma/reset-supermatriz.ts",
     "seed:supermatriz": "ts-node --project tsconfig.seed.json prisma/seed-supermatriz.ts",
     "reset:total": "ts-node --project tsconfig.seed.json prisma/reset-total.ts",
-    "seed:demo": "ts-node --project tsconfig.seed.json prisma/seed.ts"
+    "seed:demo": "ts-node --project tsconfig.seed.json prisma/seed.ts",
+    "seed:alertas": "ts-node --project tsconfig.seed.json prisma/seed-alertas.ts"
   },
   "keywords": [],
   "author": "",
