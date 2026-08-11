@@ -43,6 +43,10 @@ export function clasificarCategoriaAccion(
     return "COMPROMISOS";
   }
 
+  if (tipo === "EVIDENCIA_PENDIENTE") {
+    return "EVIDENCIAS";
+  }
+
   if (tipo.startsWith("REVISION_TECNICA")) {
     return "REVISION_TECNICA";
   }
