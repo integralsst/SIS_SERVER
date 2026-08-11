@@ -1,5 +1,9 @@
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import {
+  servicioAlertasAuditorias,
+  type AlertaAuditoria,
+} from "../auditorias/alertas-auditorias.service";
+import {
   servicioAlertasCompromisos,
   type AlertaCompromiso,
 } from "../compromisos/alertas-compromisos.service";
@@ -14,7 +18,10 @@ import {
 import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/alertas-revisiones-tecnicas.service";
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
-type AlertaCentro = AlertaControlEvaluacion | AlertaCompromiso;
+type AlertaCentro =
+  | AlertaControlEvaluacion
+  | AlertaCompromiso
+  | AlertaAuditoria;
 
 interface OpcionesCentroAcciones {
   empresaId?: string;
@@ -48,22 +55,30 @@ async function cargar(
     : await listarEmpresasAccesibles(usuario);
   const empresasPermitidas = new Set(empresas.map((empresa) => empresa.id));
 
-  const [compromisos, controlesEvaluacion, revisionesTecnicas] =
-    await Promise.all([
-      servicioAlertasCompromisos.listar(usuario, {
-        empresaId: opciones.empresaId,
-        limiteConsulta,
-        limiteRespuesta: null,
-      }),
-      servicioAlertasControlEvaluacion.listar(usuario, {
-        empresaId: opciones.empresaId,
-        limiteConsulta,
-      }),
-      servicioAlertasRevisionesTecnicas.listar(usuario, {
-        empresaId: opciones.empresaId,
-        limiteConsulta,
-      }),
-    ]);
+  const [
+    compromisos,
+    controlesEvaluacion,
+    revisionesTecnicas,
+    auditorias,
+  ] = await Promise.all([
+    servicioAlertasCompromisos.listar(usuario, {
+      empresaId: opciones.empresaId,
+      limiteConsulta,
+      limiteRespuesta: null,
+    }),
+    servicioAlertasControlEvaluacion.listar(usuario, {
+      empresaId: opciones.empresaId,
+      limiteConsulta,
+    }),
+    servicioAlertasRevisionesTecnicas.listar(usuario, {
+      empresaId: opciones.empresaId,
+      limiteConsulta,
+    }),
+    servicioAlertasAuditorias.listar(usuario, {
+      empresaId: opciones.empresaId,
+      limiteConsulta,
+    }),
+  ]);
 
   const alertasCompromisos = compromisos.alertas.filter((alerta) =>
     empresasPermitidas.has(alerta.empresa.id)
@@ -72,10 +87,14 @@ async function cargar(
     ...controlesEvaluacion,
     ...revisionesTecnicas,
   ].filter((alerta) => empresasPermitidas.has(alerta.empresa.id));
+  const alertasAuditorias = auditorias.filter((alerta) =>
+    empresasPermitidas.has(alerta.empresa.id)
+  );
 
   return ordenar([
     ...alertasCompromisos,
     ...alertasControl,
+    ...alertasAuditorias,
   ]);
 }
 
