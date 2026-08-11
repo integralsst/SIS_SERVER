@@ -174,11 +174,6 @@ export const servicioAlertasCompromisos = {
             },
           },
         },
-        evaluacionOrigen: {
-          select: {
-            supermatrizTareaId: true,
-          },
-        },
         responsables: {
           where: {
             estado: EstadoAsignacionCompromiso.ASIGNADA,
@@ -411,16 +406,11 @@ export const servicioAlertasCompromisos = {
       }
 
       if (actividadesPendientes === 0 && !recalificada && supervisor) {
-        const tareaId = compromiso.evaluacionOrigen.supermatrizTareaId;
         const query = new URLSearchParams({
           anio: String(compromiso.gestionOrigen.empresaPeriodo.anio),
           compromiso: compromiso.id,
           aspecto: compromiso.aspecto.nombre,
         });
-
-        if (tareaId) {
-          query.set("tareaId", String(tareaId));
-        }
 
         alertas.push({
           ...base,
