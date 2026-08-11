@@ -15,6 +15,7 @@ import {
   servicioAlertasControlEvaluacion,
   type AlertaControlEvaluacion,
 } from "../evaluacion/alertas-control-evaluacion.service";
+import { servicioAlertasEvidenciasPendientes } from "../evaluacion/alertas-evidencias-pendientes.service";
 import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/alertas-revisiones-tecnicas.service";
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
@@ -58,6 +59,7 @@ async function cargar(
   const [
     compromisos,
     controlesEvaluacion,
+    evidenciasPendientes,
     revisionesTecnicas,
     auditorias,
   ] = await Promise.all([
@@ -67,6 +69,10 @@ async function cargar(
       limiteRespuesta: null,
     }),
     servicioAlertasControlEvaluacion.listar(usuario, {
+      empresaId: opciones.empresaId,
+      limiteConsulta,
+    }),
+    servicioAlertasEvidenciasPendientes.listar(usuario, {
       empresaId: opciones.empresaId,
       limiteConsulta,
     }),
@@ -85,6 +91,7 @@ async function cargar(
   );
   const alertasControl = [
     ...controlesEvaluacion,
+    ...evidenciasPendientes,
     ...revisionesTecnicas,
   ].filter((alerta) => empresasPermitidas.has(alerta.empresa.id));
   const alertasAuditorias = auditorias.filter((alerta) =>
