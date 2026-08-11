@@ -13,6 +13,7 @@ const CATEGORIAS: CategoriaAccionCentro[] = [
   "REVISION_TECNICA",
   "NO_APLICA",
   "APROBACIONES",
+  "AUDITORIAS",
   "OTROS",
 ];
 
@@ -22,6 +23,7 @@ function crearConteoCategorias(): Record<CategoriaAccionCentro, number> {
     REVISION_TECNICA: 0,
     NO_APLICA: 0,
     APROBACIONES: 0,
+    AUDITORIAS: 0,
     OTROS: 0,
   };
 }
