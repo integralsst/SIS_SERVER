@@ -233,7 +233,12 @@ export const controladorDetalleAspecto = {
           );
 
         return enriquecerHistorialConTrazabilidad(
-          conResultadoEfectivo
+          conResultadoEfectivo,
+          {
+            empresaId,
+            tareaId,
+            anio,
+          }
         );
       }
     );

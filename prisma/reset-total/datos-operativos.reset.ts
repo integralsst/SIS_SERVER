@@ -75,9 +75,25 @@ export async function eliminarDatosOperativos(
 
   console.log("");
   console.log(
-    "2/4 Eliminando evaluaciones, gestiones y periodos..."
+    "2/4 Eliminando auditorías, evaluaciones, gestiones y periodos..."
   );
 
+  await eliminarRegistros(
+    "Seguimientos de auditorías",
+    () => prisma.seguimientoAuditoria.deleteMany()
+  );
+  await eliminarRegistros(
+    "Recomendaciones de auditoría",
+    () => prisma.recomendacionAuditoria.deleteMany()
+  );
+  await eliminarRegistros(
+    "Hallazgos de auditoría",
+    () => prisma.hallazgoAuditoria.deleteMany()
+  );
+  await eliminarRegistros(
+    "Auditorías SG-SST",
+    () => prisma.auditoriaSgsst.deleteMany()
+  );
   await eliminarRegistros(
     "Evaluaciones sujetas a aprobación de gestión",
     () =>

@@ -10,7 +10,8 @@ export type TipoEventoTrazabilidadAspecto =
   | "NO_APLICA"
   | "APROBACION_GESTION"
   | "REVISION_TECNICA"
-  | "COMPROMISO";
+  | "COMPROMISO"
+  | "AUDITORIA";
 
 export interface EventoTrazabilidadAspecto {
   id: string;
@@ -27,6 +28,8 @@ export interface EventoTrazabilidadAspecto {
     evaluacionId: string | null;
     revisionTecnicaId: string | null;
     compromisoId: string | null;
+    auditoriaId?: string | null;
+    hallazgoId?: string | null;
   };
 }
 
@@ -60,6 +63,12 @@ interface CompromisoBase {
 interface ResultadoHistorialBase<T extends HistorialBase> {
   historial: T[];
   compromisos: CompromisoBase[];
+}
+
+interface ContextoTrazabilidadAspecto {
+  empresaId: string;
+  tareaId: number;
+  anio: number;
 }
 
 function etiquetaEstadoCumplimiento(estado: string): string {
@@ -101,140 +110,283 @@ function evento(
   return {
     ...data,
     descripcion:
-      data.descripcion?.trim() || "Movimiento registrado en la trazabilidad del aspecto.",
+      data.descripcion?.trim() ||
+      "Movimiento registrado en la trazabilidad del aspecto.",
   };
+}
+
+async function cargarEventosAuditoria(
+  contexto: ContextoTrazabilidadAspecto | undefined
+): Promise<EventoTrazabilidadAspecto[]> {
+  if (!contexto) return [];
+
+  const tarea = await prisma.supermatrizTarea.findUnique({
+    where: { id: contexto.tareaId },
+    select: { aspectoId: true },
+  });
+
+  if (!tarea) return [];
+
+  const hallazgos = await prisma.hallazgoAuditoria.findMany({
+    where: {
+      aspectoId: tarea.aspectoId,
+      auditoria: {
+        is: {
+          empresaPeriodo: {
+            is: {
+              empresaId: contexto.empresaId,
+              anio: contexto.anio,
+            },
+          },
+        },
+      },
+    },
+    include: {
+      creadoPor: {
+        select: { id: true, nombre: true },
+      },
+      auditoria: {
+        select: {
+          id: true,
+          titulo: true,
+          estado: true,
+        },
+      },
+      recomendaciones: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          creadoPor: {
+            select: { id: true, nombre: true },
+          },
+        },
+      },
+      seguimientos: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          usuario: {
+            select: { id: true, nombre: true },
+          },
+          recomendacion: {
+            select: { id: true },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const eventos: EventoTrazabilidadAspecto[] = [];
+
+  for (const hallazgo of hallazgos) {
+    eventos.push(
+      evento({
+        id: `AUDITORIA_HALLAZGO:${hallazgo.id}`,
+        tipo: "AUDITORIA",
+        titulo: "Hallazgo de auditoría registrado",
+        descripcion: `${hallazgo.titulo}. ${hallazgo.descripcion}`,
+        estado: hallazgo.estado,
+        createdAt: hallazgo.createdAt.toISOString(),
+        usuario: hallazgo.creadoPor,
+        referencia: {
+          evaluacionId: null,
+          revisionTecnicaId: null,
+          compromisoId: null,
+          auditoriaId: hallazgo.auditoria.id,
+          hallazgoId: hallazgo.id,
+        },
+      })
+    );
+
+    for (const recomendacion of hallazgo.recomendaciones) {
+      eventos.push(
+        evento({
+          id: `AUDITORIA_RECOMENDACION:${recomendacion.id}`,
+          tipo: "AUDITORIA",
+          titulo: "Recomendación de auditoría registrada",
+          descripcion: recomendacion.descripcion,
+          estado: recomendacion.estado,
+          createdAt: recomendacion.createdAt.toISOString(),
+          usuario: recomendacion.creadoPor,
+          referencia: {
+            evaluacionId: null,
+            revisionTecnicaId: null,
+            compromisoId: null,
+            auditoriaId: hallazgo.auditoria.id,
+            hallazgoId: hallazgo.id,
+          },
+        })
+      );
+    }
+
+    for (const seguimiento of hallazgo.seguimientos) {
+      const estado =
+        seguimiento.estadoRecomendacion ??
+        seguimiento.estadoHallazgo ??
+        hallazgo.estado;
+
+      eventos.push(
+        evento({
+          id: `AUDITORIA_SEGUIMIENTO:${seguimiento.id}`,
+          tipo: "AUDITORIA",
+          titulo: seguimiento.recomendacion
+            ? "Seguimiento de recomendación de auditoría"
+            : "Seguimiento de hallazgo de auditoría",
+          descripcion: seguimiento.descripcion,
+          estado,
+          createdAt: seguimiento.createdAt.toISOString(),
+          usuario: seguimiento.usuario,
+          referencia: {
+            evaluacionId: null,
+            revisionTecnicaId: null,
+            compromisoId: null,
+            auditoriaId: hallazgo.auditoria.id,
+            hallazgoId: hallazgo.id,
+          },
+        })
+      );
+    }
+  }
+
+  return eventos;
 }
 
 export async function enriquecerHistorialConTrazabilidad<
   T extends HistorialBase,
   R extends ResultadoHistorialBase<T>,
->(resultado: R): Promise<R & { trazabilidad: EventoTrazabilidadAspecto[] }> {
+>(
+  resultado: R,
+  contexto?: ContextoTrazabilidadAspecto
+): Promise<R & { trazabilidad: EventoTrazabilidadAspecto[] }> {
   const evaluacionIds = resultado.historial.map((item) => item.id);
 
-  if (evaluacionIds.length === 0 && resultado.compromisos.length === 0) {
-    return {
-      ...resultado,
-      trazabilidad: [],
-    };
-  }
-
-  const evaluaciones = evaluacionIds.length
-    ? await prisma.evaluacionAspecto.findMany({
-        where: {
-          id: {
-            in: evaluacionIds,
-          },
-        },
-        select: {
-          id: true,
-          aspectoId: true,
-          createdAt: true,
-          aspecto: {
-            select: {
-              codigo: true,
+  const [evaluaciones, eventosAuditoria] = await Promise.all([
+    evaluacionIds.length
+      ? prisma.evaluacionAspecto.findMany({
+          where: {
+            id: {
+              in: evaluacionIds,
             },
           },
-          usuarioRegistrador: {
-            select: {
-              id: true,
-              nombre: true,
+          select: {
+            id: true,
+            aspectoId: true,
+            createdAt: true,
+            aspecto: {
+              select: {
+                codigo: true,
+              },
             },
-          },
-          gestion: {
-            select: {
-              estado: true,
-              finalizadaEn: true,
-              empresaPeriodo: {
-                select: {
-                  empresaId: true,
+            usuarioRegistrador: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+            gestion: {
+              select: {
+                estado: true,
+                finalizadaEn: true,
+                empresaPeriodo: {
+                  select: {
+                    empresaId: true,
+                  },
                 },
               },
             },
-          },
-          decisionNoAplica: {
-            select: {
-              id: true,
-              estado: true,
-              resultadoEfectivo: true,
-              observacionDecision: true,
-              solicitadaEn: true,
-              decididaEn: true,
-              solicitadaPor: {
-                select: {
-                  id: true,
-                  nombre: true,
+            decisionNoAplica: {
+              select: {
+                id: true,
+                estado: true,
+                resultadoEfectivo: true,
+                observacionDecision: true,
+                solicitadaEn: true,
+                decididaEn: true,
+                solicitadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
                 },
-              },
-              decididaPor: {
-                select: {
-                  id: true,
-                  nombre: true,
+                decididaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
                 },
               },
             },
-          },
-          aprobacionGestion: {
-            select: {
-              aprobacionGestion: {
-                select: {
-                  id: true,
-                  estado: true,
-                  observacionDecision: true,
-                  generadaEn: true,
-                  decididaEn: true,
-                  decididaPor: {
-                    select: {
-                      id: true,
-                      nombre: true,
+            aprobacionGestion: {
+              select: {
+                aprobacionGestion: {
+                  select: {
+                    id: true,
+                    estado: true,
+                    observacionDecision: true,
+                    generadaEn: true,
+                    decididaEn: true,
+                    decididaPor: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      },
                     },
                   },
                 },
               },
             },
-          },
-          revisionTecnica: {
-            select: {
-              id: true,
-              estado: true,
-              motivoSolicitud: true,
-              conceptoTecnico: true,
-              motivoAnulacion: true,
-              solicitadaEn: true,
-              revisadaEn: true,
-              anuladaEn: true,
-              solicitadaPor: {
-                select: {
-                  id: true,
-                  nombre: true,
+            revisionTecnica: {
+              select: {
+                id: true,
+                estado: true,
+                motivoSolicitud: true,
+                conceptoTecnico: true,
+                motivoAnulacion: true,
+                solicitadaEn: true,
+                revisadaEn: true,
+                anuladaEn: true,
+                solicitadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
                 },
-              },
-              revisadaPor: {
-                select: {
-                  id: true,
-                  nombre: true,
+                revisadaPor: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
                 },
               },
             },
           },
-        },
-      })
-    : [];
+        })
+      : Promise.resolve([]),
+    cargarEventosAuditoria(contexto),
+  ]);
 
-  const itemPorId = new Map(resultado.historial.map((item) => [item.id, item]));
-  const eventos: EventoTrazabilidadAspecto[] = [];
+  const itemPorId = new Map(
+    resultado.historial.map((item) => [item.id, item])
+  );
+  const eventos: EventoTrazabilidadAspecto[] = [
+    ...eventosAuditoria,
+  ];
 
   for (const evaluacion of evaluaciones) {
     const item = itemPorId.get(evaluacion.id);
     if (!item) continue;
 
-    const nota = item.calificacionEfectiva ?? item.calificacionAdministrativa;
-    const invalidada = evaluacion.gestion.estado === EstadoGestionSgsst.INVALIDADA;
+    const nota =
+      item.calificacionEfectiva ?? item.calificacionAdministrativa;
+    const invalidada =
+      evaluacion.gestion.estado === EstadoGestionSgsst.INVALIDADA;
 
     eventos.push(
       evento({
         id: `EVALUACION:${evaluacion.id}`,
         tipo: "EVALUACION",
-        titulo: invalidada ? "Evaluación invalidada" : "Evaluación registrada",
+        titulo: invalidada
+          ? "Evaluación invalidada"
+          : "Evaluación registrada",
         descripcion: `${etiquetaEstadoCumplimiento(
           item.estadoCumplimiento
         )} · Nota efectiva ${nota}.`,
@@ -258,7 +410,8 @@ export async function enriquecerHistorialConTrazabilidad<
           id: `NO_APLICA_SOLICITUD:${noAplica.id}`,
           tipo: "NO_APLICA",
           titulo: "No aplica solicitado",
-          descripcion: "La solicitud quedó pendiente de decisión de Coordinación con resultado efectivo provisional 3.",
+          descripcion:
+            "La solicitud quedó pendiente de decisión de Coordinación con resultado efectivo provisional 3.",
           estado: "PENDIENTE",
           createdAt: noAplica.solicitadaEn.toISOString(),
           usuario: noAplica.solicitadaPor,
@@ -295,14 +448,16 @@ export async function enriquecerHistorialConTrazabilidad<
       }
     }
 
-    const aprobacion = evaluacion.aprobacionGestion?.aprobacionGestion;
+    const aprobacion =
+      evaluacion.aprobacionGestion?.aprobacionGestion;
     if (aprobacion) {
       eventos.push(
         evento({
           id: `APROBACION_GESTION_SOLICITUD:${aprobacion.id}`,
           tipo: "APROBACION_GESTION",
           titulo: "Gestión enviada a aprobación",
-          descripcion: "La evaluación quedó sujeta a una regla de aprobación administrativa.",
+          descripcion:
+            "La evaluación quedó sujeta a una regla de aprobación administrativa.",
           estado: "PENDIENTE",
           createdAt: aprobacion.generadaEn.toISOString(),
           usuario: evaluacion.usuarioRegistrador,

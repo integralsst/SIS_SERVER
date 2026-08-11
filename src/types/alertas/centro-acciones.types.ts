@@ -5,6 +5,7 @@ export type CategoriaAccionCentro =
   | "REVISION_TECNICA"
   | "NO_APLICA"
   | "APROBACIONES"
+  | "AUDITORIAS"
   | "OTROS";
 
 export type PrioridadConsultaAcciones =
