@@ -58,6 +58,10 @@ export function clasificarCategoriaAccion(
     return "APROBACIONES";
   }
 
+  if (tipo.startsWith("AUDITORIA_")) {
+    return "AUDITORIAS";
+  }
+
   return "OTROS";
 }
 
