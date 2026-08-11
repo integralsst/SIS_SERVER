@@ -1,4 +1,5 @@
 import {
+  EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   Prisma,
@@ -73,28 +74,176 @@ function normalizarUrl(value: unknown): string {
   return url.toString();
 }
 
+async function buscarEvaluacionConContexto(
+  evaluacionId: string
+) {
+  return prisma.evaluacionAspecto.findUnique({
+    where: {
+      id: evaluacionId,
+    },
+    include: {
+      gestion: {
+        include: {
+          empresaPeriodo: true,
+        },
+      },
+      aspecto: {
+        include: {
+          configuracionEvidencia: true,
+        },
+      },
+    },
+  });
+}
+
+async function obtenerEvaluacionParaCrearEvidencia(
+  evaluacionId: string,
+  usuario: UsuarioSesionEvaluacion
+) {
+  const evaluacion = await buscarEvaluacionConContexto(
+    evaluacionId
+  );
+
+  if (!evaluacion) {
+    throw new ErrorEvaluacion(
+      "La evaluación seleccionada no existe.",
+      404,
+      "EVALUACION_NO_ENCONTRADA"
+    );
+  }
+
+  const gestion = await asegurarAccesoGestion(
+    usuario,
+    evaluacion.gestionId,
+    "ESCRITURA"
+  );
+
+  if (!gestion.valida) {
+    throw new ErrorEvaluacion(
+      "La gestión está invalidada.",
+      409,
+      "GESTION_INVALIDADA"
+    );
+  }
+
+  if (
+    gestion.empresaPeriodo.estado !==
+    EstadoPeriodoSgsst.ABIERTO
+  ) {
+    throw new ErrorEvaluacion(
+      "El periodo está cerrado.",
+      409,
+      "PERIODO_CERRADO"
+    );
+  }
+
+  if (gestion.estado === EstadoGestionSgsst.BORRADOR) {
+    return {
+      evaluacion,
+      posteriorFinalizacion: false,
+    };
+  }
+
+  if (gestion.estado !== EstadoGestionSgsst.FINALIZADA) {
+    throw new ErrorEvaluacion(
+      "La gestión no permite agregar evidencias.",
+      409,
+      "GESTION_NO_EDITABLE"
+    );
+  }
+
+  if (
+    !evaluacion.aspecto.configuracionEvidencia
+      ?.requiereEvidencia
+  ) {
+    throw new ErrorEvaluacion(
+      "Solo se pueden completar soportes después de finalizar cuando el aspecto exige evidencia.",
+      409,
+      "EVIDENCIA_POSTERIOR_NO_REQUERIDA"
+    );
+  }
+
+  if (
+    evaluacion.estadoCumplimiento !==
+      EstadoCumplimientoAspecto.CUMPLIDO ||
+    evaluacion.calificacionAdministrativa.toNumber() !== 5
+  ) {
+    throw new ErrorEvaluacion(
+      "La carga posterior está reservada para aspectos cumplidos en 5 con evidencia requerida pendiente.",
+      409,
+      "EVIDENCIA_POSTERIOR_NO_APLICA"
+    );
+  }
+
+  const ultimaEvaluacion =
+    await prisma.evaluacionAspecto.findFirst({
+      where: {
+        aspectoId: evaluacion.aspectoId,
+        gestion: {
+          empresaPeriodoId:
+            evaluacion.gestion.empresaPeriodoId,
+          estado: EstadoGestionSgsst.FINALIZADA,
+          valida: true,
+        },
+      },
+      orderBy: [
+        {
+          gestion: {
+            fechaGestion: "desc",
+          },
+        },
+        {
+          createdAt: "desc",
+        },
+        {
+          id: "desc",
+        },
+      ],
+      select: {
+        id: true,
+      },
+    });
+
+  if (ultimaEvaluacion?.id !== evaluacion.id) {
+    throw new ErrorEvaluacion(
+      "La evidencia pendiente debe completarse sobre la evaluación vigente más reciente del aspecto.",
+      409,
+      "EVALUACION_NO_VIGENTE"
+    );
+  }
+
+  const evidenciaExistente =
+    await prisma.evidenciaEvaluacion.findFirst({
+      where: {
+        evaluacionId,
+        activo: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (evidenciaExistente) {
+    throw new ErrorEvaluacion(
+      "La evaluación finalizada ya cuenta con una evidencia activa.",
+      409,
+      "EVIDENCIA_PENDIENTE_COMPLETADA"
+    );
+  }
+
+  return {
+    evaluacion,
+    posteriorFinalizacion: true,
+  };
+}
+
 async function obtenerEvaluacionEditable(
   evaluacionId: string,
   usuario: UsuarioSesionEvaluacion
 ) {
-  const evaluacion =
-    await prisma.evaluacionAspecto.findUnique({
-      where: {
-        id: evaluacionId,
-      },
-      include: {
-        gestion: {
-          include: {
-            empresaPeriodo: true,
-          },
-        },
-        aspecto: {
-          include: {
-            configuracionEvidencia: true,
-          },
-        },
-      },
-    });
+  const evaluacion = await buscarEvaluacionConContexto(
+    evaluacionId
+  );
 
   if (!evaluacion) {
     throw new ErrorEvaluacion(
@@ -211,7 +360,10 @@ export const servicioEvidenciasEvaluacion = {
     data: CrearEvidenciaEvaluacionInput,
     usuario: UsuarioSesionEvaluacion
   ) => {
-    const evaluacion = await obtenerEvaluacionEditable(
+    const {
+      evaluacion,
+      posteriorFinalizacion,
+    } = await obtenerEvaluacionParaCrearEvidencia(
       evaluacionId,
       usuario
     );
@@ -235,6 +387,27 @@ export const servicioEvidenciasEvaluacion = {
             ?.visibleClienteDefault ?? false;
 
     return prisma.$transaction(async (tx) => {
+      if (posteriorFinalizacion) {
+        const existente =
+          await tx.evidenciaEvaluacion.findFirst({
+            where: {
+              evaluacionId,
+              activo: true,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+        if (existente) {
+          throw new ErrorEvaluacion(
+            "La evidencia pendiente ya fue completada.",
+            409,
+            "EVIDENCIA_PENDIENTE_COMPLETADA"
+          );
+        }
+      }
+
       const evidencia =
         await tx.evidenciaEvaluacion.create({
           data: {
@@ -253,8 +426,12 @@ export const servicioEvidenciasEvaluacion = {
           gestionId: evaluacion.gestionId,
           evaluacionId,
           usuarioId: usuario.usuarioId,
-          accion: "CREAR_EVIDENCIA",
-          descripcion: `Se agregó la evidencia ${nombre}.`,
+          accion: posteriorFinalizacion
+            ? "COMPLETAR_EVIDENCIA_PENDIENTE"
+            : "CREAR_EVIDENCIA",
+          descripcion: posteriorFinalizacion
+            ? `Se completó la evidencia pendiente ${nombre} después de finalizar la gestión.`
+            : `Se agregó la evidencia ${nombre}.`,
           datosDespues:
             comoJsonPrismaEvaluacion(evidencia),
         },
