@@ -11,6 +11,7 @@ const CATEGORIAS = new Set<CategoriaAccionCentro | "TODAS">([
   "REVISION_TECNICA",
   "NO_APLICA",
   "APROBACIONES",
+  "AUDITORIAS",
   "OTROS",
 ]);
 
