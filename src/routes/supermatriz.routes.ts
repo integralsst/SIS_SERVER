@@ -21,6 +21,7 @@ const rolesLectura = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
+  RolUsuario.COORDINADOR,
   RolUsuario.PROFESIONAL,
 ];
 
