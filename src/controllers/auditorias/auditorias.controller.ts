@@ -1,6 +1,10 @@
 import type { Request, Response } from "express";
-import { RolUsuario } from "@prisma/client";
+import {
+  EstadoHallazgoAuditoria,
+  RolUsuario,
+} from "@prisma/client";
 
+import { prisma } from "../../lib/prisma";
 import {
   obtenerParametroRuta,
   obtenerUsuarioSesion,
@@ -27,13 +31,124 @@ const ROLES_GOBIERNO_AUDITORIA: RolUsuario[] = [
   RolUsuario.COORDINADOR,
 ];
 
+function esGobiernoAuditoria(rol: RolUsuario): boolean {
+  return ROLES_GOBIERNO_AUDITORIA.includes(rol);
+}
+
 function asegurarGobiernoAuditoria(rol: RolUsuario): void {
-  if (!ROLES_GOBIERNO_AUDITORIA.includes(rol)) {
+  if (!esGobiernoAuditoria(rol)) {
     throw new ErrorEvaluacion(
       "Tu rol puede participar en la gestión y seguimiento de la auditoría, pero no iniciar, finalizar ni cancelar su estado global.",
       403,
       "AUDITORIA_GOBIERNO_REQUERIDO"
     );
+  }
+}
+
+async function obtenerEstadoHallazgoGobernado(hallazgoId: string) {
+  const hallazgo = await prisma.hallazgoAuditoria.findUnique({
+    where: { id: hallazgoId },
+    select: {
+      estado: true,
+      recomendaciones: {
+        select: {
+          id: true,
+          estado: true,
+        },
+      },
+    },
+  });
+
+  if (!hallazgo) {
+    throw new ErrorEvaluacion(
+      "El hallazgo seleccionado no existe.",
+      404,
+      "HALLAZGO_AUDITORIA_NO_ENCONTRADO"
+    );
+  }
+
+  return hallazgo;
+}
+
+function hallazgoEstaResuelto(
+  estado: EstadoHallazgoAuditoria
+): boolean {
+  return (
+    estado === EstadoHallazgoAuditoria.RESUELTO ||
+    estado === EstadoHallazgoAuditoria.CERRADO
+  );
+}
+
+function asegurarEdicionEstructuralHallazgo(
+  estado: EstadoHallazgoAuditoria,
+  rol: RolUsuario
+): void {
+  if (hallazgoEstaResuelto(estado) && !esGobiernoAuditoria(rol)) {
+    throw new ErrorEvaluacion(
+      "El hallazgo ya está resuelto. Tu rol conserva acceso de consulta y seguimiento, pero la asignación y el plazo quedan bajo gobierno de coordinación o administración.",
+      403,
+      "HALLAZGO_RESUELTO_GOBIERNO_REQUERIDO"
+    );
+  }
+}
+
+function asegurarNuevaRecomendacionPermitida(
+  estado: EstadoHallazgoAuditoria
+): void {
+  if (hallazgoEstaResuelto(estado)) {
+    throw new ErrorEvaluacion(
+      "El hallazgo ya está resuelto. Para registrar una nueva recomendación debe reabrirse formalmente mediante seguimiento por un rol de gobierno.",
+      409,
+      "HALLAZGO_RESUELTO_NUEVA_RECOMENDACION"
+    );
+  }
+}
+
+function asegurarSeguimientoProfesionalResuelto(
+  hallazgo: Awaited<ReturnType<typeof obtenerEstadoHallazgoGobernado>>,
+  data: ReturnType<typeof normalizarCrearSeguimiento>,
+  rol: RolUsuario
+): void {
+  if (!hallazgoEstaResuelto(hallazgo.estado) || esGobiernoAuditoria(rol)) {
+    return;
+  }
+
+  if (hallazgo.estado === EstadoHallazgoAuditoria.CERRADO) {
+    throw new ErrorEvaluacion(
+      "El hallazgo está cerrado. Los seguimientos posteriores requieren intervención de coordinación o administración.",
+      403,
+      "HALLAZGO_CERRADO_GOBIERNO_REQUERIDO"
+    );
+  }
+
+  if (
+    data.estadoHallazgo &&
+    data.estadoHallazgo !== EstadoHallazgoAuditoria.RESUELTO
+  ) {
+    throw new ErrorEvaluacion(
+      "Como profesional puedes documentar seguimiento posterior sobre un hallazgo resuelto, pero no reabrirlo ni cambiar su estado. Solicita la intervención de coordinación o administración.",
+      403,
+      "HALLAZGO_RESUELTO_REAPERTURA_GOBIERNO"
+    );
+  }
+
+  if (data.estadoRecomendacion) {
+    const recomendacion = data.recomendacionId
+      ? hallazgo.recomendaciones.find(
+          (item) => item.id === data.recomendacionId
+        )
+      : null;
+
+    if (
+      recomendacion &&
+      data.estadoRecomendacion !== recomendacion.estado
+    ) {
+      throw new ErrorEvaluacion(
+        "Como profesional puedes agregar trazabilidad posterior, pero no cambiar el estado de una recomendación cuando el hallazgo ya está resuelto.",
+        403,
+        "RECOMENDACION_RESUELTA_GOBIERNO_REQUERIDO"
+      );
+    }
   }
 }
 
@@ -126,10 +241,15 @@ export const controladorAuditorias = {
 
   actualizarHallazgo: async (req: Request, res: Response): Promise<void> => {
     try {
+      const usuario = obtenerUsuarioSesion(req);
+      const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
+      const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
+      asegurarEdicionEstructuralHallazgo(hallazgo.estado, usuario.rol);
+
       const resultado = await servicioAuditorias.actualizarHallazgo(
-        obtenerParametroRuta(req, "hallazgoId"),
+        hallazgoId,
         normalizarActualizarHallazgo(bodyRecord(req)),
-        obtenerUsuarioSesion(req)
+        usuario
       );
       res.json(resultado);
     } catch (error) {
@@ -139,8 +259,12 @@ export const controladorAuditorias = {
 
   crearRecomendacion: async (req: Request, res: Response): Promise<void> => {
     try {
+      const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
+      const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
+      asegurarNuevaRecomendacionPermitida(hallazgo.estado);
+
       const resultado = await servicioAuditorias.crearRecomendacion(
-        obtenerParametroRuta(req, "hallazgoId"),
+        hallazgoId,
         normalizarCrearRecomendacion(bodyRecord(req)),
         obtenerUsuarioSesion(req)
       );
@@ -171,10 +295,16 @@ export const controladorAuditorias = {
     res: Response
   ): Promise<void> => {
     try {
+      const usuario = obtenerUsuarioSesion(req);
+      const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
+      const data = normalizarCrearSeguimiento(bodyRecord(req));
+      const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
+      asegurarSeguimientoProfesionalResuelto(hallazgo, data, usuario.rol);
+
       const resultado = await servicioAuditorias.registrarSeguimiento(
-        obtenerParametroRuta(req, "hallazgoId"),
-        normalizarCrearSeguimiento(bodyRecord(req)),
-        obtenerUsuarioSesion(req)
+        hallazgoId,
+        data,
+        usuario
       );
       res.status(201).json(resultado);
     } catch (error) {
@@ -186,7 +316,10 @@ export const controladorAuditorias = {
     try {
       const anioRaw = req.query.anio;
       const anio = anioRaw === undefined ? undefined : Number(anioRaw);
-      if (anio !== undefined && (!Number.isInteger(anio) || anio < 2000 || anio > 9999)) {
+      if (
+        anio !== undefined &&
+        (!Number.isInteger(anio) || anio < 2000 || anio > 9999)
+      ) {
         res.status(400).json({ error: "El año consultado no es válido." });
         return;
       }
