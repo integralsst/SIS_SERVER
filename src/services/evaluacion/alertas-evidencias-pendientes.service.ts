@@ -105,6 +105,24 @@ export const servicioAlertasEvidenciasPendientes = {
           },
           take: 1,
         },
+        seguimientosCompromiso: {
+          select: {
+            compromiso: {
+              select: {
+                evidencias: {
+                  where: {
+                    activa: true,
+                  },
+                  select: {
+                    id: true,
+                  },
+                  take: 1,
+                },
+              },
+            },
+          },
+          take: 1,
+        },
         gestion: {
           select: {
             finalizadaEn: true,
@@ -134,10 +152,17 @@ export const servicioAlertasEvidenciasPendientes = {
       if (vistos.has(clave)) continue;
       vistos.add(clave);
 
+      const tieneEvidenciaCompromiso =
+        evaluacion.seguimientosCompromiso.some(
+          (seguimiento) =>
+            seguimiento.compromiso.evidencias.length > 0
+        );
+
       if (
         evaluacion.estadoCumplimiento !== EstadoCumplimientoAspecto.CUMPLIDO ||
         evaluacion.calificacionAdministrativa.toNumber() !== 5 ||
         evaluacion.evidencias.length > 0 ||
+        tieneEvidenciaCompromiso ||
         !evaluacion.supermatrizTarea
       ) {
         continue;
@@ -151,7 +176,7 @@ export const servicioAlertasEvidenciasPendientes = {
         tipo: "EVIDENCIA_PENDIENTE",
         nivel: "MEDIA",
         titulo: "Evidencia requerida pendiente",
-        descripcion: `${periodo.empresa.nombre}: “${evaluacion.aspecto.nombre}” está calificado en 5, pero el aspecto exige evidencia y todavía no tiene un soporte adjunto.`,
+        descripcion: `${periodo.empresa.nombre}: “${evaluacion.aspecto.nombre}” está calificado en 5, pero el aspecto exige evidencia y todavía no tiene un soporte asociado.`,
         empresa: periodo.empresa,
         aspecto: evaluacion.aspecto,
         fechaLimite: (
