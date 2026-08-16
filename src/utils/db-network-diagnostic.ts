@@ -127,3 +127,5 @@ export async function ejecutarDiagnosticoRedBaseDatos(): Promise<void> {
 
   console.log("[DB-NET-DIAG] Fin del diagnóstico temporal de red MySQL.");
 }
+
+void ejecutarDiagnosticoRedBaseDatos();
