@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./utils/db-network-diagnostic";
 
 import express, {
   NextFunction,
