@@ -254,7 +254,9 @@ export const controladorDetalleAspecto = {
           );
 
         return enriquecerTrazabilidadConEvidencias(
-          conTrazabilidad
+          conTrazabilidad as unknown as Parameters<
+            typeof enriquecerTrazabilidadConEvidencias
+          >[0]
         );
       }
     );
