@@ -71,6 +71,11 @@ async function obtenerEstadoHallazgoGobernado(hallazgoId: string) {
     where: { id: hallazgoId },
     select: {
       estado: true,
+      auditoria: {
+        select: {
+          estado: true,
+        },
+      },
       recomendaciones: {
         select: {
           id: true,
@@ -91,6 +96,36 @@ async function obtenerEstadoHallazgoGobernado(hallazgoId: string) {
   return hallazgo;
 }
 
+async function obtenerEstadoRecomendacionGobernada(recomendacionId: string) {
+  const recomendacion = await prisma.recomendacionAuditoria.findUnique({
+    where: { id: recomendacionId },
+    select: {
+      id: true,
+      estado: true,
+      hallazgo: {
+        select: {
+          estado: true,
+          auditoria: {
+            select: {
+              estado: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!recomendacion) {
+    throw new ErrorEvaluacion(
+      "La recomendación seleccionada no existe.",
+      404,
+      "RECOMENDACION_AUDITORIA_NO_ENCONTRADA"
+    );
+  }
+
+  return recomendacion;
+}
+
 function hallazgoEstaResuelto(
   estado: EstadoHallazgoAuditoria
 ): boolean {
@@ -100,76 +135,84 @@ function hallazgoEstaResuelto(
   );
 }
 
-function asegurarEdicionEstructuralHallazgo(
-  estado: EstadoHallazgoAuditoria,
-  rol: RolUsuario
-): void {
-  if (hallazgoEstaResuelto(estado) && !esGobiernoAuditoria(rol)) {
+function asegurarRegistroHistoricoEditable(hallazgo: {
+  estado: EstadoHallazgoAuditoria;
+  auditoria: { estado: EstadoAuditoriaSgsst };
+}): void {
+  if (hallazgo.auditoria.estado === EstadoAuditoriaSgsst.FINALIZADA) {
     throw new ErrorEvaluacion(
-      "El hallazgo ya está resuelto. Tu rol conserva acceso de consulta y seguimiento, pero la asignación y el plazo quedan bajo gobierno de coordinación o administración.",
-      403,
-      "HALLAZGO_RESUELTO_GOBIERNO_REQUERIDO"
+      "La auditoría ya fue finalizada. El hallazgo forma parte del registro histórico y su clasificación, asignación y plazo ya no pueden modificarse.",
+      409,
+      "AUDITORIA_HISTORICA_BLOQUEADA"
+    );
+  }
+
+  if (hallazgoEstaResuelto(hallazgo.estado)) {
+    throw new ErrorEvaluacion(
+      "El hallazgo ya está resuelto. Su clasificación, asignación y plazo quedan protegidos como parte de la trazabilidad histórica.",
+      409,
+      "HALLAZGO_HISTORICO_BLOQUEADO"
     );
   }
 }
 
-function asegurarNuevaRecomendacionPermitida(
-  estado: EstadoHallazgoAuditoria
-): void {
-  if (hallazgoEstaResuelto(estado)) {
+function asegurarNuevaRecomendacionPermitida(hallazgo: {
+  estado: EstadoHallazgoAuditoria;
+  auditoria: { estado: EstadoAuditoriaSgsst };
+}): void {
+  if (hallazgo.auditoria.estado === EstadoAuditoriaSgsst.FINALIZADA) {
     throw new ErrorEvaluacion(
-      "El hallazgo ya está resuelto. Para registrar una nueva recomendación debe reabrirse formalmente mediante seguimiento por un rol de gobierno.",
+      "La auditoría ya fue finalizada. No se pueden agregar nuevas recomendaciones al registro histórico.",
+      409,
+      "AUDITORIA_HISTORICA_NUEVA_RECOMENDACION"
+    );
+  }
+
+  if (hallazgoEstaResuelto(hallazgo.estado)) {
+    throw new ErrorEvaluacion(
+      "El hallazgo ya está resuelto. No se pueden agregar nuevas recomendaciones; conserva su trazabilidad mediante seguimientos informativos.",
       409,
       "HALLAZGO_RESUELTO_NUEVA_RECOMENDACION"
     );
   }
 }
 
-function asegurarSeguimientoProfesionalResuelto(
+function asegurarRecomendacionEditable(recomendacion: Awaited<
+  ReturnType<typeof obtenerEstadoRecomendacionGobernada>
+>): void {
+  if (recomendacion.hallazgo.auditoria.estado === EstadoAuditoriaSgsst.FINALIZADA) {
+    throw new ErrorEvaluacion(
+      "La auditoría ya fue finalizada. La recomendación forma parte del registro histórico y no puede modificarse.",
+      409,
+      "RECOMENDACION_AUDITORIA_HISTORICA_BLOQUEADA"
+    );
+  }
+
+  if (hallazgoEstaResuelto(recomendacion.hallazgo.estado)) {
+    throw new ErrorEvaluacion(
+      "El hallazgo ya está resuelto. La recomendación queda protegida como parte de la trazabilidad histórica.",
+      409,
+      "RECOMENDACION_HISTORICA_BLOQUEADA"
+    );
+  }
+}
+
+function asegurarSeguimientoHistoricoInformativo(
   hallazgo: Awaited<ReturnType<typeof obtenerEstadoHallazgoGobernado>>,
-  data: ReturnType<typeof normalizarCrearSeguimiento>,
-  rol: RolUsuario
+  data: ReturnType<typeof normalizarCrearSeguimiento>
 ): void {
-  if (!hallazgoEstaResuelto(hallazgo.estado) || esGobiernoAuditoria(rol)) {
-    return;
-  }
+  const historico =
+    hallazgo.auditoria.estado === EstadoAuditoriaSgsst.FINALIZADA ||
+    hallazgoEstaResuelto(hallazgo.estado);
 
-  if (hallazgo.estado === EstadoHallazgoAuditoria.CERRADO) {
+  if (!historico) return;
+
+  if (data.estadoHallazgo || data.estadoRecomendacion) {
     throw new ErrorEvaluacion(
-      "El hallazgo está cerrado. Los seguimientos posteriores requieren intervención de coordinación o administración.",
-      403,
-      "HALLAZGO_CERRADO_GOBIERNO_REQUERIDO"
+      "El hallazgo ya forma parte del registro histórico. Puedes agregar un seguimiento informativo, pero no reabrir ni cambiar estados del hallazgo o sus recomendaciones.",
+      409,
+      "SEGUIMIENTO_HISTORICO_SOLO_INFORMATIVO"
     );
-  }
-
-  if (
-    data.estadoHallazgo &&
-    data.estadoHallazgo !== EstadoHallazgoAuditoria.RESUELTO
-  ) {
-    throw new ErrorEvaluacion(
-      "Como profesional puedes documentar seguimiento posterior sobre un hallazgo resuelto, pero no reabrirlo ni cambiar su estado. Solicita la intervención de coordinación o administración.",
-      403,
-      "HALLAZGO_RESUELTO_REAPERTURA_GOBIERNO"
-    );
-  }
-
-  if (data.estadoRecomendacion) {
-    const recomendacion = data.recomendacionId
-      ? hallazgo.recomendaciones.find(
-          (item) => item.id === data.recomendacionId
-        )
-      : null;
-
-    if (
-      recomendacion &&
-      data.estadoRecomendacion !== recomendacion.estado
-    ) {
-      throw new ErrorEvaluacion(
-        "Como profesional puedes agregar trazabilidad posterior, pero no cambiar el estado de una recomendación cuando el hallazgo ya está resuelto.",
-        403,
-        "RECOMENDACION_RESUELTA_GOBIERNO_REQUERIDO"
-      );
-    }
   }
 }
 
@@ -292,7 +335,7 @@ export const controladorAuditorias = {
       const usuario = obtenerUsuarioSesion(req);
       const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
       const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
-      asegurarEdicionEstructuralHallazgo(hallazgo.estado, usuario.rol);
+      asegurarRegistroHistoricoEditable(hallazgo);
 
       const resultado = await servicioAuditorias.actualizarHallazgo(
         hallazgoId,
@@ -309,7 +352,7 @@ export const controladorAuditorias = {
     try {
       const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
       const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
-      asegurarNuevaRecomendacionPermitida(hallazgo.estado);
+      asegurarNuevaRecomendacionPermitida(hallazgo);
 
       const resultado = await servicioAuditorias.crearRecomendacion(
         hallazgoId,
@@ -327,8 +370,14 @@ export const controladorAuditorias = {
     res: Response
   ): Promise<void> => {
     try {
+      const recomendacionId = obtenerParametroRuta(req, "recomendacionId");
+      const recomendacion = await obtenerEstadoRecomendacionGobernada(
+        recomendacionId
+      );
+      asegurarRecomendacionEditable(recomendacion);
+
       const resultado = await servicioAuditorias.actualizarRecomendacion(
-        obtenerParametroRuta(req, "recomendacionId"),
+        recomendacionId,
         normalizarActualizarRecomendacion(bodyRecord(req)),
         obtenerUsuarioSesion(req)
       );
@@ -347,7 +396,7 @@ export const controladorAuditorias = {
       const hallazgoId = obtenerParametroRuta(req, "hallazgoId");
       const data = normalizarCrearSeguimiento(bodyRecord(req));
       const hallazgo = await obtenerEstadoHallazgoGobernado(hallazgoId);
-      asegurarSeguimientoProfesionalResuelto(hallazgo, data, usuario.rol);
+      asegurarSeguimientoHistoricoInformativo(hallazgo, data);
 
       const resultado = await servicioAuditorias.registrarSeguimiento(
         hallazgoId,
