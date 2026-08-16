@@ -2,6 +2,8 @@ import { lookup } from "node:dns/promises";
 import net from "node:net";
 
 const TIMEOUT_MS = 7000;
+const PUBLIC_IP_TIMEOUT_MS = 5000;
+const PUBLIC_IP_URL = "https://api.ipify.org?format=json";
 
 type ResultadoTcp = {
   destino: string;
@@ -9,6 +11,59 @@ type ResultadoTcp = {
   codigo?: string;
   duracionMs: number;
 };
+
+type RespuestaIpPublica = {
+  ip?: unknown;
+};
+
+function codigoError(error: unknown): string {
+  if (error instanceof Error && "code" in error) {
+    return String((error as NodeJS.ErrnoException).code ?? error.name);
+  }
+
+  if (error instanceof Error) {
+    return error.name;
+  }
+
+  return "DESCONOCIDO";
+}
+
+async function registrarIpPublicaSalida(): Promise<void> {
+  const inicio = Date.now();
+
+  try {
+    const response = await fetch(PUBLIC_IP_URL, {
+      headers: {
+        accept: "application/json",
+      },
+      signal: AbortSignal.timeout(PUBLIC_IP_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      console.log(
+        `[DB-NET-DIAG] Outbound IPv4 -> ERROR (HTTP_${response.status}) en ${Date.now() - inicio}ms`
+      );
+      return;
+    }
+
+    const payload = (await response.json()) as RespuestaIpPublica;
+
+    if (typeof payload.ip !== "string" || payload.ip.trim().length === 0) {
+      console.log(
+        `[DB-NET-DIAG] Outbound IPv4 -> ERROR (RESPUESTA_INVALIDA) en ${Date.now() - inicio}ms`
+      );
+      return;
+    }
+
+    console.log(
+      `[DB-NET-DIAG] Outbound IPv4: ${payload.ip.trim()} en ${Date.now() - inicio}ms`
+    );
+  } catch (error) {
+    console.log(
+      `[DB-NET-DIAG] Outbound IPv4 -> ERROR (${codigoError(error)}) en ${Date.now() - inicio}ms`
+    );
+  }
+}
 
 function probarTcp(host: string, puerto: number): Promise<ResultadoTcp> {
   return new Promise((resolve) => {
@@ -56,6 +111,8 @@ export async function ejecutarDiagnosticoRedBaseDatos(): Promise<void> {
 
   console.log("[DB-NET-DIAG] Inicio del diagnóstico temporal de red MySQL.");
 
+  await registrarIpPublicaSalida();
+
   if (!databaseUrl) {
     console.log(
       "[DB-NET-DIAG] OMITIDO: DATABASE_URL no está configurado."
@@ -101,14 +158,7 @@ export async function ejecutarDiagnosticoRedBaseDatos(): Promise<void> {
       }`
     );
   } catch (error) {
-    const codigo =
-      error instanceof Error && "code" in error
-        ? String((error as NodeJS.ErrnoException).code ?? error.name)
-        : error instanceof Error
-          ? error.name
-          : "DESCONOCIDO";
-
-    console.log(`[DB-NET-DIAG] DNS ERROR: ${codigo}`);
+    console.log(`[DB-NET-DIAG] DNS ERROR: ${codigoError(error)}`);
   }
 
   const destinos = [host, ...direcciones].filter(
