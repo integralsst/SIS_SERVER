@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import {
+  EstadoAuditoriaSgsst,
   EstadoHallazgoAuditoria,
   RolUsuario,
 } from "@prisma/client";
@@ -43,6 +44,26 @@ function asegurarGobiernoAuditoria(rol: RolUsuario): void {
       "AUDITORIA_GOBIERNO_REQUERIDO"
     );
   }
+}
+
+function asegurarAuditoriaEnEjecucion(estado: EstadoAuditoriaSgsst): void {
+  if (estado !== EstadoAuditoriaSgsst.EN_EJECUCION) {
+    throw new ErrorEvaluacion(
+      "La auditoría debe estar en ejecución para registrar hallazgos. Iníciala formalmente antes de documentar resultados.",
+      409,
+      "AUDITORIA_NO_EN_EJECUCION"
+    );
+  }
+}
+
+function contarHallazgosPendientes(
+  auditoria: Awaited<ReturnType<typeof servicioAuditorias.obtenerDetalle>>
+): number {
+  return auditoria.hallazgos.filter(
+    (item) =>
+      item.estado === EstadoHallazgoAuditoria.ABIERTO ||
+      item.estado === EstadoHallazgoAuditoria.EN_GESTION
+  ).length;
 }
 
 async function obtenerEstadoHallazgoGobernado(hallazgoId: string) {
@@ -215,9 +236,28 @@ export const controladorAuditorias = {
       const usuario = obtenerUsuarioSesion(req);
       asegurarGobiernoAuditoria(usuario.rol);
 
+      const auditoriaId = obtenerParametroRuta(req, "auditoriaId");
+      const data = normalizarCambiarEstadoAuditoria(bodyRecord(req));
+
+      if (data.estado === EstadoAuditoriaSgsst.FINALIZADA) {
+        const auditoria = await servicioAuditorias.obtenerDetalle(
+          auditoriaId,
+          usuario
+        );
+        const pendientes = contarHallazgosPendientes(auditoria);
+
+        if (pendientes > 0) {
+          throw new ErrorEvaluacion(
+            `No puedes finalizar la auditoría mientras existan ${pendientes} hallazgo(s) operativo(s) pendiente(s). Resuélvelos o ciérralos antes de formalizar el cierre.`,
+            409,
+            "AUDITORIA_HALLAZGOS_PENDIENTES"
+          );
+        }
+      }
+
       const resultado = await servicioAuditorias.cambiarEstado(
-        obtenerParametroRuta(req, "auditoriaId"),
-        normalizarCambiarEstadoAuditoria(bodyRecord(req)),
+        auditoriaId,
+        data,
         usuario
       );
       res.json(resultado);
@@ -228,10 +268,18 @@ export const controladorAuditorias = {
 
   crearHallazgo: async (req: Request, res: Response): Promise<void> => {
     try {
+      const usuario = obtenerUsuarioSesion(req);
+      const auditoriaId = obtenerParametroRuta(req, "auditoriaId");
+      const auditoria = await servicioAuditorias.obtenerDetalle(
+        auditoriaId,
+        usuario
+      );
+      asegurarAuditoriaEnEjecucion(auditoria.estado);
+
       const resultado = await servicioAuditorias.crearHallazgo(
-        obtenerParametroRuta(req, "auditoriaId"),
+        auditoriaId,
         normalizarCrearHallazgo(bodyRecord(req)),
-        obtenerUsuarioSesion(req)
+        usuario
       );
       res.status(201).json(resultado);
     } catch (error) {
