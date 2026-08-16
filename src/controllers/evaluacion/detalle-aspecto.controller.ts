@@ -7,6 +7,10 @@ import { servicioDetalleAspectoRapido } from "../../services/evaluacion/detalle-
 import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detalle-aspecto-secciones.service";
 import { servicioDetalleResumenDinamico } from "../../services/evaluacion/detalle-resumen-dinamico.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
+import {
+  enriquecerDetalleConEstadoEvidencia,
+  enriquecerTrazabilidadConEvidencias,
+} from "../../services/evaluacion/estado-evidencia-aspecto.service";
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
 import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
@@ -144,13 +148,21 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen",
-      ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoSecciones.obtenerResumen(
-          empresaId,
-          tareaId,
-          anio,
-          usuario
-        )
+      async ({ empresaId, tareaId, anio, usuario }) => {
+        const resultado =
+          await servicioDetalleAspectoSecciones.obtenerResumen(
+            empresaId,
+            tareaId,
+            anio,
+            usuario
+          );
+
+        return enriquecerDetalleConEstadoEvidencia(
+          resultado,
+          usuario,
+          { empresaId, tareaId, anio }
+        );
+      }
     );
   },
 
@@ -231,14 +243,20 @@ export const controladorDetalleAspecto = {
           await enriquecerHistorialConResultadoEfectivo(
             resultado
           );
+        const conTrazabilidad =
+          await enriquecerHistorialConTrazabilidad(
+            conResultadoEfectivo,
+            {
+              empresaId,
+              tareaId,
+              anio,
+            }
+          );
 
-        return enriquecerHistorialConTrazabilidad(
-          conResultadoEfectivo,
-          {
-            empresaId,
-            tareaId,
-            anio,
-          }
+        return enriquecerTrazabilidadConEvidencias(
+          conTrazabilidad as unknown as Parameters<
+            typeof enriquecerTrazabilidadConEvidencias
+          >[0]
         );
       }
     );
@@ -252,13 +270,21 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-evidencias",
-      ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoSecciones.obtenerEvidencias(
-          empresaId,
-          tareaId,
-          anio,
-          usuario
-        )
+      async ({ empresaId, tareaId, anio, usuario }) => {
+        const resultado =
+          await servicioDetalleAspectoSecciones.obtenerEvidencias(
+            empresaId,
+            tareaId,
+            anio,
+            usuario
+          );
+
+        return enriquecerDetalleConEstadoEvidencia(
+          resultado,
+          usuario,
+          { empresaId, tareaId, anio }
+        );
+      }
     );
   },
 
