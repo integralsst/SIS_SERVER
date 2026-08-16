@@ -17,6 +17,7 @@ import {
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
 import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
+import { obtenerEstadoEvidenciaEvaluacion } from "./estado-evidencia-aspecto.service";
 
 function normalizarTextoObligatorio(
   value: unknown,
@@ -212,20 +213,12 @@ async function obtenerEvaluacionParaCrearEvidencia(
     );
   }
 
-  const evidenciaExistente =
-    await prisma.evidenciaEvaluacion.findFirst({
-      where: {
-        evaluacionId,
-        activo: true,
-      },
-      select: {
-        id: true,
-      },
-    });
+  const { estadoEvidencia } =
+    await obtenerEstadoEvidenciaEvaluacion(evaluacionId);
 
-  if (evidenciaExistente) {
+  if (!estadoEvidencia?.evidenciaPendiente) {
     throw new ErrorEvaluacion(
-      "La evaluación finalizada ya cuenta con una evidencia activa.",
+      "La evaluación finalizada ya cuenta con un soporte activo que satisface el requisito de evidencia.",
       409,
       "EVIDENCIA_PENDIENTE_COMPLETADA"
     );
@@ -388,20 +381,53 @@ export const servicioEvidenciasEvaluacion = {
 
     return prisma.$transaction(async (tx) => {
       if (posteriorFinalizacion) {
-        const existente =
-          await tx.evidenciaEvaluacion.findFirst({
+        const soporteExistente =
+          await tx.evaluacionAspecto.findUnique({
             where: {
-              evaluacionId,
-              activo: true,
+              id: evaluacionId,
             },
             select: {
-              id: true,
+              evidencias: {
+                where: {
+                  activo: true,
+                },
+                select: {
+                  id: true,
+                },
+                take: 1,
+              },
+              seguimientosCompromiso: {
+                select: {
+                  compromiso: {
+                    select: {
+                      evidencias: {
+                        where: {
+                          activa: true,
+                        },
+                        select: {
+                          id: true,
+                        },
+                        take: 1,
+                      },
+                    },
+                  },
+                },
+              },
             },
           });
 
-        if (existente) {
+        const tieneSoporteCompromiso =
+          soporteExistente?.seguimientosCompromiso.some(
+            ({ compromiso }) =>
+              compromiso.evidencias.length > 0
+          ) ?? false;
+
+        if (
+          (soporteExistente?.evidencias.length ?? 0) > 0 ||
+          tieneSoporteCompromiso
+        ) {
           throw new ErrorEvaluacion(
-            "La evidencia pendiente ya fue completada.",
+            "La evidencia pendiente ya fue completada mediante un soporte activo.",
             409,
             "EVIDENCIA_PENDIENTE_COMPLETADA"
           );
