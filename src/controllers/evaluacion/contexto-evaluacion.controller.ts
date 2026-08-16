@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { enriquecerContextoConEstadoEvidencia } from "../../services/evaluacion/estado-evidencia-aspecto.service";
 import { servicioMatrizEvaluacionOptimizada } from "../../services/evaluacion/matriz-evaluacion-optimizada.service";
 import {
   obtenerParametroRuta,
@@ -65,11 +66,15 @@ export const controladorContextoEvaluacion = {
           ? Number(anioSolicitado)
           : new Date().getFullYear();
 
-      const resultado =
+      const contexto =
         await servicioMatrizEvaluacionOptimizada.obtenerContexto(
           empresaId,
           anio,
           obtenerUsuarioSesion(req)
+        );
+      const resultado =
+        await enriquecerContextoConEstadoEvidencia(
+          contexto
         );
 
       registrarTiempoContexto(
