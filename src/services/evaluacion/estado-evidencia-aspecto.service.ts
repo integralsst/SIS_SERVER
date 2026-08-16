@@ -31,13 +31,19 @@ export interface ResultadoEstadoEvidenciaAspecto {
   compromisosConSoporte: string[];
 }
 
-interface InsumoEstadoEvidenciaAspecto {
+export interface InsumoEstadoEvidenciaAspecto {
   requiereEvidencia: boolean;
   estadoCumplimiento: EstadoCumplimientoAspecto | string | null;
   calificacionAdministrativa: number | null;
   gestionFinalizadaValida: boolean;
   tieneEvidenciaEvaluacion: boolean;
   compromisosConSoporte?: string[];
+}
+
+interface ContextoDetalleEvidencia {
+  empresaId: string;
+  tareaId: number;
+  anio: number;
 }
 
 const seleccionEstadoEvidencia = {
@@ -300,6 +306,62 @@ async function cargarEvaluacionesEstado(
   );
 }
 
+async function buscarUltimaFinalizadaPeriodo(
+  contexto: ContextoDetalleEvidencia
+): Promise<EvaluacionEstadoEvidencia | null> {
+  const periodo = await prisma.empresaPeriodo.findUnique({
+    where: {
+      empresaId_anio: {
+        empresaId: contexto.empresaId,
+        anio: contexto.anio,
+      },
+    },
+    select: {
+      id: true,
+      versionSupermatrizId: true,
+    },
+  });
+
+  if (!periodo) return null;
+
+  const tarea = await prisma.supermatrizTarea.findFirst({
+    where: {
+      id: contexto.tareaId,
+      versionSupermatrizId: periodo.versionSupermatrizId,
+    },
+    select: {
+      aspectoId: true,
+    },
+  });
+
+  if (!tarea) return null;
+
+  return prisma.evaluacionAspecto.findFirst({
+    where: {
+      aspectoId: tarea.aspectoId,
+      gestion: {
+        empresaPeriodoId: periodo.id,
+        estado: EstadoGestionSgsst.FINALIZADA,
+        valida: true,
+      },
+    },
+    orderBy: [
+      {
+        gestion: {
+          fechaGestion: "desc",
+        },
+      },
+      {
+        createdAt: "desc",
+      },
+      {
+        id: "desc",
+      },
+    ],
+    select: seleccionEstadoEvidencia,
+  });
+}
+
 export async function obtenerEstadoEvidenciaEvaluacion(
   evaluacionId: string
 ): Promise<{
@@ -432,17 +494,34 @@ export async function enriquecerDetalleConEstadoEvidencia<
   T extends ResultadoDetalleEvidencia,
 >(
   resultado: T,
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  contexto?: ContextoDetalleEvidencia
 ): Promise<T> {
-  const evaluacionId =
+  const evaluacionObjetivoId =
     resultado.evidenciaObjetivo?.evaluacionId ?? null;
+  const evaluacionObjetivo = evaluacionObjetivoId
+    ? (
+        await obtenerEstadoEvidenciaEvaluacion(
+          evaluacionObjetivoId
+        )
+      ).evaluacion
+    : null;
+  const evaluacionOficial = contexto
+    ? await buscarUltimaFinalizadaPeriodo(contexto)
+    : evaluacionObjetivo?.gestion.estado ===
+          EstadoGestionSgsst.FINALIZADA
+      ? evaluacionObjetivo
+      : null;
+  const evaluacionEstado =
+    evaluacionOficial ?? evaluacionObjetivo;
 
-  if (!evaluacionId) {
+  if (!evaluacionEstado) {
     return {
       ...resultado,
       estadoEvidencia: "NO_APLICA",
       evidenciaPendiente: false,
       detalleEvidencia: null,
+      evidenciaPendienteObjetivo: null,
       permisos: {
         ...resultado.permisos,
         puedeCompletarEvidenciaPendiente: false,
@@ -450,19 +529,16 @@ export async function enriquecerDetalleConEstadoEvidencia<
     };
   }
 
-  const { evaluacion, estadoEvidencia } =
-    await obtenerEstadoEvidenciaEvaluacion(evaluacionId);
-
-  if (!evaluacion || !estadoEvidencia) {
-    return resultado;
-  }
-
+  const estadoEvidencia =
+    resolverDesdeEvaluacion(evaluacionEstado);
   const puedeCompletar =
-    await puedeCompletarEvidenciaPendiente(
-      evaluacion,
-      estadoEvidencia,
-      usuario
-    );
+    evaluacionOficial
+      ? await puedeCompletarEvidenciaPendiente(
+          evaluacionOficial,
+          estadoEvidencia,
+          usuario
+        )
+      : false;
   const compromisosValidos = new Set(
     estadoEvidencia.compromisosConSoporte
   );
@@ -487,8 +563,17 @@ export async function enriquecerDetalleConEstadoEvidencia<
       estadoEvidencia.evidenciaPendiente,
     detalleEvidencia: {
       ...estadoEvidencia,
+      evaluacionId: evaluacionEstado.id,
       puedeCompletarPosteriormente: puedeCompletar,
     },
+    evidenciaPendienteObjetivo:
+      estadoEvidencia.evidenciaPendiente &&
+      evaluacionOficial
+        ? {
+            evaluacionId: evaluacionOficial.id,
+            esBorrador: false,
+          }
+        : null,
     permisos: {
       ...resultado.permisos,
       puedeCompletarEvidenciaPendiente: puedeCompletar,
