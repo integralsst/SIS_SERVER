@@ -159,7 +159,8 @@ export const controladorDetalleAspecto = {
 
         return enriquecerDetalleConEstadoEvidencia(
           resultado,
-          usuario
+          usuario,
+          { empresaId, tareaId, anio }
         );
       }
     );
@@ -278,7 +279,8 @@ export const controladorDetalleAspecto = {
 
         return enriquecerDetalleConEstadoEvidencia(
           resultado,
-          usuario
+          usuario,
+          { empresaId, tareaId, anio }
         );
       }
     );
