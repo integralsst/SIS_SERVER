@@ -1,5 +1,4 @@
 import {
-  EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   RolUsuario,
@@ -8,6 +7,7 @@ import {
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "./alertas-control-evaluacion.service";
+import { resolverEstadoEvidenciaAspecto } from "./estado-evidencia-aspecto.service";
 
 export interface OpcionesAlertasEvidenciasPendientes {
   empresaId?: string;
@@ -109,6 +109,7 @@ export const servicioAlertasEvidenciasPendientes = {
           select: {
             compromiso: {
               select: {
+                id: true,
                 evidencias: {
                   where: {
                     activa: true,
@@ -121,7 +122,6 @@ export const servicioAlertasEvidenciasPendientes = {
               },
             },
           },
-          take: 1,
         },
         gestion: {
           select: {
@@ -152,17 +152,26 @@ export const servicioAlertasEvidenciasPendientes = {
       if (vistos.has(clave)) continue;
       vistos.add(clave);
 
-      const tieneEvidenciaCompromiso =
-        evaluacion.seguimientosCompromiso.some(
-          (seguimiento) =>
-            seguimiento.compromiso.evidencias.length > 0
-        );
+      const estadoEvidencia = resolverEstadoEvidenciaAspecto({
+        requiereEvidencia: true,
+        estadoCumplimiento:
+          evaluacion.estadoCumplimiento,
+        calificacionAdministrativa:
+          evaluacion.calificacionAdministrativa.toNumber(),
+        gestionFinalizadaValida: true,
+        tieneEvidenciaEvaluacion:
+          evaluacion.evidencias.length > 0,
+        compromisosConSoporte:
+          evaluacion.seguimientosCompromiso
+            .filter(
+              ({ compromiso }) =>
+                compromiso.evidencias.length > 0
+            )
+            .map(({ compromiso }) => compromiso.id),
+      });
 
       if (
-        evaluacion.estadoCumplimiento !== EstadoCumplimientoAspecto.CUMPLIDO ||
-        evaluacion.calificacionAdministrativa.toNumber() !== 5 ||
-        evaluacion.evidencias.length > 0 ||
-        tieneEvidenciaCompromiso ||
+        !estadoEvidencia.evidenciaPendiente ||
         !evaluacion.supermatrizTarea
       ) {
         continue;
