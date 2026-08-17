@@ -15,6 +15,11 @@ const ROLES_CLIENTE: RolUsuario[] = [
   RolUsuario.USUARIO_CLIENTE,
 ];
 
+export type CapacidadParticipanteGestion =
+  | "EVALUAR"
+  | "EVIDENCIAS"
+  | "LIDER";
+
 export async function asegurarAccesoEmpresa(
   usuario: UsuarioSesionEvaluacion,
   empresaId: string,
@@ -199,15 +204,116 @@ export async function asegurarAccesoGestion(
 
   if (
     modo === "ESCRITURA" &&
-    usuario.rol === RolUsuario.PROFESIONAL &&
-    gestion.usuarioCreadorId !== usuario.usuarioId
+    usuario.rol === RolUsuario.PROFESIONAL
   ) {
-    throw new ErrorEvaluacion(
-      "Un profesional solo puede modificar sus propias gestiones en borrador.",
-      403,
-      "GESTION_DE_OTRO_PROFESIONAL"
-    );
+    if (!usuario.profesionalId) {
+      throw new ErrorEvaluacion(
+        "Tu usuario profesional no tiene un perfil asociado.",
+        403,
+        "PROFESIONAL_NO_ASOCIADO"
+      );
+    }
+
+    const participante =
+      await prisma.gestionParticipante.findFirst({
+        where: {
+          gestionId,
+          profesionalId: usuario.profesionalId,
+          activo: true,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (!participante) {
+      throw new ErrorEvaluacion(
+        "Solo puedes modificar gestiones en las que participas activamente.",
+        403,
+        "GESTION_SIN_PARTICIPACION"
+      );
+    }
   }
 
   return gestion;
+}
+
+export async function asegurarCapacidadParticipanteGestion(
+  usuario: UsuarioSesionEvaluacion,
+  gestionId: string,
+  capacidad: CapacidadParticipanteGestion
+) {
+  if (ROLES_INTERNOS.includes(usuario.rol)) {
+    return null;
+  }
+
+  if (
+    usuario.rol !== RolUsuario.PROFESIONAL &&
+    usuario.rol !== RolUsuario.COORDINADOR
+  ) {
+    throw new ErrorEvaluacion(
+      "Tu rol no puede operar como participante de una gestión.",
+      403,
+      "PARTICIPACION_NO_AUTORIZADA"
+    );
+  }
+
+  if (!usuario.profesionalId) {
+    throw new ErrorEvaluacion(
+      "Tu usuario no tiene un perfil profesional asociado.",
+      403,
+      "PROFESIONAL_NO_ASOCIADO"
+    );
+  }
+
+  const participante = await prisma.gestionParticipante.findFirst({
+    where: {
+      gestionId,
+      profesionalId: usuario.profesionalId,
+      activo: true,
+    },
+    select: {
+      id: true,
+      esLider: true,
+      puedeEvaluar: true,
+      puedeGestionarEvidencias: true,
+    },
+  });
+
+  if (!participante) {
+    throw new ErrorEvaluacion(
+      "Debes ser participante activo de la gestión para realizar esta operación.",
+      403,
+      "GESTION_SIN_PARTICIPACION"
+    );
+  }
+
+  if (capacidad === "EVALUAR" && !participante.puedeEvaluar) {
+    throw new ErrorEvaluacion(
+      "Tu participación en esta gestión no permite registrar evaluaciones.",
+      403,
+      "PARTICIPANTE_SIN_PERMISO_EVALUAR"
+    );
+  }
+
+  if (
+    capacidad === "EVIDENCIAS" &&
+    !participante.puedeGestionarEvidencias
+  ) {
+    throw new ErrorEvaluacion(
+      "Tu participación en esta gestión no permite gestionar evidencias.",
+      403,
+      "PARTICIPANTE_SIN_PERMISO_EVIDENCIAS"
+    );
+  }
+
+  if (capacidad === "LIDER" && !participante.esLider) {
+    throw new ErrorEvaluacion(
+      "Solo el líder de la gestión puede completar esta operación.",
+      403,
+      "PARTICIPANTE_NO_LIDER"
+    );
+  }
+
+  return participante;
 }
