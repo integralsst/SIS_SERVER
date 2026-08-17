@@ -133,6 +133,11 @@ export async function eliminarDatosOperativos(
       prisma.informePeriodoSgsst.deleteMany()
   );
   await eliminarRegistros(
+    "Participantes de gestiones",
+    () =>
+      prisma.gestionParticipante.deleteMany()
+  );
+  await eliminarRegistros(
     "Gestiones SG-SST",
     () => prisma.gestionSgsst.deleteMany()
   );
