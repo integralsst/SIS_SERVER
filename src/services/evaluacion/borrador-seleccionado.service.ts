@@ -7,6 +7,7 @@ import {
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
+import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 
 const ROLES_ADMINISTRACION = new Set<RolUsuario>([
   RolUsuario.SUPERADMIN,
@@ -55,6 +56,29 @@ export async function resolverBorradorSeleccionado(
   usuario: UsuarioSesionEvaluacion,
   gestionId?: string | null
 ) {
+  const periodo = await prisma.empresaPeriodo.findUnique({
+    where: {
+      id: periodoId,
+    },
+    select: {
+      empresaId: true,
+    },
+  });
+
+  if (!periodo) {
+    throw new ErrorEvaluacion(
+      "El periodo seleccionado no existe.",
+      404,
+      "PERIODO_NO_ENCONTRADO"
+    );
+  }
+
+  await asegurarAccesoEmpresa(
+    usuario,
+    periodo.empresaId,
+    "LECTURA"
+  );
+
   const gestion = await prisma.gestionSgsst.findFirst({
     where: {
       empresaPeriodoId: periodoId,
