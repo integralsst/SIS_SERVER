@@ -26,6 +26,7 @@ interface ParametrosDetalle {
   empresaId: string;
   tareaId: number;
   anio: number;
+  gestionId: string | null;
   usuario: UsuarioSesionEvaluacion;
 }
 
@@ -42,11 +43,19 @@ function obtenerParametrosDetalle(
   const anioQuery = Array.isArray(req.query.anio)
     ? req.query.anio[0]
     : req.query.anio;
+  const gestionIdQuery = Array.isArray(req.query.gestionId)
+    ? req.query.gestionId[0]
+    : req.query.gestionId;
   const anio = Number(
     typeof anioQuery === "string"
       ? anioQuery
       : new Date().getFullYear()
   );
+  const gestionId =
+    typeof gestionIdQuery === "string" &&
+    gestionIdQuery.trim()
+      ? gestionIdQuery.trim()
+      : null;
 
   if (!Number.isInteger(tareaId) || tareaId <= 0) {
     throw new Error(
@@ -60,6 +69,7 @@ function obtenerParametrosDetalle(
     empresaId,
     tareaId,
     anio,
+    gestionId,
     usuario: obtenerUsuarioSesion(req),
   };
 }
@@ -96,6 +106,7 @@ async function responderSeccion(
       empresaId: parametros.empresaId,
       tareaId: parametros.tareaId,
       anio: parametros.anio,
+      gestionId: parametros.gestionId,
     };
 
     const resultado = await cargar(parametros);
@@ -148,13 +159,20 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoSecciones.obtenerResumen(
             empresaId,
             tareaId,
             anio,
-            usuario
+            usuario,
+            gestionId
           );
 
         return enriquecerDetalleConEstadoEvidencia(
@@ -174,12 +192,19 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen-rapido",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) =>
         servicioDetalleResumenDinamico.obtener(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
@@ -270,13 +295,20 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-evidencias",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoSecciones.obtenerEvidencias(
             empresaId,
             tareaId,
             anio,
-            usuario
+            usuario,
+            gestionId
           );
 
         return enriquecerDetalleConEstadoEvidencia(
@@ -296,12 +328,19 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-revision-tecnica",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) =>
         servicioDetalleAspectoSecciones.obtenerRevisionTecnica(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
