@@ -19,6 +19,7 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
 
 type BooleanoMysql = boolean | number | bigint | null;
 
@@ -196,10 +197,11 @@ async function obtenerCategoriasGestion(
 }
 
 async function obtenerEvaluacionBorrador(
-  periodoId: string,
-  usuarioId: string,
+  gestionId: string | null,
   aspectoId: number
 ): Promise<EvaluacionVigenciaRaw | undefined> {
+  if (!gestionId) return undefined;
+
   const filas = await prisma.$queryRaw<
     EvaluacionVigenciaRaw[]
   >(
@@ -213,11 +215,9 @@ async function obtenerEvaluacionBorrador(
       LEFT JOIN evaluaciones_aspecto ea
         ON ea.gestionId = gs.id
         AND ea.aspectoId = ${aspectoId}
-      WHERE gs.empresaPeriodoId = ${periodoId}
-        AND gs.usuarioCreadorId = ${usuarioId}
+      WHERE gs.id = ${gestionId}
         AND gs.estado = ${EstadoGestionSgsst.BORRADOR}
         AND gs.valida = 1
-      ORDER BY gs.createdAt DESC
       LIMIT 1
     `
   );
@@ -267,7 +267,8 @@ export const servicioDetalleResumenDinamico = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     validarAnio(anio);
 
@@ -309,13 +310,19 @@ export const servicioDetalleResumenDinamico = {
     }
 
     const inicioTarea = process.hrtime.bigint();
-    const [tarea, categoriasGestion] = await Promise.all([
-      obtenerTareaBase(
-        tareaId,
-        periodo.versionSupermatrizId
-      ),
-      obtenerCategoriasGestion(tareaId),
-    ]);
+    const [tarea, categoriasGestion, gestionSeleccionada] =
+      await Promise.all([
+        obtenerTareaBase(
+          tareaId,
+          periodo.versionSupermatrizId
+        ),
+        obtenerCategoriasGestion(tareaId),
+        resolverBorradorSeleccionado(
+          periodo.id,
+          usuario,
+          gestionId
+        ),
+      ]);
     const tareaMs = milisegundosDesde(inicioTarea);
 
     if (!tarea) {
@@ -329,8 +336,7 @@ export const servicioDetalleResumenDinamico = {
     const inicioEvaluaciones = process.hrtime.bigint();
     const [borradorRaw, ultimaRaw] = await Promise.all([
       obtenerEvaluacionBorrador(
-        periodo.id,
-        usuario.usuarioId,
+        gestionSeleccionada?.id ?? null,
         tarea.aspectoId
       ),
       obtenerUltimaEvaluacion(
@@ -379,6 +385,7 @@ export const servicioDetalleResumenDinamico = {
           empresaId,
           tareaId,
           anio,
+          gestionId: gestionSeleccionada?.id ?? null,
           accesoPeriodoMs,
           tareaMs,
           evaluacionesMs,

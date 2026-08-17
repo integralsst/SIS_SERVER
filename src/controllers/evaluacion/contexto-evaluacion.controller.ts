@@ -59,6 +59,11 @@ export const controladorContextoEvaluacion = {
       const anioSolicitado = Array.isArray(req.query.anio)
         ? req.query.anio[0]
         : req.query.anio;
+      const gestionIdSolicitada = Array.isArray(
+        req.query.gestionId
+      )
+        ? req.query.gestionId[0]
+        : req.query.gestionId;
 
       anio =
         anioSolicitado != null &&
@@ -66,11 +71,18 @@ export const controladorContextoEvaluacion = {
           ? Number(anioSolicitado)
           : new Date().getFullYear();
 
+      const gestionId =
+        typeof gestionIdSolicitada === "string" &&
+        gestionIdSolicitada.trim()
+          ? gestionIdSolicitada.trim()
+          : null;
+
       const contexto =
         await servicioMatrizEvaluacionOptimizada.obtenerContexto(
           empresaId,
           anio,
-          obtenerUsuarioSesion(req)
+          obtenerUsuarioSesion(req),
+          gestionId
         );
       const resultado =
         await enriquecerContextoConEstadoEvidencia(
