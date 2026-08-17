@@ -16,47 +16,10 @@ import {
 } from "../../utils/evaluacion";
 import { asegurarAccesoPeriodo } from "./acceso-evaluacion.service";
 
-async function asegurarSinBorradorOperativo(
+async function asegurarSinBorradorCreadoPorUsuario(
   periodoId: string,
   usuario: UsuarioSesionEvaluacion
 ): Promise<void> {
-  if (
-    (usuario.rol === RolUsuario.PROFESIONAL ||
-      usuario.rol === RolUsuario.COORDINADOR) &&
-    usuario.profesionalId
-  ) {
-    const participacion =
-      await prisma.gestionParticipante.findFirst({
-        where: {
-          profesionalId: usuario.profesionalId,
-          activo: true,
-          gestion: {
-            empresaPeriodoId: periodoId,
-            estado: EstadoGestionSgsst.BORRADOR,
-            valida: true,
-          },
-        },
-        select: {
-          gestion: {
-            select: {
-              id: true,
-              tipoActividad: true,
-            },
-          },
-        },
-      });
-
-    if (participacion) {
-      throw new ErrorEvaluacion(
-        `Ya participas en una gestión en borrador para este periodo: ${participacion.gestion.tipoActividad}. Continúala o finalízala antes de crear otra.`,
-        409,
-        "GESTION_BORRADOR_EXISTENTE"
-      );
-    }
-
-    return;
-  }
-
   const borradorExistente =
     await prisma.gestionSgsst.findFirst({
       where: {
@@ -72,7 +35,7 @@ async function asegurarSinBorradorOperativo(
 
   if (borradorExistente) {
     throw new ErrorEvaluacion(
-      "Ya tienes una gestión en borrador para este periodo. Continúala o finalízala antes de crear otra.",
+      "Ya tienes una gestión en borrador creada por ti para este periodo. Puedes participar en otros borradores, pero debes continuar o finalizar la gestión que tú creaste antes de abrir otra propia.",
       409,
       "GESTION_BORRADOR_EXISTENTE"
     );
@@ -122,38 +85,6 @@ async function obtenerAsignacionProfesional(
   return asignacion;
 }
 
-async function asegurarProfesionalSinOtroBorrador(
-  profesionalId: string,
-  periodoId: string
-): Promise<void> {
-  const conflicto = await prisma.gestionParticipante.findFirst({
-    where: {
-      profesionalId,
-      activo: true,
-      gestion: {
-        empresaPeriodoId: periodoId,
-        estado: EstadoGestionSgsst.BORRADOR,
-        valida: true,
-      },
-    },
-    select: {
-      gestion: {
-        select: {
-          tipoActividad: true,
-        },
-      },
-    },
-  });
-
-  if (conflicto) {
-    throw new ErrorEvaluacion(
-      `El profesional seleccionado ya participa en otra gestión en borrador de este periodo: ${conflicto.gestion.tipoActividad}.`,
-      409,
-      "PARTICIPANTE_OTRO_BORRADOR"
-    );
-  }
-}
-
 export const servicioGestionesSgsst = {
   crear: async (
     periodoId: string,
@@ -188,7 +119,10 @@ export const servicioGestionesSgsst = {
       true
     ) as Date;
 
-    await asegurarSinBorradorOperativo(periodoId, usuario);
+    await asegurarSinBorradorCreadoPorUsuario(
+      periodoId,
+      usuario
+    );
 
     if (data.categoriaGestionId) {
       const categoria = await prisma.categoriaGestion.findFirst({
@@ -243,11 +177,6 @@ export const servicioGestionesSgsst = {
           "PROFESIONAL_CATEGORIA_NO_AUTORIZADA"
         );
       }
-
-      await asegurarProfesionalSinOtroBorrador(
-        profesionalId,
-        periodoId
-      );
     } else {
       profesionalId = null;
     }
