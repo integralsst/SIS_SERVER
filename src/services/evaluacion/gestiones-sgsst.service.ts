@@ -1,4 +1,5 @@
 import {
+  EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   EstadoRegistro,
   RolUsuario,
@@ -24,7 +25,7 @@ async function asegurarSinBorradorCreadoPorUsuario(
       where: {
         empresaPeriodoId: periodoId,
         usuarioCreadorId: usuario.usuarioId,
-        estado: "BORRADOR",
+        estado: EstadoGestionSgsst.BORRADOR,
         valida: true,
       },
       select: {
