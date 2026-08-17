@@ -12,7 +12,7 @@ import type {
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
 
-const ROLES_ADMINISTRACION = [
+const ROLES_ADMINISTRACION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
