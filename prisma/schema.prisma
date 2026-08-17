@@ -98,7 +98,8 @@ model Profesional {
   asignacionesEmpresas EmpresaProfesional[]
 
   // Gestiones SG-SST realizadas
-  gestionesSgsst GestionSgsst[]
+  gestionesSgsst          GestionSgsst[]
+  participacionesGestion  GestionParticipante[]
 
   // Auditoría
   creadoEn      DateTime @default(now())
@@ -170,17 +171,19 @@ model Usuario {
   historialCambiosSupermatriz HistorialCambioSupermatriz[]
 
   // Operación SG-SST por empresa
-  periodosSgsstCreados          EmpresaPeriodo[]            @relation("EmpresaPeriodoCreadoPor")
-  gestionesSgsstCreadas         GestionSgsst[]              @relation("GestionSgsstCreadaPor")
-  evaluacionesRegistradas       EvaluacionAspecto[]         @relation("EvaluacionRegistradaPor")
-  historialEvaluaciones         HistorialEvaluacion[]       @relation("HistorialEvaluacionUsuario")
-  evidenciasEvaluacion          EvidenciaEvaluacion[]       @relation("EvidenciaEvaluacionCreadaPor")
-  revisionesTecnicasSolicitadas RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
-  revisionesTecnicasResueltas   RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
-  informesPeriodoGenerados      InformePeriodoSgsst[]       @relation("InformePeriodoGeneradoPor")
-  decisionesNoAplicaSolicitadas DecisionNoAplica[]          @relation("DecisionNoAplicaSolicitadaPor")
-  decisionesNoAplicaResueltas   DecisionNoAplica[]          @relation("DecisionNoAplicaDecididaPor")
-  aprobacionesGestionDecididas  AprobacionGestion[]         @relation("AprobacionGestionDecididaPor")
+  periodosSgsstCreados             EmpresaPeriodo[]       @relation("EmpresaPeriodoCreadoPor")
+  gestionesSgsstCreadas            GestionSgsst[]         @relation("GestionSgsstCreadaPor")
+  participantesGestionAsignados    GestionParticipante[]  @relation("GestionParticipanteAsignadoPor")
+  participantesGestionRetirados    GestionParticipante[]  @relation("GestionParticipanteRetiradoPor")
+  evaluacionesRegistradas          EvaluacionAspecto[]    @relation("EvaluacionRegistradaPor")
+  historialEvaluaciones            HistorialEvaluacion[]  @relation("HistorialEvaluacionUsuario")
+  evidenciasEvaluacion             EvidenciaEvaluacion[]  @relation("EvidenciaEvaluacionCreadaPor")
+  revisionesTecnicasSolicitadas    RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
+  revisionesTecnicasResueltas      RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
+  informesPeriodoGenerados         InformePeriodoSgsst[]   @relation("InformePeriodoGeneradoPor")
+  decisionesNoAplicaSolicitadas    DecisionNoAplica[]      @relation("DecisionNoAplicaSolicitadaPor")
+  decisionesNoAplicaResueltas      DecisionNoAplica[]      @relation("DecisionNoAplicaDecididaPor")
+  aprobacionesGestionDecididas     AprobacionGestion[]     @relation("AprobacionGestionDecididaPor")
 
   // Auditorías, hallazgos y recomendaciones
   auditoriasCreadas                  AuditoriaSgsst[]         @relation("AuditoriaCreadaPor")
@@ -431,11 +434,11 @@ model CicloPhva {
   versionSupermatrizId Int
   codigo               String         @db.VarChar(20)
   nombre               String         @db.VarChar(100)
-  orden                Int
+  orden                 Int
   porcentajeEsperado   Decimal?       @db.Decimal(5, 2)
   estado               EstadoRegistro @default(ACTIVO)
-  createdAt            DateTime       @default(now()) @db.DateTime(3)
-  updatedAt            DateTime       @updatedAt @db.DateTime(3)
+  createdAt             DateTime       @default(now()) @db.DateTime(3)
+  updatedAt             DateTime       @updatedAt @db.DateTime(3)
 
   versionSupermatriz VersionSupermatriz  @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categorias         CategoriaEstandar[]
@@ -468,7 +471,6 @@ model CategoriaEstandar {
   @@index([versionSupermatrizId])
   @@index([cicloPhvaId, orden])
   @@index([estado])
-  @@map("categorias_estandar")
 }
 
 model Estandar {
@@ -978,6 +980,7 @@ model GestionSgsst {
   profesional           Profesional?          @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categoriaGestion      CategoriaGestion?     @relation(fields: [categoriaGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   usuarioCreador        Usuario               @relation("GestionSgsstCreadaPor", fields: [usuarioCreadorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  participantes         GestionParticipante[]
   evaluaciones          EvaluacionAspecto[]
   historial             HistorialEvaluacion[]
   compromisosOriginados Compromiso[]
@@ -989,6 +992,35 @@ model GestionSgsst {
   @@index([usuarioCreadorId])
   @@index([estado, valida])
   @@map("gestiones_sgsst")
+}
+
+model GestionParticipante {
+  id                         String   @id @default(uuid())
+  gestionId                  String
+  profesionalId              String
+  esLider                    Boolean  @default(false)
+  puedeEvaluar               Boolean  @default(true)
+  puedeGestionarEvidencias   Boolean  @default(true)
+  responsabilidad            String?  @db.Text
+  activo                     Boolean  @default(true)
+  fechaInicio                DateTime @default(now()) @db.DateTime(3)
+  fechaFin                   DateTime? @db.DateTime(3)
+  asignadoPorUsuarioId       String
+  retiradoPorUsuarioId       String?
+  createdAt                  DateTime @default(now()) @db.DateTime(3)
+  updatedAt                  DateTime @updatedAt @db.DateTime(3)
+
+  gestion      GestionSgsst @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  profesional  Profesional  @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asignadoPor  Usuario      @relation("GestionParticipanteAsignadoPor", fields: [asignadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  retiradoPor  Usuario?     @relation("GestionParticipanteRetiradoPor", fields: [retiradoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([gestionId, activo])
+  @@index([profesionalId, activo])
+  @@index([gestionId, profesionalId, activo])
+  @@index([asignadoPorUsuarioId])
+  @@index([retiradoPorUsuarioId])
+  @@map("gestion_participantes")
 }
 
 model EvaluacionAspecto {
@@ -1234,7 +1266,7 @@ model RecomendacionAuditoria {
 
   hallazgo      HallazgoAuditoria       @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   responsable   Usuario?                @relation("RecomendacionAuditoriaResponsable", fields: [responsableUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  creadoPor     Usuario                 @relation("RecomendacionAuditoriaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor     Usuario                 @relation("RecomendacionAuditoriaCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   seguimientos  SeguimientoAuditoria[]
 
   @@index([hallazgoId, estado])
