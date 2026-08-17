@@ -71,21 +71,6 @@ export async function resolverBorradorSeleccionado(
       fechaGestion: true,
       tipoActividad: true,
       estado: true,
-      participantes: usuario.profesionalId
-        ? {
-            where: {
-              profesionalId: usuario.profesionalId,
-              activo: true,
-            },
-            select: {
-              id: true,
-              esLider: true,
-              puedeEvaluar: true,
-              puedeGestionarEvidencias: true,
-            },
-            take: 1,
-          }
-        : false,
     },
   });
 
