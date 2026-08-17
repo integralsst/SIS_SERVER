@@ -2,6 +2,7 @@ import {
   EstadoGestionSgsst,
   EstadoRegistro,
   Prisma,
+  RolUsuario,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -479,14 +480,30 @@ async function obtenerCategoriasCacheadas(): Promise<{
 
 async function buscarGestionActiva(
   periodoId: string,
-  usuarioId: string
+  usuario: UsuarioSesionEvaluacion
 ) {
+  const esProfesionalOperativo =
+    (usuario.rol === RolUsuario.PROFESIONAL ||
+      usuario.rol === RolUsuario.COORDINADOR) &&
+    Boolean(usuario.profesionalId);
+
   return prisma.gestionSgsst.findFirst({
     where: {
       empresaPeriodoId: periodoId,
-      usuarioCreadorId: usuarioId,
       estado: EstadoGestionSgsst.BORRADOR,
       valida: true,
+      ...(esProfesionalOperativo
+        ? {
+            participantes: {
+              some: {
+                profesionalId: usuario.profesionalId!,
+                activo: true,
+              },
+            },
+          }
+        : {
+            usuarioCreadorId: usuario.usuarioId,
+          }),
     },
     orderBy: {
       createdAt: "desc",
@@ -511,6 +528,23 @@ async function buscarGestionActiva(
           nombres: true,
           apellidos: true,
         },
+      },
+      participantes: {
+        where: usuario.profesionalId
+          ? {
+              profesionalId: usuario.profesionalId,
+              activo: true,
+            }
+          : {
+              id: "__sin_participacion__",
+            },
+        select: {
+          id: true,
+          esLider: true,
+          puedeEvaluar: true,
+          puedeGestionarEvidencias: true,
+        },
+        take: 1,
       },
     },
   });
@@ -667,10 +701,7 @@ export const servicioMatrizEvaluacionOptimizada = {
       evaluacionesFinalizadas,
     ] = await Promise.all([
       periodo
-        ? buscarGestionActiva(
-            periodo.id,
-            usuario.usuarioId
-          )
+        ? buscarGestionActiva(periodo.id, usuario)
         : Promise.resolve(null),
       obtenerTareasCacheadas(versionSupermatrizId),
       periodo
@@ -918,6 +949,9 @@ export const servicioMatrizEvaluacionOptimizada = {
       );
     }
 
+    const participacionActual =
+      gestionActiva?.participantes[0] ?? null;
+
     return {
       empresa,
       anio,
@@ -959,6 +993,7 @@ export const servicioMatrizEvaluacionOptimizada = {
             categoriaGestion:
               gestionActiva.categoriaGestion,
             profesional: gestionActiva.profesional,
+            participacionActual,
           }
         : null,
       categoriasGestion: categoriasResultado.categorias,
