@@ -8,7 +8,7 @@ async function main(): Promise<void> {
   console.log("");
   console.log("👥 Backfill de participantes de gestiones SG-SST");
   console.log(
-    "ℹ️ Se crea un participante inicial únicamente cuando la gestión todavía no lo tiene."
+    "ℹ️ Se crea un participante inicial únicamente cuando la gestión todavía no tiene historial de participantes."
   );
   console.log("");
 
@@ -38,22 +38,10 @@ async function main(): Promise<void> {
   let sinProfesional = 0;
 
   for (const gestion of gestiones) {
-    const profesionalId =
-      gestion.profesionalId ??
-      gestion.usuarioCreador.profesional?.id ??
-      null;
-
-    if (!profesionalId) {
-      sinProfesional += 1;
-      continue;
-    }
-
     const participanteExistente =
       await prisma.gestionParticipante.findFirst({
         where: {
           gestionId: gestion.id,
-          profesionalId,
-          activo: true,
         },
         select: {
           id: true,
@@ -62,6 +50,16 @@ async function main(): Promise<void> {
 
     if (participanteExistente) {
       existentes += 1;
+      continue;
+    }
+
+    const profesionalId =
+      gestion.profesionalId ??
+      gestion.usuarioCreador.profesional?.id ??
+      null;
+
+    if (!profesionalId) {
+      sinProfesional += 1;
       continue;
     }
 
@@ -84,7 +82,7 @@ async function main(): Promise<void> {
 
   console.log(`✓ Gestiones revisadas: ${gestiones.length}`);
   console.log(`✓ Participantes creados: ${creados}`);
-  console.log(`✓ Participantes ya existentes: ${existentes}`);
+  console.log(`✓ Gestiones con historial previo: ${existentes}`);
   console.log(`✓ Gestiones sin profesional resoluble: ${sinProfesional}`);
   console.log("");
   console.log("✅ Backfill finalizado.");
