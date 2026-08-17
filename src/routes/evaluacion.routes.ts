@@ -252,7 +252,35 @@ router.put(
 );
 
 // ======================================================
-// EVIDENCIAS DE EVALUACIÓN
+// NO APLICA Y APROBACIÓN DE GESTIONES
+// ======================================================
+
+router.get(
+  "/periodos/:periodoId/no-aplica",
+  autorizar(...rolesControlEvaluacion),
+  controladorNoAplica.listarPeriodo
+);
+
+router.post(
+  "/no-aplica/:decisionId/decision",
+  autorizar(RolUsuario.COORDINADOR),
+  controladorNoAplica.decidir
+);
+
+router.get(
+  "/periodos/:periodoId/aprobaciones-gestion",
+  autorizar(...rolesControlEvaluacion),
+  controladorAprobacionesGestion.listarPeriodo
+);
+
+router.post(
+  "/aprobaciones-gestion/:aprobacionId/decision",
+  autorizar(...rolesAdministrador),
+  controladorAprobacionesGestion.decidir
+);
+
+// ======================================================
+// EVIDENCIAS
 // ======================================================
 
 router.post(
@@ -274,35 +302,13 @@ router.delete(
 );
 
 // ======================================================
-// NO APLICA Y APROBACIONES
-// ======================================================
-
-router.get(
-  "/periodos/:periodoId/controles",
-  autorizar(...rolesControlEvaluacion),
-  controladorNoAplica.listarControles
-);
-
-router.post(
-  "/evaluaciones/:evaluacionId/no-aplica/decidir",
-  autorizar(...rolesAdministrador),
-  controladorNoAplica.decidir
-);
-
-router.post(
-  "/gestiones/:gestionId/aprobacion/decidir",
-  autorizar(...rolesAdministrador),
-  controladorAprobacionesGestion.decidir
-);
-
-// ======================================================
 // REVISIONES TÉCNICAS
 // ======================================================
 
 router.get(
   "/periodos/:periodoId/revisiones-tecnicas",
   autorizar(...rolesRevisionLectura),
-  controladorRevisionesTecnicas.listar
+  controladorRevisionesTecnicas.listarPeriodo
 );
 
 router.post(
