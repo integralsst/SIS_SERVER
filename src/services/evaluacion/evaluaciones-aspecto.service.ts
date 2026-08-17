@@ -19,7 +19,10 @@ import {
 } from "../../utils/evaluacion";
 import { calcularFechaVencimientoEvaluacion } from "../../utils/vigencia-evaluacion";
 import { validarCalificacionAdministrativa } from "../../validators/evaluacion/calificacion-administrativa.validator";
-import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
+import {
+  asegurarAccesoGestion,
+  asegurarCapacidadParticipanteGestion,
+} from "./acceso-evaluacion.service";
 
 async function guardarUnaEvaluacion(
   tx: Prisma.TransactionClient,
@@ -250,6 +253,12 @@ export const servicioEvaluacionesAspecto = {
       usuario,
       gestionId,
       "ESCRITURA"
+    );
+
+    await asegurarCapacidadParticipanteGestion(
+      usuario,
+      gestionId,
+      "EVALUAR"
     );
 
     if (!gestion.valida) {

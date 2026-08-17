@@ -11,6 +11,7 @@ import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-s
 import { controladorInformesGlobales } from "../controllers/evaluacion/informes-globales.controller";
 import { controladorInformesPeriodo } from "../controllers/evaluacion/informes-periodo.controller";
 import { controladorNoAplica } from "../controllers/evaluacion/no-aplica.controller";
+import { controladorParticipantesGestion } from "../controllers/evaluacion/participantes-gestion.controller";
 import { controladorPeriodosEvaluacion } from "../controllers/evaluacion/periodos-evaluacion.controller";
 import { controladorResultadosEvaluacion } from "../controllers/evaluacion/resultados-evaluacion.controller";
 import { controladorRevisionesTecnicas } from "../controllers/evaluacion/revisiones-tecnicas.controller";
@@ -190,6 +191,36 @@ router.post(
   "/periodos/:periodoId/gestiones",
   autorizar(...rolesEvaluacion),
   controladorGestionesSgsst.crear
+);
+
+router.get(
+  "/gestiones/:gestionId/participantes",
+  autorizar(...rolesEvaluacion),
+  controladorParticipantesGestion.listar
+);
+
+router.get(
+  "/gestiones/:gestionId/participantes-disponibles",
+  autorizar(...rolesEvaluacion),
+  controladorParticipantesGestion.listarDisponibles
+);
+
+router.post(
+  "/gestiones/:gestionId/participantes",
+  autorizar(...rolesEvaluacion),
+  controladorParticipantesGestion.agregar
+);
+
+router.patch(
+  "/gestiones/:gestionId/participantes/:participanteId",
+  autorizar(...rolesEvaluacion),
+  controladorParticipantesGestion.actualizar
+);
+
+router.post(
+  "/gestiones/:gestionId/participantes/:participanteId/retirar",
+  autorizar(...rolesEvaluacion),
+  controladorParticipantesGestion.retirar
 );
 
 router.get(

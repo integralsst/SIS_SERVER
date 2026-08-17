@@ -2,6 +2,7 @@ import {
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   EstadoRegistro,
+  RolUsuario,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -14,6 +15,144 @@ import {
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
 import { asegurarAccesoPeriodo } from "./acceso-evaluacion.service";
+
+async function asegurarSinBorradorOperativo(
+  periodoId: string,
+  usuario: UsuarioSesionEvaluacion
+): Promise<void> {
+  if (
+    (usuario.rol === RolUsuario.PROFESIONAL ||
+      usuario.rol === RolUsuario.COORDINADOR) &&
+    usuario.profesionalId
+  ) {
+    const participacion =
+      await prisma.gestionParticipante.findFirst({
+        where: {
+          profesionalId: usuario.profesionalId,
+          activo: true,
+          gestion: {
+            empresaPeriodoId: periodoId,
+            estado: EstadoGestionSgsst.BORRADOR,
+            valida: true,
+          },
+        },
+        select: {
+          gestion: {
+            select: {
+              id: true,
+              tipoActividad: true,
+            },
+          },
+        },
+      });
+
+    if (participacion) {
+      throw new ErrorEvaluacion(
+        `Ya participas en una gestión en borrador para este periodo: ${participacion.gestion.tipoActividad}. Continúala o finalízala antes de crear otra.`,
+        409,
+        "GESTION_BORRADOR_EXISTENTE"
+      );
+    }
+
+    return;
+  }
+
+  const borradorExistente =
+    await prisma.gestionSgsst.findFirst({
+      where: {
+        empresaPeriodoId: periodoId,
+        usuarioCreadorId: usuario.usuarioId,
+        estado: EstadoGestionSgsst.BORRADOR,
+        valida: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+  if (borradorExistente) {
+    throw new ErrorEvaluacion(
+      "Ya tienes una gestión en borrador para este periodo. Continúala o finalízala antes de crear otra.",
+      409,
+      "GESTION_BORRADOR_EXISTENTE"
+    );
+  }
+}
+
+async function obtenerAsignacionProfesional(
+  empresaId: string,
+  profesionalId: string
+) {
+  const asignacion = await prisma.empresaProfesional.findFirst({
+    where: {
+      empresaId,
+      profesionalId,
+      activo: true,
+      OR: [
+        {
+          fechaFin: null,
+        },
+        {
+          fechaFin: {
+            gte: new Date(),
+          },
+        },
+      ],
+      profesional: {
+        activo: true,
+      },
+    },
+    include: {
+      categoriasGestion: {
+        select: {
+          categoriaGestionId: true,
+        },
+      },
+    },
+  });
+
+  if (!asignacion) {
+    throw new ErrorEvaluacion(
+      "El profesional seleccionado no tiene una asignación activa con esta empresa.",
+      409,
+      "PROFESIONAL_NO_ASIGNADO"
+    );
+  }
+
+  return asignacion;
+}
+
+async function asegurarProfesionalSinOtroBorrador(
+  profesionalId: string,
+  periodoId: string
+): Promise<void> {
+  const conflicto = await prisma.gestionParticipante.findFirst({
+    where: {
+      profesionalId,
+      activo: true,
+      gestion: {
+        empresaPeriodoId: periodoId,
+        estado: EstadoGestionSgsst.BORRADOR,
+        valida: true,
+      },
+    },
+    select: {
+      gestion: {
+        select: {
+          tipoActividad: true,
+        },
+      },
+    },
+  });
+
+  if (conflicto) {
+    throw new ErrorEvaluacion(
+      `El profesional seleccionado ya participa en otra gestión en borrador de este periodo: ${conflicto.gestion.tipoActividad}.`,
+      409,
+      "PARTICIPANTE_OTRO_BORRADOR"
+    );
+  }
+}
 
 export const servicioGestionesSgsst = {
   crear: async (
@@ -49,26 +188,7 @@ export const servicioGestionesSgsst = {
       true
     ) as Date;
 
-    const borradorExistente =
-      await prisma.gestionSgsst.findFirst({
-        where: {
-          empresaPeriodoId: periodoId,
-          usuarioCreadorId: usuario.usuarioId,
-          estado: EstadoGestionSgsst.BORRADOR,
-          valida: true,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-    if (borradorExistente) {
-      throw new ErrorEvaluacion(
-        "Ya tienes una gestión en borrador para este periodo. Continúala o finalízala antes de crear otra.",
-        409,
-        "GESTION_BORRADOR_EXISTENTE"
-      );
-    }
+    await asegurarSinBorradorOperativo(periodoId, usuario);
 
     if (data.categoriaGestionId) {
       const categoria = await prisma.categoriaGestion.findFirst({
@@ -91,25 +211,43 @@ export const servicioGestionesSgsst = {
     let profesionalId =
       data.profesionalId ?? usuario.profesionalId;
 
-    if (profesionalId) {
-      const asignacion = await prisma.empresaProfesional.findFirst({
-        where: {
-          empresaId: periodo.empresaId,
-          profesionalId,
-          activo: true,
-        },
-        select: {
-          id: true,
-        },
-      });
+    if (
+      usuario.rol === RolUsuario.PROFESIONAL &&
+      data.profesionalId &&
+      data.profesionalId !== usuario.profesionalId
+    ) {
+      throw new ErrorEvaluacion(
+        "Un profesional no puede crear una gestión a nombre de otro profesional.",
+        403,
+        "PROFESIONAL_CREACION_NO_AUTORIZADA"
+      );
+    }
 
-      if (!asignacion) {
+    if (profesionalId) {
+      const asignacion = await obtenerAsignacionProfesional(
+        periodo.empresaId,
+        profesionalId
+      );
+
+      if (
+        data.categoriaGestionId &&
+        asignacion.categoriasGestion.length > 0 &&
+        !asignacion.categoriasGestion.some(
+          ({ categoriaGestionId }) =>
+            categoriaGestionId === data.categoriaGestionId
+        )
+      ) {
         throw new ErrorEvaluacion(
-          "El profesional seleccionado no tiene una asignación activa con esta empresa.",
+          "El profesional seleccionado no tiene habilitada la categoría de esta gestión.",
           409,
-          "PROFESIONAL_NO_ASIGNADO"
+          "PROFESIONAL_CATEGORIA_NO_AUTORIZADA"
         );
       }
+
+      await asegurarProfesionalSinOtroBorrador(
+        profesionalId,
+        periodoId
+      );
     } else {
       profesionalId = null;
     }

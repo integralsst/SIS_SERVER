@@ -3,6 +3,8 @@ import type {
   Response,
 } from "express";
 
+import { prisma } from "../../lib/prisma";
+import { asegurarCapacidadParticipanteGestion } from "../../services/evaluacion/acceso-evaluacion.service";
 import { servicioEvidenciasEvaluacion } from "../../services/evaluacion/evidencias-evaluacion.service";
 import type {
   ActualizarEvidenciaEvaluacionInput,
@@ -14,6 +16,54 @@ import {
   responderErrorEvaluacion,
 } from "./shared/evaluacion-controller.utils";
 
+async function asegurarPermisoPorEvaluacion(
+  evaluacionId: string,
+  req: Request
+): Promise<void> {
+  const evaluacion = await prisma.evaluacionAspecto.findUnique({
+    where: {
+      id: evaluacionId,
+    },
+    select: {
+      gestionId: true,
+    },
+  });
+
+  if (evaluacion) {
+    await asegurarCapacidadParticipanteGestion(
+      obtenerUsuarioSesion(req),
+      evaluacion.gestionId,
+      "EVIDENCIAS"
+    );
+  }
+}
+
+async function asegurarPermisoPorEvidencia(
+  evidenciaId: string,
+  req: Request
+): Promise<void> {
+  const evidencia = await prisma.evidenciaEvaluacion.findUnique({
+    where: {
+      id: evidenciaId,
+    },
+    select: {
+      evaluacion: {
+        select: {
+          gestionId: true,
+        },
+      },
+    },
+  });
+
+  if (evidencia) {
+    await asegurarCapacidadParticipanteGestion(
+      obtenerUsuarioSesion(req),
+      evidencia.evaluacion.gestionId,
+      "EVIDENCIAS"
+    );
+  }
+}
+
 export const controladorEvidenciasEvaluacion = {
   crear: async (
     req: Request,
@@ -23,6 +73,11 @@ export const controladorEvidenciasEvaluacion = {
       const evaluacionId = obtenerParametroRuta(
         req,
         "evaluacionId"
+      );
+
+      await asegurarPermisoPorEvaluacion(
+        evaluacionId,
+        req
       );
 
       const resultado =
@@ -48,6 +103,11 @@ export const controladorEvidenciasEvaluacion = {
         "evidenciaId"
       );
 
+      await asegurarPermisoPorEvidencia(
+        evidenciaId,
+        req
+      );
+
       const resultado =
         await servicioEvidenciasEvaluacion.actualizar(
           evidenciaId,
@@ -69,6 +129,11 @@ export const controladorEvidenciasEvaluacion = {
       const evidenciaId = obtenerParametroRuta(
         req,
         "evidenciaId"
+      );
+
+      await asegurarPermisoPorEvidencia(
+        evidenciaId,
+        req
       );
 
       const resultado =
