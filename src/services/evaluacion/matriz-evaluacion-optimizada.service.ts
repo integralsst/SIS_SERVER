@@ -27,6 +27,12 @@ const CACHE_CATEGORIAS_MS = Number(
   process.env.MATRIZ_CATEGORIAS_CACHE_MS ?? 10 * 60 * 1000
 );
 
+const ROLES_ADMINISTRACION_GESTIONES = new Set<RolUsuario>([
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
+]);
+
 const inclusionTareasMatriz = {
   proceso: {
     select: {
@@ -182,6 +188,63 @@ const seleccionCategoriasGestion = {
   nombre: true,
 } satisfies Prisma.CategoriaGestionSelect;
 
+const seleccionGestionBorrador = {
+  id: true,
+  fechaGestion: true,
+  modalidad: true,
+  tipoActividad: true,
+  observacionGeneral: true,
+  estado: true,
+  createdAt: true,
+  categoriaGestion: {
+    select: {
+      id: true,
+      codigo: true,
+      nombre: true,
+    },
+  },
+  profesional: {
+    select: {
+      id: true,
+      nombres: true,
+      apellidos: true,
+    },
+  },
+  usuarioCreador: {
+    select: {
+      id: true,
+      nombre: true,
+    },
+  },
+  participantes: {
+    where: {
+      activo: true,
+    },
+    orderBy: [
+      {
+        esLider: "desc",
+      },
+      {
+        fechaInicio: "asc",
+      },
+    ],
+    select: {
+      id: true,
+      profesionalId: true,
+      esLider: true,
+      puedeEvaluar: true,
+      puedeGestionarEvidencias: true,
+      profesional: {
+        select: {
+          id: true,
+          nombres: true,
+          apellidos: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.GestionSgsstSelect;
+
 type TareaMatriz = Prisma.SupermatrizTareaGetPayload<{
   include: typeof inclusionTareasMatriz;
 }>;
@@ -192,6 +255,10 @@ type EvaluacionMatriz = Prisma.EvaluacionAspectoGetPayload<{
 
 type CategoriaGestionMatriz = Prisma.CategoriaGestionGetPayload<{
   select: typeof seleccionCategoriasGestion;
+}>;
+
+type GestionBorradorMatriz = Prisma.GestionSgsstGetPayload<{
+  select: typeof seleccionGestionBorrador;
 }>;
 
 interface CacheEstructura {
@@ -342,6 +409,42 @@ function serializarDetalleVigencia(
   };
 }
 
+function serializarGestionBorrador(
+  gestion: GestionBorradorMatriz,
+  usuario: UsuarioSesionEvaluacion
+) {
+  const participacion = usuario.profesionalId
+    ? gestion.participantes.find(
+        (item) => item.profesionalId === usuario.profesionalId
+      ) ?? null
+    : null;
+  const lider =
+    gestion.participantes.find((item) => item.esLider)?.profesional ??
+    null;
+
+  return {
+    id: gestion.id,
+    fechaGestion: gestion.fechaGestion.toISOString(),
+    modalidad: gestion.modalidad,
+    tipoActividad: gestion.tipoActividad,
+    observacionGeneral: gestion.observacionGeneral,
+    estado: gestion.estado,
+    categoriaGestion: gestion.categoriaGestion,
+    profesional: gestion.profesional,
+    usuarioCreador: gestion.usuarioCreador,
+    lider,
+    participacionActual: participacion
+      ? {
+          id: participacion.id,
+          esLider: participacion.esLider,
+          puedeEvaluar: participacion.puedeEvaluar,
+          puedeGestionarEvidencias:
+            participacion.puedeGestionarEvidencias,
+        }
+      : null,
+  };
+}
+
 async function consultarTareas(
   versionSupermatrizId: number
 ): Promise<TareaMatriz[]> {
@@ -478,76 +581,87 @@ async function obtenerCategoriasCacheadas(): Promise<{
   }
 }
 
-async function buscarGestionActiva(
-  periodoId: string,
+function filtroAccesoGestionesBorrador(
   usuario: UsuarioSesionEvaluacion
-) {
+): Prisma.GestionSgsstWhereInput {
+  const esCliente =
+    usuario.rol === RolUsuario.ADMIN_CLIENTE ||
+    usuario.rol === RolUsuario.USUARIO_CLIENTE;
+
+  if (esCliente) {
+    return {
+      id: "__sin_gestiones_operativas__",
+    };
+  }
+
   const esProfesionalOperativo =
     (usuario.rol === RolUsuario.PROFESIONAL ||
       usuario.rol === RolUsuario.COORDINADOR) &&
     Boolean(usuario.profesionalId);
 
-  return prisma.gestionSgsst.findFirst({
+  if (esProfesionalOperativo) {
+    return {
+      participantes: {
+        some: {
+          profesionalId: usuario.profesionalId!,
+          activo: true,
+        },
+      },
+    };
+  }
+
+  if (ROLES_ADMINISTRACION_GESTIONES.has(usuario.rol)) {
+    return {};
+  }
+
+  return {
+    usuarioCreadorId: usuario.usuarioId,
+  };
+}
+
+async function buscarGestionesActivas(
+  periodoId: string,
+  usuario: UsuarioSesionEvaluacion
+): Promise<GestionBorradorMatriz[]> {
+  return prisma.gestionSgsst.findMany({
     where: {
       empresaPeriodoId: periodoId,
       estado: EstadoGestionSgsst.BORRADOR,
       valida: true,
-      ...(esProfesionalOperativo
-        ? {
-            participantes: {
-              some: {
-                profesionalId: usuario.profesionalId!,
-                activo: true,
-              },
-            },
-          }
-        : {
-            usuarioCreadorId: usuario.usuarioId,
-          }),
+      ...filtroAccesoGestionesBorrador(usuario),
     },
-    orderBy: {
-      createdAt: "desc",
-    },
-    select: {
-      id: true,
-      fechaGestion: true,
-      modalidad: true,
-      tipoActividad: true,
-      observacionGeneral: true,
-      estado: true,
-      categoriaGestion: {
-        select: {
-          id: true,
-          codigo: true,
-          nombre: true,
-        },
+    orderBy: [
+      {
+        createdAt: "desc",
       },
-      profesional: {
-        select: {
-          id: true,
-          nombres: true,
-          apellidos: true,
-        },
+      {
+        id: "desc",
       },
-      participantes: {
-        where: usuario.profesionalId
-          ? {
-              profesionalId: usuario.profesionalId,
-              activo: true,
-            }
-          : {
-              id: "__sin_participacion__",
-            },
-        select: {
-          id: true,
-          esLider: true,
-          puedeEvaluar: true,
-          puedeGestionarEvidencias: true,
-        },
-        take: 1,
-      },
-    },
+    ],
+    select: seleccionGestionBorrador,
   });
+}
+
+function seleccionarGestionActiva(
+  gestiones: GestionBorradorMatriz[],
+  gestionIdSolicitada?: string | null
+): GestionBorradorMatriz | null {
+  if (!gestionIdSolicitada) {
+    return gestiones[0] ?? null;
+  }
+
+  const gestion =
+    gestiones.find((item) => item.id === gestionIdSolicitada) ?? null;
+
+  if (!gestion) {
+    throw new ErrorEvaluacion(
+      "La gestión en borrador solicitada no está disponible para tu usuario en este periodo.",
+      404,
+      "GESTION_BORRADOR_NO_DISPONIBLE"
+    );
+  }
+
+  return gestion;
 }
 
 async function buscarEvaluacionesFinalizadas(
@@ -593,7 +707,8 @@ export const servicioMatrizEvaluacionOptimizada = {
   obtenerContexto: async (
     empresaId: string,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionIdSolicitada?: string | null
   ) => {
     validarAnio(anio);
 
@@ -676,6 +791,7 @@ export const servicioMatrizEvaluacionOptimizada = {
         periodo: null,
         versionDisponible: null,
         gestionActiva: null,
+        gestionesActivas: [],
         categoriasGestion: categoriasResultado.categorias,
         filas: [],
         resumen: {
@@ -696,19 +812,23 @@ export const servicioMatrizEvaluacionOptimizada = {
     const inicioPrincipal = process.hrtime.bigint();
 
     const [
-      gestionActiva,
+      gestionesActivas,
       estructuraResultado,
       evaluacionesFinalizadas,
     ] = await Promise.all([
       periodo
-        ? buscarGestionActiva(periodo.id, usuario)
-        : Promise.resolve(null),
+        ? buscarGestionesActivas(periodo.id, usuario)
+        : Promise.resolve([] as GestionBorradorMatriz[]),
       obtenerTareasCacheadas(versionSupermatrizId),
       periodo
         ? buscarEvaluacionesFinalizadas(periodo.id)
         : Promise.resolve([] as EvaluacionMatriz[]),
     ]);
 
+    const gestionActiva = seleccionarGestionActiva(
+      gestionesActivas,
+      gestionIdSolicitada
+    );
     const principalMs = milisegundosDesde(inicioPrincipal);
     const inicioBorrador = process.hrtime.bigint();
 
@@ -945,12 +1065,14 @@ export const servicioMatrizEvaluacionOptimizada = {
             evaluacionesFinalizadas.length,
           evaluacionesBorrador:
             evaluacionesBorrador.length,
+          gestionesActivas: gestionesActivas.length,
         }
       );
     }
 
-    const participacionActual =
-      gestionActiva?.participantes[0] ?? null;
+    const gestionActivaSerializada = gestionActiva
+      ? serializarGestionBorrador(gestionActiva, usuario)
+      : null;
 
     return {
       empresa,
@@ -980,22 +1102,10 @@ export const servicioMatrizEvaluacionOptimizada = {
             ),
           }
         : null,
-      gestionActiva: gestionActiva
-        ? {
-            id: gestionActiva.id,
-            fechaGestion:
-              gestionActiva.fechaGestion.toISOString(),
-            modalidad: gestionActiva.modalidad,
-            tipoActividad: gestionActiva.tipoActividad,
-            observacionGeneral:
-              gestionActiva.observacionGeneral,
-            estado: gestionActiva.estado,
-            categoriaGestion:
-              gestionActiva.categoriaGestion,
-            profesional: gestionActiva.profesional,
-            participacionActual,
-          }
-        : null,
+      gestionActiva: gestionActivaSerializada,
+      gestionesActivas: gestionesActivas.map((gestion) =>
+        serializarGestionBorrador(gestion, usuario)
+      ),
       categoriasGestion: categoriasResultado.categorias,
       filas,
       resumen: {
