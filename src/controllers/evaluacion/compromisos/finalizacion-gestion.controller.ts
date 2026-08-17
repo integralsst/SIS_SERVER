@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { asegurarCapacidadParticipanteGestion } from "../../../services/evaluacion/acceso-evaluacion.service";
 import { servicioFinalizacionObligatoria } from "../../../services/evaluacion/compromisos/finalizacion-obligatoria.service";
 import { servicioPreparacionFinalizacion } from "../../../services/evaluacion/compromisos/preparacion-finalizacion.service";
 import {
@@ -17,10 +18,19 @@ export const controladorFinalizacionGestion = {
     res: Response
   ): Promise<void> => {
     try {
+      const gestionId = obtenerParametroRuta(req, "gestionId");
+      const usuario = obtenerUsuarioSesion(req);
+
+      await asegurarCapacidadParticipanteGestion(
+        usuario,
+        gestionId,
+        "LIDER"
+      );
+
       const resultado =
         await servicioPreparacionFinalizacion.obtener(
-          obtenerParametroRuta(req, "gestionId"),
-          obtenerUsuarioSesion(req)
+          gestionId,
+          usuario
         );
 
       res.status(200).json(resultado);
@@ -34,11 +44,20 @@ export const controladorFinalizacionGestion = {
     res: Response
   ): Promise<void> => {
     try {
+      const gestionId = obtenerParametroRuta(req, "gestionId");
+      const usuario = obtenerUsuarioSesion(req);
+
+      await asegurarCapacidadParticipanteGestion(
+        usuario,
+        gestionId,
+        "LIDER"
+      );
+
       const resultado =
         await servicioFinalizacionObligatoria.finalizar(
-          obtenerParametroRuta(req, "gestionId"),
+          gestionId,
           req.body,
-          obtenerUsuarioSesion(req)
+          usuario
         );
 
       res.status(200).json(resultado);
