@@ -5,6 +5,7 @@ import type {
 
 import { servicioDetalleAspectoRapido } from "../../services/evaluacion/detalle-aspecto-rapido.service";
 import { servicioDetalleAspectoSecciones } from "../../services/evaluacion/detalle-aspecto-secciones.service";
+import { servicioDetalleBorradorSeleccionado } from "../../services/evaluacion/detalle-borrador-seleccionado.service";
 import { servicioDetalleResumenDinamico } from "../../services/evaluacion/detalle-resumen-dinamico.service";
 import { servicioDetalleAspecto } from "../../services/evaluacion/detalle-aspecto.service";
 import {
@@ -159,20 +160,13 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen",
-      async ({
-        empresaId,
-        tareaId,
-        anio,
-        gestionId,
-        usuario,
-      }) => {
+      async ({ empresaId, tareaId, anio, usuario }) => {
         const resultado =
           await servicioDetalleAspectoSecciones.obtenerResumen(
             empresaId,
             tareaId,
             anio,
-            usuario,
-            gestionId
+            usuario
           );
 
         return enriquecerDetalleConEstadoEvidencia(
@@ -303,7 +297,7 @@ export const controladorDetalleAspecto = {
         usuario,
       }) => {
         const resultado =
-          await servicioDetalleAspectoSecciones.obtenerEvidencias(
+          await servicioDetalleBorradorSeleccionado.obtenerEvidencias(
             empresaId,
             tareaId,
             anio,
@@ -335,7 +329,7 @@ export const controladorDetalleAspecto = {
         gestionId,
         usuario,
       }) =>
-        servicioDetalleAspectoSecciones.obtenerRevisionTecnica(
+        servicioDetalleBorradorSeleccionado.obtenerRevisionTecnica(
           empresaId,
           tareaId,
           anio,
