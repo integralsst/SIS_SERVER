@@ -224,36 +224,6 @@ function validarCategoriaGestion(
   }
 }
 
-async function buscarConflictoBorrador(
-  profesionalId: string,
-  empresaPeriodoId: string,
-  gestionIdExcluir: string
-) {
-  return prisma.gestionParticipante.findFirst({
-    where: {
-      profesionalId,
-      activo: true,
-      gestionId: {
-        not: gestionIdExcluir,
-      },
-      gestion: {
-        empresaPeriodoId,
-        estado: EstadoGestionSgsst.BORRADOR,
-        valida: true,
-      },
-    },
-    select: {
-      gestion: {
-        select: {
-          id: true,
-          tipoActividad: true,
-          fechaGestion: true,
-        },
-      },
-    },
-  });
-}
-
 function serializarParticipante(participante: {
   id: string;
   gestionId: string;
@@ -471,11 +441,6 @@ export const servicioParticipantesGestion = {
     const resultado = [];
 
     for (const asignacion of asignaciones) {
-      const conflicto = await buscarConflictoBorrador(
-        asignacion.profesionalId,
-        gestion.empresaPeriodoId,
-        gestionId
-      );
       const categorias = asignacion.categoriasGestion.map(
         ({ categoriaGestion }) => categoriaGestion
       );
@@ -496,17 +461,9 @@ export const servicioParticipantesGestion = {
         categoriasConfiguradas,
         categoriaCompatible,
         yaParticipa: activos.has(asignacion.profesionalId),
-        conflictoBorrador: conflicto
-          ? {
-              gestionId: conflicto.gestion.id,
-              tipoActividad: conflicto.gestion.tipoActividad,
-              fechaGestion:
-                conflicto.gestion.fechaGestion.toISOString(),
-            }
-          : null,
+        conflictoBorrador: null,
         disponibleParaAgregar:
           !activos.has(asignacion.profesionalId) &&
-          !conflicto &&
           categoriaCompatible,
       });
     }
@@ -564,20 +521,6 @@ export const servicioParticipantesGestion = {
         "El profesional ya participa activamente en esta gestión.",
         409,
         "PARTICIPANTE_YA_ACTIVO"
-      );
-    }
-
-    const conflicto = await buscarConflictoBorrador(
-      profesionalId,
-      gestion.empresaPeriodoId,
-      gestionId
-    );
-
-    if (conflicto) {
-      throw new ErrorEvaluacion(
-        `El profesional ya participa en otra gestión en borrador de este periodo: ${conflicto.gestion.tipoActividad}.`,
-        409,
-        "PARTICIPANTE_OTRO_BORRADOR"
       );
     }
 
