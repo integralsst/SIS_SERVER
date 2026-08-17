@@ -405,7 +405,11 @@ export const servicioAlertasCompromisos = {
         continue;
       }
 
-      if (actividadesPendientes === 0 && !recalificada && supervisor) {
+      if (
+        actividadesPendientes === 0 &&
+        !recalificada &&
+        (supervisor || Boolean(asignacionPropia))
+      ) {
         const query = new URLSearchParams({
           anio: String(compromiso.gestionOrigen.empresaPeriodo.anio),
           compromiso: compromiso.id,
@@ -417,10 +421,10 @@ export const servicioAlertasCompromisos = {
           id: `RECALIFICAR:${compromiso.id}`,
           tipo: "RECALIFICACION",
           nivel: vencida ? "ALTA" : "MEDIA",
-          titulo: "El aspecto está listo para recalificar",
-          descripcion: `Las actividades están completas. Registra una evaluación posterior con resultado efectivo 5 para “${compromiso.aspecto.nombre}”.`,
+          titulo: `Recalificar aspecto: ${compromiso.aspecto.nombre}`,
+          descripcion: `${compromiso.empresa.nombre}: las actividades ya están completas. Registra una evaluación posterior con resultado efectivo 5 para este aspecto.`,
           accion: {
-            etiqueta: "Ir a recalificar",
+            etiqueta: "Recalificar aspecto",
             ruta: `/dashboard/empresas/${compromiso.empresa.id}/evaluacion?${query.toString()}`,
           },
         });
