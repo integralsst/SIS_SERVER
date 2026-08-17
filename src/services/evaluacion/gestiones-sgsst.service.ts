@@ -126,6 +126,21 @@ export const servicioGestionesSgsst = {
         tipoActividad,
         observacionGeneral:
           data.observacionGeneral?.trim() || null,
+        ...(profesionalId
+          ? {
+              participantes: {
+                create: {
+                  profesionalId,
+                  esLider: true,
+                  puedeEvaluar: true,
+                  puedeGestionarEvidencias: true,
+                  responsabilidad:
+                    "Participante inicial de la gestión.",
+                  asignadoPorUsuarioId: usuario.usuarioId,
+                },
+              },
+            }
+          : {}),
       },
       include: {
         categoriaGestion: {
