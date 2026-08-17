@@ -98,8 +98,8 @@ model Profesional {
   asignacionesEmpresas EmpresaProfesional[]
 
   // Gestiones SG-SST realizadas
-  gestionesSgsst          GestionSgsst[]
-  participacionesGestion  GestionParticipante[]
+  gestionesSgsst         GestionSgsst[]
+  participacionesGestion GestionParticipante[]
 
   // Auditoría
   creadoEn      DateTime @default(now())
@@ -171,19 +171,19 @@ model Usuario {
   historialCambiosSupermatriz HistorialCambioSupermatriz[]
 
   // Operación SG-SST por empresa
-  periodosSgsstCreados             EmpresaPeriodo[]       @relation("EmpresaPeriodoCreadoPor")
-  gestionesSgsstCreadas            GestionSgsst[]         @relation("GestionSgsstCreadaPor")
-  participantesGestionAsignados    GestionParticipante[]  @relation("GestionParticipanteAsignadoPor")
-  participantesGestionRetirados    GestionParticipante[]  @relation("GestionParticipanteRetiradoPor")
-  evaluacionesRegistradas          EvaluacionAspecto[]    @relation("EvaluacionRegistradaPor")
-  historialEvaluaciones            HistorialEvaluacion[]  @relation("HistorialEvaluacionUsuario")
-  evidenciasEvaluacion             EvidenciaEvaluacion[]  @relation("EvidenciaEvaluacionCreadaPor")
-  revisionesTecnicasSolicitadas    RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
-  revisionesTecnicasResueltas      RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
-  informesPeriodoGenerados         InformePeriodoSgsst[]   @relation("InformePeriodoGeneradoPor")
-  decisionesNoAplicaSolicitadas    DecisionNoAplica[]      @relation("DecisionNoAplicaSolicitadaPor")
-  decisionesNoAplicaResueltas      DecisionNoAplica[]      @relation("DecisionNoAplicaDecididaPor")
-  aprobacionesGestionDecididas     AprobacionGestion[]     @relation("AprobacionGestionDecididaPor")
+  periodosSgsstCreados          EmpresaPeriodo[]            @relation("EmpresaPeriodoCreadoPor")
+  gestionesSgsstCreadas         GestionSgsst[]              @relation("GestionSgsstCreadaPor")
+  participantesGestionAsignados GestionParticipante[]       @relation("GestionParticipanteAsignadoPor")
+  participantesGestionRetirados GestionParticipante[]       @relation("GestionParticipanteRetiradoPor")
+  evaluacionesRegistradas       EvaluacionAspecto[]         @relation("EvaluacionRegistradaPor")
+  historialEvaluaciones         HistorialEvaluacion[]       @relation("HistorialEvaluacionUsuario")
+  evidenciasEvaluacion          EvidenciaEvaluacion[]       @relation("EvidenciaEvaluacionCreadaPor")
+  revisionesTecnicasSolicitadas RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaSolicitadaPor")
+  revisionesTecnicasResueltas   RevisionTecnicaEvaluacion[] @relation("RevisionTecnicaResueltaPor")
+  informesPeriodoGenerados      InformePeriodoSgsst[]       @relation("InformePeriodoGeneradoPor")
+  decisionesNoAplicaSolicitadas DecisionNoAplica[]          @relation("DecisionNoAplicaSolicitadaPor")
+  decisionesNoAplicaResueltas   DecisionNoAplica[]          @relation("DecisionNoAplicaDecididaPor")
+  aprobacionesGestionDecididas  AprobacionGestion[]         @relation("AprobacionGestionDecididaPor")
 
   // Auditorías, hallazgos y recomendaciones
   auditoriasCreadas                  AuditoriaSgsst[]         @relation("AuditoriaCreadaPor")
@@ -434,11 +434,11 @@ model CicloPhva {
   versionSupermatrizId Int
   codigo               String         @db.VarChar(20)
   nombre               String         @db.VarChar(100)
-  orden                 Int
+  orden                Int
   porcentajeEsperado   Decimal?       @db.Decimal(5, 2)
   estado               EstadoRegistro @default(ACTIVO)
-  createdAt             DateTime       @default(now()) @db.DateTime(3)
-  updatedAt             DateTime       @updatedAt @db.DateTime(3)
+  createdAt            DateTime       @default(now()) @db.DateTime(3)
+  updatedAt            DateTime       @updatedAt @db.DateTime(3)
 
   versionSupermatriz VersionSupermatriz  @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categorias         CategoriaEstandar[]
@@ -471,6 +471,7 @@ model CategoriaEstandar {
   @@index([versionSupermatrizId])
   @@index([cicloPhvaId, orden])
   @@index([estado])
+  @@map("categorias_estandar")
 }
 
 model Estandar {
@@ -688,12 +689,12 @@ model EmpresaProfesionalCategoriaGestion {
 model GrupoMinisterial {
   id                    Int                     @id @default(autoincrement())
   codigo                CodigoGrupoMinisterial @unique
-  nombre                String                  @db.VarChar(100)
+  nombre                 String                  @db.VarChar(100)
   porcentajeEvaluable   Decimal                 @db.Decimal(5, 2)
   porcentajeComplemento Decimal                 @db.Decimal(5, 2)
-  estado                EstadoRegistro          @default(ACTIVO)
-  createdAt             DateTime                @default(now()) @db.DateTime(3)
-  updatedAt             DateTime                @updatedAt @db.DateTime(3)
+  estado                 EstadoRegistro          @default(ACTIVO)
+  createdAt              DateTime                @default(now()) @db.DateTime(3)
+  updatedAt              DateTime                @updatedAt @db.DateTime(3)
 
   estandares EstandarGrupoMinisterial[]
 
@@ -995,25 +996,25 @@ model GestionSgsst {
 }
 
 model GestionParticipante {
-  id                         String   @id @default(uuid())
-  gestionId                  String
-  profesionalId              String
-  esLider                    Boolean  @default(false)
-  puedeEvaluar               Boolean  @default(true)
-  puedeGestionarEvidencias   Boolean  @default(true)
-  responsabilidad            String?  @db.Text
-  activo                     Boolean  @default(true)
-  fechaInicio                DateTime @default(now()) @db.DateTime(3)
-  fechaFin                   DateTime? @db.DateTime(3)
-  asignadoPorUsuarioId       String
-  retiradoPorUsuarioId       String?
-  createdAt                  DateTime @default(now()) @db.DateTime(3)
-  updatedAt                  DateTime @updatedAt @db.DateTime(3)
+  id                       String    @id @default(uuid())
+  gestionId                String
+  profesionalId            String
+  esLider                  Boolean   @default(false)
+  puedeEvaluar             Boolean   @default(true)
+  puedeGestionarEvidencias Boolean   @default(true)
+  responsabilidad          String?   @db.Text
+  activo                   Boolean   @default(true)
+  fechaInicio              DateTime  @default(now()) @db.DateTime(3)
+  fechaFin                 DateTime? @db.DateTime(3)
+  asignadoPorUsuarioId     String
+  retiradoPorUsuarioId     String?
+  createdAt                DateTime  @default(now()) @db.DateTime(3)
+  updatedAt                DateTime  @updatedAt @db.DateTime(3)
 
-  gestion      GestionSgsst @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  profesional  Profesional  @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  asignadoPor  Usuario      @relation("GestionParticipanteAsignadoPor", fields: [asignadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  retiradoPor  Usuario?     @relation("GestionParticipanteRetiradoPor", fields: [retiradoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  gestion     GestionSgsst @relation(fields: [gestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  profesional Profesional  @relation(fields: [profesionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asignadoPor Usuario      @relation("GestionParticipanteAsignadoPor", fields: [asignadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  retiradoPor Usuario?     @relation("GestionParticipanteRetiradoPor", fields: [retiradoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([gestionId, activo])
   @@index([profesionalId, activo])
@@ -1221,21 +1222,21 @@ model AuditoriaSgsst {
 }
 
 model HallazgoAuditoria {
-  id                    String                   @id @default(uuid())
+  id                    String                  @id @default(uuid())
   auditoriaId           String
   aspectoId             Int?
   tipo                  TipoHallazgoAuditoria
-  titulo                String                   @db.VarChar(191)
-  descripcion           String                   @db.Text
-  evidencia             String?                  @db.Text
-  estado                EstadoHallazgoAuditoria  @default(ABIERTO)
+  titulo                String                  @db.VarChar(191)
+  descripcion           String                  @db.Text
+  evidencia             String?                 @db.Text
+  estado                EstadoHallazgoAuditoria @default(ABIERTO)
   responsableUsuarioId  String?
-  fechaObjetivo         DateTime?                @db.Date
-  resueltoEn            DateTime?                @db.DateTime(3)
-  cerradoEn             DateTime?                @db.DateTime(3)
+  fechaObjetivo         DateTime?               @db.Date
+  resueltoEn            DateTime?               @db.DateTime(3)
+  cerradoEn             DateTime?               @db.DateTime(3)
   creadoPorUsuarioId    String
-  createdAt             DateTime                 @default(now()) @db.DateTime(3)
-  updatedAt             DateTime                 @updatedAt @db.DateTime(3)
+  createdAt             DateTime                @default(now()) @db.DateTime(3)
+  updatedAt             DateTime                @updatedAt @db.DateTime(3)
 
   auditoria       AuditoriaSgsst            @relation(fields: [auditoriaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   aspecto         Aspecto?                  @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -1266,7 +1267,7 @@ model RecomendacionAuditoria {
 
   hallazgo      HallazgoAuditoria       @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   responsable   Usuario?                @relation("RecomendacionAuditoriaResponsable", fields: [responsableUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  creadoPor     Usuario                 @relation("RecomendacionAuditoriaCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor     Usuario                 @relation("RecomendacionAuditoriaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   seguimientos  SeguimientoAuditoria[]
 
   @@index([hallazgoId, estado])
