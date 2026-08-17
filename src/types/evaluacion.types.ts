@@ -26,6 +26,21 @@ export interface CrearGestionSgsstInput {
   profesionalId?: string | null;
 }
 
+export interface CrearParticipanteGestionInput {
+  profesionalId: string;
+  esLider?: boolean;
+  puedeEvaluar?: boolean;
+  puedeGestionarEvidencias?: boolean;
+  responsabilidad?: string | null;
+}
+
+export interface ActualizarParticipanteGestionInput {
+  esLider?: boolean;
+  puedeEvaluar?: boolean;
+  puedeGestionarEvidencias?: boolean;
+  responsabilidad?: string | null;
+}
+
 export interface InvalidarGestionSgsstInput {
   motivo: string;
 }
