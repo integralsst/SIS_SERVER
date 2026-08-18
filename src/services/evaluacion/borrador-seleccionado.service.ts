@@ -51,6 +51,31 @@ function filtroAcceso(
   };
 }
 
+const seleccionGestion = {
+  id: true,
+  fechaGestion: true,
+  tipoActividad: true,
+  estado: true,
+} satisfies Prisma.GestionSgsstSelect;
+
+async function buscarBorradorDisponible(
+  periodoId: string,
+  usuario: UsuarioSesionEvaluacion
+) {
+  return prisma.gestionSgsst.findFirst({
+    where: {
+      empresaPeriodoId: periodoId,
+      estado: EstadoGestionSgsst.BORRADOR,
+      valida: true,
+      ...filtroAcceso(usuario),
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: seleccionGestion,
+  });
+}
+
 export async function resolverBorradorSeleccionado(
   periodoId: string,
   usuario: UsuarioSesionEvaluacion,
@@ -79,32 +104,51 @@ export async function resolverBorradorSeleccionado(
     "LECTURA"
   );
 
-  const gestion = await prisma.gestionSgsst.findFirst({
-    where: {
-      empresaPeriodoId: periodoId,
-      estado: EstadoGestionSgsst.BORRADOR,
-      valida: true,
-      ...(gestionId ? { id: gestionId } : {}),
-      ...filtroAcceso(usuario),
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    select: {
-      id: true,
-      fechaGestion: true,
-      tipoActividad: true,
-      estado: true,
-    },
-  });
+  if (!gestionId) {
+    return buscarBorradorDisponible(periodoId, usuario);
+  }
 
-  if (gestionId && !gestion) {
+  const gestionSolicitada =
+    await prisma.gestionSgsst.findFirst({
+      where: {
+        id: gestionId,
+        empresaPeriodoId: periodoId,
+        valida: true,
+        ...filtroAcceso(usuario),
+      },
+      select: seleccionGestion,
+    });
+
+  if (!gestionSolicitada) {
     throw new ErrorEvaluacion(
-      "La gestión en borrador solicitada no está disponible para tu usuario en este periodo.",
+      "La gestión solicitada no está disponible para tu usuario en este periodo.",
       404,
-      "GESTION_BORRADOR_NO_DISPONIBLE"
+      "GESTION_NO_DISPONIBLE"
     );
   }
 
-  return gestion;
+  if (
+    gestionSolicitada.estado === EstadoGestionSgsst.BORRADOR
+  ) {
+    return gestionSolicitada;
+  }
+
+  if (
+    gestionSolicitada.estado === EstadoGestionSgsst.FINALIZADA
+  ) {
+    /*
+     * Durante la transición posterior a una finalización, la URL puede
+     * conservar durante unos instantes el gestionId que acaba de cerrarse.
+     * El detalle debe seguir disponible: si existe otro borrador accesible,
+     * lo usamos como contexto operativo; si no existe, devolvemos null y los
+     * servicios de detalle resolverán la última evaluación finalizada válida.
+     */
+    return buscarBorradorDisponible(periodoId, usuario);
+  }
+
+  throw new ErrorEvaluacion(
+    "La gestión solicitada ya no está disponible como borrador operativo.",
+    409,
+    "GESTION_NO_OPERATIVA"
+  );
 }
