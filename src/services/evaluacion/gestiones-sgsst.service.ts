@@ -2,6 +2,7 @@ import {
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
   EstadoRegistro,
+  EstadoRevisionTecnica,
   RolUsuario,
 } from "@prisma/client";
 
@@ -15,6 +16,7 @@ import {
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
 import { asegurarAccesoPeriodo } from "./acceso-evaluacion.service";
+import { accionVinculoCorreccionRevision } from "./revisiones/revision-tecnica-vinculo";
 
 async function asegurarSinBorradorCreadoPorUsuario(
   periodoId: string,
@@ -85,6 +87,95 @@ async function obtenerAsignacionProfesional(
   return asignacion;
 }
 
+async function obtenerRevisionTecnicaOrigen(
+  periodoId: string,
+  revisionId: string
+) {
+  const revision =
+    await prisma.revisionTecnicaEvaluacion.findFirst({
+      where: {
+        id: revisionId,
+        estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
+        evaluacion: {
+          gestion: {
+            empresaPeriodoId: periodoId,
+            estado: EstadoGestionSgsst.FINALIZADA,
+            valida: true,
+          },
+        },
+      },
+      select: {
+        id: true,
+        evaluacionId: true,
+        evaluacion: {
+          select: {
+            aspectoId: true,
+            aspecto: {
+              select: {
+                nombre: true,
+              },
+            },
+            gestionId: true,
+          },
+        },
+      },
+    });
+
+  if (!revision) {
+    throw new ErrorEvaluacion(
+      "La revisión técnica seleccionada no está disponible para corrección en este periodo.",
+      409,
+      "REVISION_TECNICA_NO_CORREGIBLE"
+    );
+  }
+
+  const accionVinculo =
+    accionVinculoCorreccionRevision(revision.id);
+  const gestionCorrectivaExistente =
+    await prisma.historialEvaluacion.findFirst({
+      where: {
+        accion: accionVinculo,
+        gestion: {
+          empresaPeriodoId: periodoId,
+          valida: true,
+          estado: {
+            in: [
+              EstadoGestionSgsst.BORRADOR,
+              EstadoGestionSgsst.FINALIZADA,
+            ],
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        gestion: {
+          select: {
+            id: true,
+            estado: true,
+          },
+        },
+      },
+    });
+
+  if (gestionCorrectivaExistente) {
+    throw new ErrorEvaluacion(
+      gestionCorrectivaExistente.gestion.estado ===
+        EstadoGestionSgsst.BORRADOR
+        ? "Esta revisión técnica ya tiene una gestión correctiva en borrador. Continúa esa gestión en lugar de crear otra."
+        : "Esta revisión técnica ya fue atendida mediante una gestión correctiva finalizada.",
+      409,
+      gestionCorrectivaExistente.gestion.estado ===
+        EstadoGestionSgsst.BORRADOR
+        ? "REVISION_TECNICA_CORRECCION_EN_CURSO"
+        : "REVISION_TECNICA_YA_SUBSANADA"
+    );
+  }
+
+  return revision;
+}
+
 export const servicioGestionesSgsst = {
   crear: async (
     periodoId: string,
@@ -123,6 +214,15 @@ export const servicioGestionesSgsst = {
       periodoId,
       usuario
     );
+
+    const revisionTecnicaOrigenId =
+      data.revisionTecnicaOrigenId?.trim() || null;
+    const revisionTecnicaOrigen = revisionTecnicaOrigenId
+      ? await obtenerRevisionTecnicaOrigen(
+          periodoId,
+          revisionTecnicaOrigenId
+        )
+      : null;
 
     if (data.categoriaGestionId) {
       const categoria = await prisma.categoriaGestion.findFirst({
@@ -181,50 +281,77 @@ export const servicioGestionesSgsst = {
       profesionalId = null;
     }
 
-    return prisma.gestionSgsst.create({
-      data: {
-        empresaPeriodoId: periodoId,
-        profesionalId,
-        categoriaGestionId:
-          data.categoriaGestionId ?? null,
-        usuarioCreadorId: usuario.usuarioId,
-        fechaGestion,
-        modalidad: data.modalidad,
-        tipoActividad,
-        observacionGeneral:
-          data.observacionGeneral?.trim() || null,
-        ...(profesionalId
-          ? {
-              participantes: {
-                create: {
-                  profesionalId,
-                  esLider: true,
-                  puedeEvaluar: true,
-                  puedeGestionarEvidencias: true,
-                  responsabilidad:
-                    "Participante inicial de la gestión.",
-                  asignadoPorUsuarioId: usuario.usuarioId,
+    return prisma.$transaction(async (tx) => {
+      const gestion = await tx.gestionSgsst.create({
+        data: {
+          empresaPeriodoId: periodoId,
+          profesionalId,
+          categoriaGestionId:
+            data.categoriaGestionId ?? null,
+          usuarioCreadorId: usuario.usuarioId,
+          fechaGestion,
+          modalidad: data.modalidad,
+          tipoActividad,
+          observacionGeneral:
+            data.observacionGeneral?.trim() || null,
+          ...(profesionalId
+            ? {
+                participantes: {
+                  create: {
+                    profesionalId,
+                    esLider: true,
+                    puedeEvaluar: true,
+                    puedeGestionarEvidencias: true,
+                    responsabilidad:
+                      "Participante inicial de la gestión.",
+                    asignadoPorUsuarioId: usuario.usuarioId,
+                  },
                 },
-              },
-            }
-          : {}),
-      },
-      include: {
-        categoriaGestion: {
-          select: {
-            id: true,
-            codigo: true,
-            nombre: true,
+              }
+            : {}),
+        },
+        include: {
+          categoriaGestion: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+            },
+          },
+          profesional: {
+            select: {
+              id: true,
+              nombres: true,
+              apellidos: true,
+            },
           },
         },
-        profesional: {
-          select: {
-            id: true,
-            nombres: true,
-            apellidos: true,
+      });
+
+      if (revisionTecnicaOrigen) {
+        await tx.historialEvaluacion.create({
+          data: {
+            gestionId: gestion.id,
+            usuarioId: usuario.usuarioId,
+            accion: accionVinculoCorreccionRevision(
+              revisionTecnicaOrigen.id
+            ),
+            descripcion: `Se vinculó esta gestión como corrección de la revisión técnica del aspecto ${revisionTecnicaOrigen.evaluacion.aspecto.nombre}.`,
+            datosDespues: {
+              revisionTecnicaId: revisionTecnicaOrigen.id,
+              evaluacionOrigenId:
+                revisionTecnicaOrigen.evaluacionId,
+              gestionOrigenId:
+                revisionTecnicaOrigen.evaluacion.gestionId,
+              aspectoId:
+                revisionTecnicaOrigen.evaluacion.aspectoId,
+              gestionCorreccionId: gestion.id,
+            },
           },
-        },
-      },
+        });
+      }
+
+      return gestion;
     });
   },
 };
