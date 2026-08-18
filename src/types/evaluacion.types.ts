@@ -24,6 +24,7 @@ export interface CrearGestionSgsstInput {
   observacionGeneral?: string | null;
   categoriaGestionId?: number | null;
   profesionalId?: string | null;
+  revisionTecnicaOrigenId?: string | null;
 }
 
 export interface CrearParticipanteGestionInput {

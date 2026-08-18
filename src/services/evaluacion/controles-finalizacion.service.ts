@@ -7,6 +7,10 @@ import {
 
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
+import {
+  PREFIJO_VINCULO_CORRECCION_REVISION,
+  revisionIdDesdeAccionVinculo,
+} from "./revisiones/revision-tecnica-vinculo";
 
 interface GestionParaControles {
   id: string;
@@ -63,12 +67,94 @@ function reglaCoincide(
   return true;
 }
 
+async function validarCorreccionTecnicaVinculada(
+  tx: Prisma.TransactionClient,
+  gestion: GestionParaControles,
+  evaluaciones: EvaluacionParaControles[]
+): Promise<void> {
+  const vinculos = await tx.historialEvaluacion.findMany({
+    where: {
+      gestionId: gestion.id,
+      accion: {
+        startsWith: PREFIJO_VINCULO_CORRECCION_REVISION,
+      },
+    },
+    select: {
+      accion: true,
+    },
+  });
+
+  if (vinculos.length === 0) {
+    return;
+  }
+
+  const revisionIds = [
+    ...new Set(
+      vinculos
+        .map((vinculo) =>
+          revisionIdDesdeAccionVinculo(vinculo.accion)
+        )
+        .filter((value): value is string => Boolean(value))
+    ),
+  ];
+
+  const revisiones = await tx.revisionTecnicaEvaluacion.findMany({
+    where: {
+      id: {
+        in: revisionIds,
+      },
+    },
+    select: {
+      id: true,
+      evaluacion: {
+        select: {
+          aspectoId: true,
+          aspecto: {
+            select: {
+              nombre: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (revisiones.length !== revisionIds.length) {
+    throw new ErrorEvaluacion(
+      "La gestión correctiva contiene una referencia de revisión técnica inválida. Recarga la evaluación antes de finalizar.",
+      409,
+      "REVISION_TECNICA_VINCULO_INVALIDO"
+    );
+  }
+
+  for (const revision of revisiones) {
+    const incluyeAspectoCorregido = evaluaciones.some(
+      (evaluacion) =>
+        evaluacion.aspectoId === revision.evaluacion.aspectoId
+    );
+
+    if (!incluyeAspectoCorregido) {
+      throw new ErrorEvaluacion(
+        `Antes de finalizar debes registrar la corrección del aspecto "${revision.evaluacion.aspecto.nombre}" que originó esta gestión.`,
+        409,
+        "REVISION_TECNICA_CORRECCION_INCOMPLETA"
+      );
+    }
+  }
+}
+
 export async function registrarControlesFinalizacion(
   tx: Prisma.TransactionClient,
   gestion: GestionParaControles,
   evaluaciones: EvaluacionParaControles[],
   usuario: UsuarioSesionEvaluacion
 ) {
+  await validarCorreccionTecnicaVinculada(
+    tx,
+    gestion,
+    evaluaciones
+  );
+
   const noAplica = evaluaciones.filter(
     (evaluacion) =>
       evaluacion.estadoCumplimiento ===

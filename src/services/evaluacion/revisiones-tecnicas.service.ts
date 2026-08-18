@@ -22,6 +22,7 @@ const ROLES_RESOLUCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
+  RolUsuario.COORDINADOR,
 ];
 
 const ORDEN_ESTADO: Record<EstadoRevisionTecnica, number> = {
@@ -221,6 +222,9 @@ export const servicioRevisionesTecnicas = {
         revisadaPor: revision.revisadaPor,
         puedeResolver:
           puedeResolverRol &&
+          revision.solicitadaPorUsuarioId !== usuario.usuarioId &&
+          revision.evaluacion.usuarioRegistradorId !==
+            usuario.usuarioId &&
           revision.estado === EstadoRevisionTecnica.PENDIENTE &&
           revision.evaluacion.gestion.estado ===
             EstadoGestionSgsst.FINALIZADA &&
@@ -367,6 +371,17 @@ export const servicioRevisionesTecnicas = {
       revision.evaluacion.gestionId,
       "ESCRITURA"
     );
+
+    if (
+      revision.solicitadaPorUsuarioId === usuario.usuarioId ||
+      revision.evaluacion.usuarioRegistradorId === usuario.usuarioId
+    ) {
+      throw new ErrorEvaluacion(
+        "No puedes emitir el concepto técnico de una evaluación que registraste o cuya revisión solicitaste.",
+        403,
+        "REVISION_TECNICA_SIN_SEPARACION_FUNCIONES"
+      );
+    }
 
     if (
       revision.estado !== EstadoRevisionTecnica.PENDIENTE

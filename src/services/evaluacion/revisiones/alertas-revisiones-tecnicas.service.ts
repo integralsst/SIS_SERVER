@@ -7,6 +7,7 @@ import {
 import { prisma } from "../../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "../alertas-control-evaluacion.service";
+import { accionVinculoCorreccionRevision } from "./revision-tecnica-vinculo";
 
 export interface OpcionesAlertasRevisionesTecnicas {
   empresaId?: string;
@@ -17,6 +18,7 @@ const ROLES_RESOLUCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
+  RolUsuario.COORDINADOR,
 ];
 
 const ROLES_INTERNOS: RolUsuario[] = [
@@ -27,6 +29,12 @@ const ROLES_INTERNOS: RolUsuario[] = [
   RolUsuario.PROFESIONAL,
 ];
 
+const ROLES_CON_ACCESO_GLOBAL: RolUsuario[] = [
+  RolUsuario.SUPERADMIN,
+  RolUsuario.PROPIETARIO,
+  RolUsuario.ADMIN,
+];
+
 function resolverTake(
   opciones: OpcionesAlertasRevisionesTecnicas
 ): number | undefined {
@@ -35,11 +43,49 @@ function resolverTake(
     : opciones.limiteConsulta ?? 100;
 }
 
+function filtroAsignacionEmpresa(
+  usuario: UsuarioSesionEvaluacion
+) {
+  if (ROLES_CON_ACCESO_GLOBAL.includes(usuario.rol)) {
+    return {};
+  }
+
+  if (
+    (usuario.rol === RolUsuario.COORDINADOR ||
+      usuario.rol === RolUsuario.PROFESIONAL) &&
+    usuario.profesionalId
+  ) {
+    return {
+      asignacionesProfesionales: {
+        some: {
+          profesionalId: usuario.profesionalId,
+          activo: true,
+          OR: [
+            {
+              fechaFin: null,
+            },
+            {
+              fechaFin: {
+                gte: new Date(),
+              },
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  return {
+    id: "__EMPRESA_NO_AUTORIZADA__",
+  };
+}
+
 function rutaRevisiones(
   empresaId: string,
   anio: number,
   estado: "PENDIENTE" | "REQUIERE_AJUSTES",
-  revisionId: string
+  revisionId: string,
+  gestionId?: string | null
 ): string {
   const query = new URLSearchParams({
     anio: String(anio),
@@ -47,6 +93,10 @@ function rutaRevisiones(
     revisionEstado: estado,
     revisionId,
   });
+
+  if (gestionId) {
+    query.set("gestionId", gestionId);
+  }
 
   return `/dashboard/empresas/${empresaId}/evaluacion?${query.toString()}`;
 }
@@ -59,10 +109,23 @@ async function alertasPendientesDeResolver(
     return [];
   }
 
+  if (
+    usuario.rol === RolUsuario.COORDINADOR &&
+    !usuario.profesionalId
+  ) {
+    return [];
+  }
+
   const revisiones = await prisma.revisionTecnicaEvaluacion.findMany({
     where: {
       estado: EstadoRevisionTecnica.PENDIENTE,
+      solicitadaPorUsuarioId: {
+        not: usuario.usuarioId,
+      },
       evaluacion: {
+        usuarioRegistradorId: {
+          not: usuario.usuarioId,
+        },
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
           valida: true,
@@ -70,6 +133,7 @@ async function alertasPendientesDeResolver(
             empresa: {
               activo: true,
               ...(opciones.empresaId ? { id: opciones.empresaId } : {}),
+              ...filtroAsignacionEmpresa(usuario),
             },
           },
         },
@@ -133,11 +197,53 @@ async function alertasQueRequierenCorreccion(
     return [];
   }
 
+  if (
+    (usuario.rol === RolUsuario.COORDINADOR ||
+      usuario.rol === RolUsuario.PROFESIONAL) &&
+    !usuario.profesionalId
+  ) {
+    return [];
+  }
+
   const revisiones = await prisma.revisionTecnicaEvaluacion.findMany({
     where: {
       estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
-      solicitadaPorUsuarioId: usuario.usuarioId,
       revisadaEn: { not: null },
+      OR: [
+        {
+          evaluacion: {
+            usuarioRegistradorId: usuario.usuarioId,
+          },
+        },
+        {
+          evaluacion: {
+            gestion: {
+              participantes: {
+                some: {
+                  esLider: true,
+                  activo: true,
+                  profesional: {
+                    usuarioId: usuario.usuarioId,
+                  },
+                },
+              },
+            },
+          },
+        },
+        {
+          evaluacion: {
+            gestion: {
+              usuarioCreadorId: usuario.usuarioId,
+              participantes: {
+                none: {
+                  esLider: true,
+                  activo: true,
+                },
+              },
+            },
+          },
+        },
+      ],
       evaluacion: {
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
@@ -146,6 +252,7 @@ async function alertasQueRequierenCorreccion(
             empresa: {
               activo: true,
               ...(opciones.empresaId ? { id: opciones.empresaId } : {}),
+              ...filtroAsignacionEmpresa(usuario),
             },
           },
         },
@@ -179,23 +286,78 @@ async function alertasQueRequierenCorreccion(
 
   if (revisiones.length === 0) return [];
 
-  const condicionesCorreccion = revisiones.flatMap((revision) =>
-    revision.revisadaEn
-      ? [
-          {
-            aspectoId: revision.evaluacion.aspectoId,
-            createdAt: { gt: revision.revisadaEn },
-            gestion: {
-              empresaPeriodoId: revision.evaluacion.gestion.empresaPeriodoId,
-              estado: EstadoGestionSgsst.FINALIZADA,
-              valida: true,
+  const accionesVinculo = revisiones.map((revision) =>
+    accionVinculoCorreccionRevision(revision.id)
+  );
+  const profesionalActualId =
+    usuario.profesionalId ?? "__SIN_PERFIL_PROFESIONAL__";
+
+  const vinculos = await prisma.historialEvaluacion.findMany({
+    where: {
+      accion: {
+        in: accionesVinculo,
+      },
+      gestion: {
+        valida: true,
+        estado: {
+          in: [
+            EstadoGestionSgsst.BORRADOR,
+            EstadoGestionSgsst.FINALIZADA,
+          ],
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      accion: true,
+      gestion: {
+        select: {
+          id: true,
+          estado: true,
+          participantes: {
+            where: {
+              profesionalId: profesionalActualId,
+              activo: true,
+            },
+            select: {
+              id: true,
             },
           },
-        ]
-      : []
+        },
+      },
+    },
+  });
+
+  const revisionesSinVinculoExplicito = revisiones.filter(
+    (revision) =>
+      !vinculos.some(
+        (vinculo) =>
+          vinculo.accion ===
+          accionVinculoCorreccionRevision(revision.id)
+      )
   );
 
-  const correcciones = condicionesCorreccion.length
+  const condicionesCorreccion =
+    revisionesSinVinculoExplicito.flatMap((revision) =>
+      revision.revisadaEn
+        ? [
+            {
+              aspectoId: revision.evaluacion.aspectoId,
+              createdAt: { gt: revision.revisadaEn },
+              gestion: {
+                empresaPeriodoId:
+                  revision.evaluacion.gestion.empresaPeriodoId,
+                estado: EstadoGestionSgsst.FINALIZADA,
+                valida: true,
+              },
+            },
+          ]
+        : []
+    );
+
+  const correccionesHistoricas = condicionesCorreccion.length
     ? await prisma.evaluacionAspecto.findMany({
         where: { OR: condicionesCorreccion },
         select: {
@@ -208,10 +370,30 @@ async function alertasQueRequierenCorreccion(
 
   return revisiones
     .filter((revision) => {
+      const accionVinculo =
+        accionVinculoCorreccionRevision(revision.id);
+      const vinculosRevision = vinculos.filter(
+        (vinculo) => vinculo.accion === accionVinculo
+      );
+
+      if (
+        vinculosRevision.some(
+          (vinculo) =>
+            vinculo.gestion.estado ===
+            EstadoGestionSgsst.FINALIZADA
+        )
+      ) {
+        return false;
+      }
+
+      if (vinculosRevision.length > 0) {
+        return true;
+      }
+
       const revisadaEn = revision.revisadaEn;
       if (!revisadaEn) return false;
 
-      return !correcciones.some(
+      return !correccionesHistoricas.some(
         (correccion) =>
           correccion.aspectoId === revision.evaluacion.aspectoId &&
           correccion.gestion.empresaPeriodoId ===
@@ -221,13 +403,27 @@ async function alertasQueRequierenCorreccion(
     })
     .map((revision) => {
       const periodo = revision.evaluacion.gestion.empresaPeriodo;
+      const accionVinculo =
+        accionVinculoCorreccionRevision(revision.id);
+      const vinculoBorrador = vinculos.find(
+        (vinculo) =>
+          vinculo.accion === accionVinculo &&
+          vinculo.gestion.estado === EstadoGestionSgsst.BORRADOR
+      );
+      const puedeAbrirBorradorExacto = Boolean(
+        vinculoBorrador &&
+          (ROLES_CON_ACCESO_GLOBAL.includes(usuario.rol) ||
+            vinculoBorrador.gestion.participantes.length > 0)
+      );
 
       return {
         id: `REVISION_TECNICA_AJUSTES:${revision.id}`,
         compromisoId: revision.id,
         tipo: "REVISION_TECNICA_REQUIERE_AJUSTES",
         nivel: "ALTA",
-        titulo: "Revisión técnica requiere corrección",
+        titulo: vinculoBorrador
+          ? "Revisión técnica en corrección"
+          : "Revisión técnica requiere corrección",
         descripcion:
           revision.conceptoTecnico ||
           `${periodo.empresa.nombre}: registra una nueva evaluación para corregir “${revision.evaluacion.aspecto.nombre}”.`,
@@ -236,12 +432,17 @@ async function alertasQueRequierenCorreccion(
         fechaLimite:
           revision.revisadaEn?.toISOString() ?? new Date().toISOString(),
         accion: {
-          etiqueta: "Ver y corregir",
+          etiqueta: vinculoBorrador
+            ? "Continuar corrección"
+            : "Ver y corregir",
           ruta: rutaRevisiones(
             periodo.empresa.id,
             periodo.anio,
             "REQUIERE_AJUSTES",
-            revision.id
+            revision.id,
+            puedeAbrirBorradorExacto
+              ? vinculoBorrador?.gestion.id
+              : null
           ),
         },
       } satisfies AlertaControlEvaluacion;
