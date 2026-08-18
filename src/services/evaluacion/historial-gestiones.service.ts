@@ -14,6 +14,23 @@ const ROLES_INVALIDACION: RolUsuario[] = [
   RolUsuario.ADMIN,
 ];
 
+function nombreProfesional(profesional: {
+  nombres: string;
+  apellidos: string;
+} | null): string | null {
+  if (!profesional) return null;
+
+  const nombre = [
+    profesional.nombres,
+    profesional.apellidos,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return nombre || null;
+}
+
 function nombreResponsable(gestion: {
   profesional: {
     nombres: string;
@@ -23,21 +40,10 @@ function nombreResponsable(gestion: {
     nombre: string;
   };
 }): string {
-  if (gestion.profesional) {
-    const nombre = [
-      gestion.profesional.nombres,
-      gestion.profesional.apellidos,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-
-    if (nombre) {
-      return nombre;
-    }
-  }
-
-  return gestion.usuarioCreador.nombre;
+  return (
+    nombreProfesional(gestion.profesional) ??
+    gestion.usuarioCreador.nombre
+  );
 }
 
 export const servicioHistorialGestiones = {
@@ -89,6 +95,24 @@ export const servicioHistorialGestiones = {
             apellidos: true,
           },
         },
+        participantes: {
+          where: {
+            esLider: true,
+          },
+          orderBy: {
+            updatedAt: "desc",
+          },
+          take: 1,
+          select: {
+            profesional: {
+              select: {
+                id: true,
+                nombres: true,
+                apellidos: true,
+              },
+            },
+          },
+        },
         categoriaGestion: {
           select: {
             id: true,
@@ -104,12 +128,16 @@ export const servicioHistorialGestiones = {
         },
         historial: {
           where: {
-            accion: "INVALIDAR_GESTION",
+            accion: {
+              in: [
+                "FINALIZAR_GESTION",
+                "INVALIDAR_GESTION",
+              ],
+            },
           },
           orderBy: {
             createdAt: "desc",
           },
-          take: 1,
           include: {
             usuario: {
               select: {
@@ -138,7 +166,21 @@ export const servicioHistorialGestiones = {
         estado: periodo.estado,
       },
       gestiones: gestiones.map((gestion) => {
-        const eventoInvalidacion = gestion.historial[0] ?? null;
+        const eventoFinalizacion =
+          gestion.historial.find(
+            (evento) =>
+              evento.accion === "FINALIZAR_GESTION"
+          ) ?? null;
+        const eventoInvalidacion =
+          gestion.historial.find(
+            (evento) =>
+              evento.accion === "INVALIDAR_GESTION"
+          ) ?? null;
+        const profesionalLider =
+          gestion.participantes[0]?.profesional ?? null;
+        const nombreLider =
+          nombreProfesional(profesionalLider) ??
+          nombreResponsable(gestion);
 
         return {
           id: gestion.id,
@@ -152,6 +194,14 @@ export const servicioHistorialGestiones = {
           invalidadaEn: gestion.invalidadaEn?.toISOString() ?? null,
           motivoInvalidacion: gestion.motivoInvalidacion,
           responsable: nombreResponsable(gestion),
+          creadaPor: gestion.usuarioCreador,
+          liderAlCierre: {
+            id: profesionalLider?.id ?? null,
+            nombre: nombreLider,
+          },
+          finalizadaPor: eventoFinalizacion
+            ? eventoFinalizacion.usuario
+            : null,
           categoriaGestion: gestion.categoriaGestion,
           totalEvaluaciones: gestion._count.evaluaciones,
           creadaEn: gestion.createdAt.toISOString(),
