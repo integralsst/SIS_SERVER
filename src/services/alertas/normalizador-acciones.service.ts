@@ -43,6 +43,10 @@ export function clasificarCategoriaAccion(
     return "COMPROMISOS";
   }
 
+  if (tipo === "GESTION_ASIGNADA") {
+    return "GESTIONES";
+  }
+
   if (tipo === "EVIDENCIA_PENDIENTE") {
     return "EVIDENCIAS";
   }
