@@ -7,16 +7,22 @@ import {
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { servicioRevisionesTecnicas } from "./revisiones-tecnicas.service";
+import { accionVinculoCorreccionRevision } from "./revisiones/revision-tecnica-vinculo";
 
 export type EstadoFlujoRevisionTecnica =
   | EstadoRevisionTecnica
   | "EN_CORRECCION"
   | "SUBSANADA";
 
-const ROLES_CORRECCION: RolUsuario[] = [
+const ROLES_ADMIN_CORRECCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
+];
+
+const ROLES_CORRECCION: RolUsuario[] = [
+  ...ROLES_ADMIN_CORRECCION,
+  RolUsuario.COORDINADOR,
   RolUsuario.PROFESIONAL,
 ];
 
@@ -69,54 +75,122 @@ export const servicioRevisionesTecnicasFlujo = {
         )
       ),
     ];
+    const accionesVinculo = revisionesConAjustes.map(
+      (revision) =>
+        accionVinculoCorreccionRevision(revision.id)
+    );
+    const profesionalActualId =
+      usuario.profesionalId ?? "__SIN_PERFIL_PROFESIONAL__";
 
-    const evaluacionesPosteriores =
-      await prisma.evaluacionAspecto.findMany({
-        where: {
-          aspectoId: {
-            in: aspectoIds,
-          },
-          gestion: {
-            empresaPeriodoId: periodoId,
-            valida: true,
-            estado: {
-              in: [
-                EstadoGestionSgsst.BORRADOR,
-                EstadoGestionSgsst.FINALIZADA,
-              ],
+    const [evaluacionesPosteriores, vinculosCorreccion] =
+      await Promise.all([
+        prisma.evaluacionAspecto.findMany({
+          where: {
+            aspectoId: {
+              in: aspectoIds,
+            },
+            gestion: {
+              empresaPeriodoId: periodoId,
+              valida: true,
+              estado: {
+                in: [
+                  EstadoGestionSgsst.BORRADOR,
+                  EstadoGestionSgsst.FINALIZADA,
+                ],
+              },
             },
           },
-        },
-        orderBy: [
-          {
+          orderBy: [
+            {
+              createdAt: "desc",
+            },
+            {
+              id: "desc",
+            },
+          ],
+          include: {
+            gestion: {
+              include: {
+                profesional: {
+                  select: {
+                    id: true,
+                    nombres: true,
+                    apellidos: true,
+                  },
+                },
+                usuarioCreador: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+                participantes: {
+                  where: {
+                    profesionalId: profesionalActualId,
+                    activo: true,
+                  },
+                  select: {
+                    puedeEvaluar: true,
+                  },
+                },
+              },
+            },
+          },
+        }),
+        prisma.historialEvaluacion.findMany({
+          where: {
+            accion: {
+              in: accionesVinculo,
+            },
+            gestion: {
+              empresaPeriodoId: periodoId,
+              valida: true,
+              estado: {
+                in: [
+                  EstadoGestionSgsst.BORRADOR,
+                  EstadoGestionSgsst.FINALIZADA,
+                ],
+              },
+            },
+          },
+          orderBy: {
             createdAt: "desc",
           },
-          {
-            id: "desc",
-          },
-        ],
-        include: {
-          gestion: {
-            include: {
-              profesional: {
-                select: {
-                  id: true,
-                  nombres: true,
-                  apellidos: true,
+          include: {
+            gestion: {
+              include: {
+                profesional: {
+                  select: {
+                    id: true,
+                    nombres: true,
+                    apellidos: true,
+                  },
                 },
-              },
-              usuarioCreador: {
-                select: {
-                  id: true,
-                  nombre: true,
+                usuarioCreador: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  },
+                },
+                participantes: {
+                  where: {
+                    profesionalId: profesionalActualId,
+                    activo: true,
+                  },
+                  select: {
+                    puedeEvaluar: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
+        }),
+      ]);
 
     const puedeCorregirRol = ROLES_CORRECCION.includes(
+      usuario.rol
+    );
+    const esAdminCorreccion = ROLES_ADMIN_CORRECCION.includes(
       usuario.rol
     );
 
@@ -136,6 +210,120 @@ export const servicioRevisionesTecnicasFlujo = {
         };
       }
 
+      const accionVinculo =
+        accionVinculoCorreccionRevision(revision.id);
+      const vinculosRevision = vinculosCorreccion.filter(
+        (vinculo) => vinculo.accion === accionVinculo
+      );
+      const vinculoFinalizado = vinculosRevision.find(
+        (vinculo) =>
+          vinculo.gestion.estado ===
+          EstadoGestionSgsst.FINALIZADA
+      );
+      const vinculoBorrador = vinculosRevision.find(
+        (vinculo) =>
+          vinculo.gestion.estado ===
+          EstadoGestionSgsst.BORRADOR
+      );
+
+      if (vinculoFinalizado) {
+        const evaluacionCorrectiva =
+          evaluacionesPosteriores.find(
+            (evaluacion) =>
+              evaluacion.gestionId ===
+                vinculoFinalizado.gestion.id &&
+              evaluacion.aspectoId ===
+                revision.evaluacion.aspecto.id
+          ) ?? null;
+
+        return {
+          ...revision,
+          estadoFlujo: "SUBSANADA" as const,
+          requiereAccion: false,
+          puedeCorregir: false,
+          gestionCorreccion: {
+            id: vinculoFinalizado.gestion.id,
+            estado: vinculoFinalizado.gestion.estado,
+            fechaGestion:
+              vinculoFinalizado.gestion.fechaGestion.toISOString(),
+            tipoActividad:
+              vinculoFinalizado.gestion.tipoActividad,
+            profesional: vinculoFinalizado.gestion.profesional
+              ? `${vinculoFinalizado.gestion.profesional.nombres} ${vinculoFinalizado.gestion.profesional.apellidos}`.trim()
+              : vinculoFinalizado.gestion.usuarioCreador.nombre,
+          },
+          evaluacionCorrectiva: evaluacionCorrectiva
+            ? {
+                id: evaluacionCorrectiva.id,
+                estadoCumplimiento:
+                  evaluacionCorrectiva.estadoCumplimiento,
+                calificacionAdministrativa:
+                  evaluacionCorrectiva.calificacionAdministrativa.toNumber(),
+                observacion:
+                  evaluacionCorrectiva.observacion,
+                fechaDocumento: serializarFecha(
+                  evaluacionCorrectiva.fechaDocumento
+                ),
+                creadaEn:
+                  evaluacionCorrectiva.createdAt.toISOString(),
+              }
+            : null,
+        };
+      }
+
+      if (vinculoBorrador) {
+        const evaluacionCorrectiva =
+          evaluacionesPosteriores.find(
+            (evaluacion) =>
+              evaluacion.gestionId ===
+                vinculoBorrador.gestion.id &&
+              evaluacion.aspectoId ===
+                revision.evaluacion.aspecto.id
+          ) ?? null;
+        const puedeOperarBorrador =
+          esAdminCorreccion ||
+          vinculoBorrador.gestion.participantes.some(
+            (participante) => participante.puedeEvaluar
+          );
+
+        return {
+          ...revision,
+          estadoFlujo: "EN_CORRECCION" as const,
+          requiereAccion: true,
+          puedeCorregir:
+            puedeCorregirRol && puedeOperarBorrador,
+          gestionCorreccion: {
+            id: vinculoBorrador.gestion.id,
+            estado: vinculoBorrador.gestion.estado,
+            fechaGestion:
+              vinculoBorrador.gestion.fechaGestion.toISOString(),
+            tipoActividad:
+              vinculoBorrador.gestion.tipoActividad,
+            profesional: vinculoBorrador.gestion.profesional
+              ? `${vinculoBorrador.gestion.profesional.nombres} ${vinculoBorrador.gestion.profesional.apellidos}`.trim()
+              : vinculoBorrador.gestion.usuarioCreador.nombre,
+          },
+          evaluacionCorrectiva: evaluacionCorrectiva
+            ? {
+                id: evaluacionCorrectiva.id,
+                estadoCumplimiento:
+                  evaluacionCorrectiva.estadoCumplimiento,
+                calificacionAdministrativa:
+                  evaluacionCorrectiva.calificacionAdministrativa.toNumber(),
+                observacion:
+                  evaluacionCorrectiva.observacion,
+                fechaDocumento: serializarFecha(
+                  evaluacionCorrectiva.fechaDocumento
+                ),
+                creadaEn:
+                  evaluacionCorrectiva.createdAt.toISOString(),
+              }
+            : null,
+        };
+      }
+
+      // Compatibilidad con correcciones históricas creadas antes de que
+      // existiera el vínculo explícito revisión -> gestión correctiva.
       const fechaResolucion = revision.revisadaEn
         ? new Date(revision.revisadaEn)
         : new Date(revision.updatedAt);
@@ -158,10 +346,7 @@ export const servicioRevisionesTecnicasFlujo = {
       const borrador = candidatas.find(
         (evaluacion) =>
           evaluacion.gestion.estado ===
-            EstadoGestionSgsst.BORRADOR &&
-          (usuario.rol !== RolUsuario.PROFESIONAL ||
-            evaluacion.gestion.usuarioCreadorId ===
-              usuario.usuarioId)
+          EstadoGestionSgsst.BORRADOR
       );
 
       if (finalizada) {
@@ -197,11 +382,18 @@ export const servicioRevisionesTecnicasFlujo = {
       }
 
       if (borrador) {
+        const puedeOperarBorrador =
+          esAdminCorreccion ||
+          borrador.gestion.participantes.some(
+            (participante) => participante.puedeEvaluar
+          );
+
         return {
           ...revision,
           estadoFlujo: "EN_CORRECCION" as const,
           requiereAccion: true,
-          puedeCorregir: puedeCorregirRol,
+          puedeCorregir:
+            puedeCorregirRol && puedeOperarBorrador,
           gestionCorreccion: {
             id: borrador.gestion.id,
             estado: borrador.gestion.estado,
