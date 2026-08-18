@@ -87,6 +87,13 @@ function rutaGestion(
   return `/dashboard/empresas/${empresaId}/evaluacion?${query.toString()}`;
 }
 
+function fechaMasReciente(
+  actual: Date | undefined,
+  candidata: Date
+): Date {
+  return !actual || candidata > actual ? candidata : actual;
+}
+
 export const servicioAlertasGestionesAsignadas = {
   listar: async (
     usuario: UsuarioSesionEvaluacion,
@@ -209,18 +216,47 @@ export const servicioAlertasGestionesAsignadas = {
       },
       select: {
         gestionId: true,
+        usuarioRegistradorId: true,
+        updatedAt: true,
+        evidencias: {
+          where: {
+            usuarioCreadorId: usuario.usuarioId,
+          },
+          select: {
+            createdAt: true,
+          },
+        },
       },
-      distinct: ["gestionId"],
     });
-    const gestionesAtendidas = new Set(
-      actuaciones.map((actuacion) => actuacion.gestionId)
-    );
+    const ultimaActuacionPorGestion = new Map<string, Date>();
+
+    for (const actuacion of actuaciones) {
+      let fecha = ultimaActuacionPorGestion.get(actuacion.gestionId);
+
+      if (actuacion.usuarioRegistradorId === usuario.usuarioId) {
+        fecha = fechaMasReciente(fecha, actuacion.updatedAt);
+      }
+
+      for (const evidencia of actuacion.evidencias) {
+        fecha = fechaMasReciente(fecha, evidencia.createdAt);
+      }
+
+      if (fecha) {
+        ultimaActuacionPorGestion.set(actuacion.gestionId, fecha);
+      }
+    }
 
     const alertas = participantes
-      .filter(
-        (participante) =>
-          !gestionesAtendidas.has(participante.gestionId)
-      )
+      .filter((participante) => {
+        const ultimaActuacion = ultimaActuacionPorGestion.get(
+          participante.gestionId
+        );
+
+        return (
+          !ultimaActuacion ||
+          ultimaActuacion < participante.fechaInicio
+        );
+      })
       .map((participante): AlertaGestionAsignada => {
         const periodo = participante.gestion.empresaPeriodo;
         const lider = nombrePersona(
