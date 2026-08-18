@@ -72,6 +72,7 @@ const rolesRevisionResolucion = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
+  RolUsuario.COORDINADOR,
 ];
 
 router.use(autenticar);
