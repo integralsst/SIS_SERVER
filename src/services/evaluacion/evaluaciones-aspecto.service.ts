@@ -352,4 +352,158 @@ export const servicioEvaluacionesAspecto = {
       evaluaciones: guardadas,
     };
   },
+
+  eliminarBorrador: async (
+    gestionId: string,
+    aspectoId: number,
+    usuario: UsuarioSesionEvaluacion
+  ) => {
+    if (!Number.isInteger(aspectoId) || aspectoId <= 0) {
+      throw new ErrorEvaluacion(
+        "El aspecto indicado no es válido."
+      );
+    }
+
+    const gestion = await asegurarAccesoGestion(
+      usuario,
+      gestionId,
+      "ESCRITURA"
+    );
+
+    await asegurarCapacidadParticipanteGestion(
+      usuario,
+      gestionId,
+      "EVALUAR"
+    );
+
+    if (!gestion.valida) {
+      throw new ErrorEvaluacion(
+        "La gestión está invalidada.",
+        409,
+        "GESTION_INVALIDADA"
+      );
+    }
+
+    if (gestion.estado !== EstadoGestionSgsst.BORRADOR) {
+      throw new ErrorEvaluacion(
+        "Solo se pueden quitar evaluaciones de una gestión en borrador.",
+        409,
+        "GESTION_NO_EDITABLE"
+      );
+    }
+
+    if (
+      gestion.empresaPeriodo.estado !==
+      EstadoPeriodoSgsst.ABIERTO
+    ) {
+      throw new ErrorEvaluacion(
+        "El periodo está cerrado.",
+        409,
+        "PERIODO_CERRADO"
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const evaluacion = await tx.evaluacionAspecto.findUnique({
+        where: {
+          gestionId_aspectoId: {
+            gestionId,
+            aspectoId,
+          },
+        },
+        include: {
+          aspecto: {
+            select: {
+              nombre: true,
+            },
+          },
+          evidencias: {
+            select: {
+              id: true,
+            },
+            take: 1,
+          },
+          revisionTecnica: {
+            select: {
+              id: true,
+            },
+          },
+          decisionNoAplica: {
+            select: {
+              id: true,
+            },
+          },
+          aprobacionGestion: {
+            select: {
+              evaluacionId: true,
+            },
+          },
+          compromisoOrigen: {
+            select: {
+              id: true,
+            },
+          },
+          seguimientosCompromiso: {
+            select: {
+              id: true,
+            },
+            take: 1,
+          },
+          solicitudesCierreCompromiso: {
+            select: {
+              id: true,
+            },
+            take: 1,
+          },
+        },
+      });
+
+      if (!evaluacion) {
+        throw new ErrorEvaluacion(
+          "La evaluación guardada ya no existe en esta gestión.",
+          404,
+          "EVALUACION_BORRADOR_NO_ENCONTRADA"
+        );
+      }
+
+      const tieneDependencias =
+        evaluacion.evidencias.length > 0 ||
+        Boolean(evaluacion.revisionTecnica) ||
+        Boolean(evaluacion.decisionNoAplica) ||
+        Boolean(evaluacion.aprobacionGestion) ||
+        Boolean(evaluacion.compromisoOrigen) ||
+        evaluacion.seguimientosCompromiso.length > 0 ||
+        evaluacion.solicitudesCierreCompromiso.length > 0;
+
+      if (tieneDependencias) {
+        throw new ErrorEvaluacion(
+          `No se puede quitar la evaluación del aspecto "${evaluacion.aspecto.nombre}" porque ya tiene información relacionada. Retira primero sus evidencias o relaciones pendientes.`,
+          409,
+          "EVALUACION_BORRADOR_CON_DEPENDENCIAS"
+        );
+      }
+
+      await tx.historialEvaluacion.create({
+        data: {
+          gestionId,
+          evaluacionId: evaluacion.id,
+          usuarioId: usuario.usuarioId,
+          accion: "ELIMINAR_EVALUACION_BORRADOR",
+          descripcion: `Se quitó del borrador la evaluación del aspecto ${evaluacion.aspecto.nombre}.`,
+          datosAntes: comoJsonPrismaEvaluacion(evaluacion),
+        },
+      });
+
+      await tx.evaluacionAspecto.delete({
+        where: {
+          id: evaluacion.id,
+        },
+      });
+
+      return {
+        eliminada: true,
+        aspectoId,
+      };
+    });
+  },
 };
