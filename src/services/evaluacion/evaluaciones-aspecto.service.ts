@@ -411,51 +411,6 @@ export const servicioEvaluacionesAspecto = {
             aspectoId,
           },
         },
-        include: {
-          aspecto: {
-            select: {
-              nombre: true,
-            },
-          },
-          evidencias: {
-            select: {
-              id: true,
-            },
-            take: 1,
-          },
-          revisionTecnica: {
-            select: {
-              id: true,
-            },
-          },
-          decisionNoAplica: {
-            select: {
-              id: true,
-            },
-          },
-          aprobacionGestion: {
-            select: {
-              evaluacionId: true,
-            },
-          },
-          compromisoOrigen: {
-            select: {
-              id: true,
-            },
-          },
-          seguimientosCompromiso: {
-            select: {
-              id: true,
-            },
-            take: 1,
-          },
-          solicitudesCierreCompromiso: {
-            select: {
-              id: true,
-            },
-            take: 1,
-          },
-        },
       });
 
       if (!evaluacion) {
@@ -466,18 +421,64 @@ export const servicioEvaluacionesAspecto = {
         );
       }
 
+      const aspecto = await tx.aspecto.findUnique({
+        where: {
+          id: evaluacion.aspectoId,
+        },
+        select: {
+          nombre: true,
+        },
+      });
+
+      const [
+        evidencias,
+        revisionesTecnicas,
+        decisionesNoAplica,
+        aprobacionesGestion,
+        compromisosOrigen,
+        seguimientosCompromiso,
+        solicitudesCierreCompromiso,
+      ] = await Promise.all([
+        tx.evidenciaEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.revisionTecnicaEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.decisionNoAplica.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.aprobacionGestionEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.compromiso.count({
+          where: { evaluacionOrigenId: evaluacion.id },
+        }),
+        tx.compromisoEvaluacionSeguimiento.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.solicitudCierreCompromiso.count({
+          where: {
+            evaluacionRecalificacionId: evaluacion.id,
+          },
+        }),
+      ]);
+
       const tieneDependencias =
-        evaluacion.evidencias.length > 0 ||
-        Boolean(evaluacion.revisionTecnica) ||
-        Boolean(evaluacion.decisionNoAplica) ||
-        Boolean(evaluacion.aprobacionGestion) ||
-        Boolean(evaluacion.compromisoOrigen) ||
-        evaluacion.seguimientosCompromiso.length > 0 ||
-        evaluacion.solicitudesCierreCompromiso.length > 0;
+        evidencias > 0 ||
+        revisionesTecnicas > 0 ||
+        decisionesNoAplica > 0 ||
+        aprobacionesGestion > 0 ||
+        compromisosOrigen > 0 ||
+        seguimientosCompromiso > 0 ||
+        solicitudesCierreCompromiso > 0;
+
+      const aspectoNombre =
+        aspecto?.nombre ?? `#${evaluacion.aspectoId}`;
 
       if (tieneDependencias) {
         throw new ErrorEvaluacion(
-          `No se puede quitar la evaluación del aspecto "${evaluacion.aspecto.nombre}" porque ya tiene información relacionada. Retira primero sus evidencias o relaciones pendientes.`,
+          `No se puede quitar la evaluación del aspecto "${aspectoNombre}" porque ya tiene información relacionada. Retira primero sus evidencias o relaciones pendientes.`,
           409,
           "EVALUACION_BORRADOR_CON_DEPENDENCIAS"
         );
@@ -489,7 +490,7 @@ export const servicioEvaluacionesAspecto = {
           evaluacionId: evaluacion.id,
           usuarioId: usuario.usuarioId,
           accion: "ELIMINAR_EVALUACION_BORRADOR",
-          descripcion: `Se quitó del borrador la evaluación del aspecto ${evaluacion.aspecto.nombre}.`,
+          descripcion: `Se quitó del borrador la evaluación del aspecto ${aspectoNombre}.`,
           datosAntes: comoJsonPrismaEvaluacion(evaluacion),
         },
       });
