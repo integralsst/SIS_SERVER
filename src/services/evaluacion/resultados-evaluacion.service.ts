@@ -119,6 +119,11 @@ const seleccionEvaluacionResultados = {
       resultadoEfectivo: true,
     },
   },
+  revisionTecnica: {
+    select: {
+      estado: true,
+    },
+  },
   aprobacionGestion: {
     select: {
       aprobacionGestion: {
@@ -234,7 +239,6 @@ function contarEstados(
     if (
       evaluacion.estadoCumplimiento ===
         EstadoCumplimientoAspecto.NO_APLICA &&
-      !resultado.provisional &&
       Math.abs(
         resultado.calificacion -
           NOTA_ADMINISTRATIVA_CUMPLIDO
