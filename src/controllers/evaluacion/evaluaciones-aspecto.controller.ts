@@ -34,4 +34,30 @@ export const controladorEvaluacionesAspecto = {
       responderErrorEvaluacion(error, res);
     }
   },
+
+  eliminarBorrador: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const gestionId = obtenerParametroRuta(
+        req,
+        "gestionId"
+      );
+      const aspectoId = Number(
+        obtenerParametroRuta(req, "aspectoId")
+      );
+
+      const resultado =
+        await servicioEvaluacionesAspecto.eliminarBorrador(
+          gestionId,
+          aspectoId,
+          obtenerUsuarioSesion(req)
+        );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
 };

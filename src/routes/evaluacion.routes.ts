@@ -252,6 +252,12 @@ router.put(
   controladorEvaluacionesAspecto.guardarLote
 );
 
+router.delete(
+  "/gestiones/:gestionId/evaluaciones/:aspectoId",
+  autorizar(...rolesEvaluacion),
+  controladorEvaluacionesAspecto.eliminarBorrador
+);
+
 // ======================================================
 // NO APLICA Y APROBACIÓN DE GESTIONES
 // ======================================================

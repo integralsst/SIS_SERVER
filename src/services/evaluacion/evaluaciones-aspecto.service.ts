@@ -352,4 +352,159 @@ export const servicioEvaluacionesAspecto = {
       evaluaciones: guardadas,
     };
   },
+
+  eliminarBorrador: async (
+    gestionId: string,
+    aspectoId: number,
+    usuario: UsuarioSesionEvaluacion
+  ) => {
+    if (!Number.isInteger(aspectoId) || aspectoId <= 0) {
+      throw new ErrorEvaluacion(
+        "El aspecto indicado no es válido."
+      );
+    }
+
+    const gestion = await asegurarAccesoGestion(
+      usuario,
+      gestionId,
+      "ESCRITURA"
+    );
+
+    await asegurarCapacidadParticipanteGestion(
+      usuario,
+      gestionId,
+      "EVALUAR"
+    );
+
+    if (!gestion.valida) {
+      throw new ErrorEvaluacion(
+        "La gestión está invalidada.",
+        409,
+        "GESTION_INVALIDADA"
+      );
+    }
+
+    if (gestion.estado !== EstadoGestionSgsst.BORRADOR) {
+      throw new ErrorEvaluacion(
+        "Solo se pueden quitar evaluaciones de una gestión en borrador.",
+        409,
+        "GESTION_NO_EDITABLE"
+      );
+    }
+
+    if (
+      gestion.empresaPeriodo.estado !==
+      EstadoPeriodoSgsst.ABIERTO
+    ) {
+      throw new ErrorEvaluacion(
+        "El periodo está cerrado.",
+        409,
+        "PERIODO_CERRADO"
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const evaluacion = await tx.evaluacionAspecto.findUnique({
+        where: {
+          gestionId_aspectoId: {
+            gestionId,
+            aspectoId,
+          },
+        },
+      });
+
+      if (!evaluacion) {
+        throw new ErrorEvaluacion(
+          "La evaluación guardada ya no existe en esta gestión.",
+          404,
+          "EVALUACION_BORRADOR_NO_ENCONTRADA"
+        );
+      }
+
+      const aspecto = await tx.aspecto.findUnique({
+        where: {
+          id: evaluacion.aspectoId,
+        },
+        select: {
+          nombre: true,
+        },
+      });
+
+      const [
+        evidencias,
+        revisionesTecnicas,
+        decisionesNoAplica,
+        aprobacionesGestion,
+        compromisosOrigen,
+        seguimientosCompromiso,
+        solicitudesCierreCompromiso,
+      ] = await Promise.all([
+        tx.evidenciaEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.revisionTecnicaEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.decisionNoAplica.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.aprobacionGestionEvaluacion.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.compromiso.count({
+          where: { evaluacionOrigenId: evaluacion.id },
+        }),
+        tx.compromisoEvaluacionSeguimiento.count({
+          where: { evaluacionId: evaluacion.id },
+        }),
+        tx.solicitudCierreCompromiso.count({
+          where: {
+            evaluacionRecalificacionId: evaluacion.id,
+          },
+        }),
+      ]);
+
+      const tieneDependencias =
+        evidencias > 0 ||
+        revisionesTecnicas > 0 ||
+        decisionesNoAplica > 0 ||
+        aprobacionesGestion > 0 ||
+        compromisosOrigen > 0 ||
+        seguimientosCompromiso > 0 ||
+        solicitudesCierreCompromiso > 0;
+
+      const aspectoNombre =
+        aspecto?.nombre ?? `#${evaluacion.aspectoId}`;
+
+      if (tieneDependencias) {
+        throw new ErrorEvaluacion(
+          `No se puede quitar la evaluación del aspecto "${aspectoNombre}" porque ya tiene información relacionada. Retira primero sus evidencias o relaciones pendientes.`,
+          409,
+          "EVALUACION_BORRADOR_CON_DEPENDENCIAS"
+        );
+      }
+
+      await tx.historialEvaluacion.create({
+        data: {
+          gestionId,
+          evaluacionId: evaluacion.id,
+          usuarioId: usuario.usuarioId,
+          accion: "ELIMINAR_EVALUACION_BORRADOR",
+          descripcion: `Se quitó del borrador la evaluación del aspecto ${aspectoNombre}.`,
+          datosAntes: comoJsonPrismaEvaluacion(evaluacion),
+        },
+      });
+
+      await tx.evaluacionAspecto.delete({
+        where: {
+          id: evaluacion.id,
+        },
+      });
+
+      return {
+        eliminada: true,
+        aspectoId,
+      };
+    });
+  },
 };
