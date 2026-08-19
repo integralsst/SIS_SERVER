@@ -1,6 +1,43 @@
 import type { DecidirNoAplicaInput } from "../../types/evaluacion/no-aplica.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 
+const LONGITUD_MINIMA_JUSTIFICACION_NO_APLICA = 20;
+const LONGITUD_MAXIMA_JUSTIFICACION_NO_APLICA = 2000;
+
+export function normalizarJustificacionNoAplica(
+  valor: unknown,
+  aspectoNombre: string
+): string {
+  const justificacion =
+    typeof valor === "string"
+      ? valor.trim().replace(/\s+/g, " ")
+      : "";
+
+  if (
+    justificacion.length <
+    LONGITUD_MINIMA_JUSTIFICACION_NO_APLICA
+  ) {
+    throw new ErrorEvaluacion(
+      `La justificación de No aplica del aspecto "${aspectoNombre}" debe explicar concretamente el motivo y tener al menos ${LONGITUD_MINIMA_JUSTIFICACION_NO_APLICA} caracteres.`,
+      400,
+      "JUSTIFICACION_NO_APLICA_INSUFICIENTE"
+    );
+  }
+
+  if (
+    justificacion.length >
+    LONGITUD_MAXIMA_JUSTIFICACION_NO_APLICA
+  ) {
+    throw new ErrorEvaluacion(
+      `La justificación de No aplica del aspecto "${aspectoNombre}" no puede superar los ${LONGITUD_MAXIMA_JUSTIFICACION_NO_APLICA} caracteres.`,
+      400,
+      "JUSTIFICACION_NO_APLICA_MUY_LARGA"
+    );
+  }
+
+  return justificacion;
+}
+
 export function normalizarDecisionNoAplica(
   data: unknown
 ): DecidirNoAplicaInput {
