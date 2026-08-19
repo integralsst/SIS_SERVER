@@ -19,6 +19,7 @@ import {
 } from "../../utils/evaluacion";
 import { calcularFechaVencimientoEvaluacion } from "../../utils/vigencia-evaluacion";
 import { validarCalificacionAdministrativa } from "../../validators/evaluacion/calificacion-administrativa.validator";
+import { normalizarJustificacionNoAplica } from "../../validators/evaluacion/no-aplica.validator";
 import {
   asegurarAccesoGestion,
   asegurarCapacidadParticipanteGestion,
@@ -85,17 +86,13 @@ async function guardarUnaEvaluacion(
   }
 
   const justificacionNoAplica =
-    input.justificacionNoAplica?.trim() || null;
-
-  if (
     input.estadoCumplimiento ===
-      EstadoCumplimientoAspecto.NO_APLICA &&
-    !justificacionNoAplica
-  ) {
-    throw new ErrorEvaluacion(
-      `Debes justificar por qué el aspecto "${contexto.nombre}" no aplica.`
-    );
-  }
+    EstadoCumplimientoAspecto.NO_APLICA
+      ? normalizarJustificacionNoAplica(
+          input.justificacionNoAplica,
+          contexto.nombre
+        )
+      : null;
 
   const revisionObligatoria =
     contexto.configuracionRevision
