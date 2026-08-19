@@ -2,6 +2,7 @@ import {
   EstadoAprobacionGestion,
   EstadoCumplimientoAspecto,
   EstadoDecisionNoAplica,
+  EstadoRevisionTecnica,
 } from "@prisma/client";
 
 interface DecisionNoAplicaResultado {
@@ -17,6 +18,10 @@ interface AprobacionGestionResultado {
   };
 }
 
+interface RevisionTecnicaResultado {
+  estado: EstadoRevisionTecnica;
+}
+
 export interface EvaluacionParaResultadoEfectivo {
   estadoCumplimiento: EstadoCumplimientoAspecto;
   calificacionAdministrativa: {
@@ -24,6 +29,7 @@ export interface EvaluacionParaResultadoEfectivo {
   } | number;
   decisionNoAplica?: DecisionNoAplicaResultado | null;
   aprobacionGestion?: AprobacionGestionResultado | null;
+  revisionTecnica?: RevisionTecnicaResultado | null;
 }
 
 export interface ResultadoEfectivoEvaluacion {
@@ -36,7 +42,8 @@ export interface ResultadoEfectivoEvaluacion {
     | "NO_APLICA_RECHAZADO"
     | "GESTION_PENDIENTE_APROBACION"
     | "GESTION_APROBADA"
-    | "GESTION_RECHAZADA";
+    | "GESTION_RECHAZADA"
+    | "REVISION_TECNICA_PENDIENTE";
 }
 
 function numero(
@@ -45,6 +52,38 @@ function numero(
   return typeof valor === "number"
     ? valor
     : valor.toNumber();
+}
+
+function revisionTecnicaBloqueante(
+  evaluacion: EvaluacionParaResultadoEfectivo
+): boolean {
+  const estado = evaluacion.revisionTecnica?.estado;
+
+  return (
+    estado === EstadoRevisionTecnica.PENDIENTE ||
+    estado === EstadoRevisionTecnica.REQUIERE_AJUSTES
+  );
+}
+
+function aplicarRevisionTecnica(
+  evaluacion: EvaluacionParaResultadoEfectivo,
+  resultado: ResultadoEfectivoEvaluacion
+): ResultadoEfectivoEvaluacion {
+  /*
+   * La revisión técnica es un control independiente. Mientras siga abierta,
+   * la calificación registrada/efectiva participa en los cálculos, pero no
+   * puede considerarse firme. Si ya existe otra causa provisional (por
+   * ejemplo No aplica pendiente), conservamos esa causa primaria.
+   */
+  if (resultado.provisional || !revisionTecnicaBloqueante(evaluacion)) {
+    return resultado;
+  }
+
+  return {
+    ...resultado,
+    provisional: true,
+    causa: "REVISION_TECNICA_PENDIENTE",
+  };
 }
 
 export function resolverResultadoEfectivoEvaluacion(
@@ -81,18 +120,18 @@ export function resolverResultadoEfectivoEvaluacion(
       evaluacion.decisionNoAplica.estado ===
       EstadoDecisionNoAplica.APROBADO
     ) {
-      return {
+      return aplicarRevisionTecnica(evaluacion, {
         calificacion: resultado,
         provisional: false,
         causa: "NO_APLICA_APROBADO",
-      };
+      });
     }
 
-    return {
+    return aplicarRevisionTecnica(evaluacion, {
       calificacion: resultado,
       provisional: false,
       causa: "NO_APLICA_RECHAZADO",
-    };
+    });
   }
 
   const aprobacion =
@@ -116,27 +155,27 @@ export function resolverResultadoEfectivoEvaluacion(
       aprobacion.estado ===
       EstadoAprobacionGestion.RECHAZADA
     ) {
-      return {
+      return aplicarRevisionTecnica(evaluacion, {
         calificacion: 3,
         provisional: false,
         causa: "GESTION_RECHAZADA",
-      };
+      });
     }
 
-    return {
+    return aplicarRevisionTecnica(evaluacion, {
       calificacion: numero(
         evaluacion.calificacionAdministrativa
       ),
       provisional: false,
       causa: "GESTION_APROBADA",
-    };
+    });
   }
 
-  return {
+  return aplicarRevisionTecnica(evaluacion, {
     calificacion: numero(
       evaluacion.calificacionAdministrativa
     ),
     provisional: false,
     causa: "REGISTRADA",
-  };
+  });
 }
