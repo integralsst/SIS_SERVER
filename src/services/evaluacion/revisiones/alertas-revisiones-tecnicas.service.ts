@@ -7,6 +7,7 @@ import {
 import { prisma } from "../../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "../alertas-control-evaluacion.service";
+import { rolesEvaluadorPermitidosParaRevisor } from "./jerarquia-revision-tecnica";
 import { accionVinculoCorreccionRevision } from "./revision-tecnica-vinculo";
 
 export interface OpcionesAlertasRevisionesTecnicas {
@@ -116,6 +117,13 @@ async function alertasPendientesDeResolver(
     return [];
   }
 
+  const rolesEvaluadorPermitidos =
+    rolesEvaluadorPermitidosParaRevisor(usuario.rol);
+
+  if (rolesEvaluadorPermitidos.length === 0) {
+    return [];
+  }
+
   const revisiones = await prisma.revisionTecnicaEvaluacion.findMany({
     where: {
       estado: EstadoRevisionTecnica.PENDIENTE,
@@ -125,6 +133,11 @@ async function alertasPendientesDeResolver(
       evaluacion: {
         usuarioRegistradorId: {
           not: usuario.usuarioId,
+        },
+        usuarioRegistrador: {
+          rol: {
+            in: rolesEvaluadorPermitidos,
+          },
         },
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
