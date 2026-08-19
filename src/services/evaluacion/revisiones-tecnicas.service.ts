@@ -17,6 +17,10 @@ import {
   asegurarAccesoGestion,
   asegurarAccesoPeriodo,
 } from "./acceso-evaluacion.service";
+import {
+  descripcionJerarquiaRevision,
+  puedeResolverRevisionSegunJerarquia,
+} from "./revisiones/jerarquia-revision-tecnica";
 
 const ROLES_RESOLUCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
@@ -145,6 +149,11 @@ export const servicioRevisionesTecnicas = {
           },
           evaluacion: {
             include: {
+              usuarioRegistrador: {
+                select: {
+                  rol: true,
+                },
+              },
               aspecto: {
                 include: {
                   estandar: {
@@ -222,6 +231,10 @@ export const servicioRevisionesTecnicas = {
         revisadaPor: revision.revisadaPor,
         puedeResolver:
           puedeResolverRol &&
+          puedeResolverRevisionSegunJerarquia(
+            usuario.rol,
+            revision.evaluacion.usuarioRegistrador.rol
+          ) &&
           revision.solicitadaPorUsuarioId !== usuario.usuarioId &&
           revision.evaluacion.usuarioRegistradorId !==
             usuario.usuarioId &&
@@ -347,6 +360,11 @@ export const servicioRevisionesTecnicas = {
         include: {
           evaluacion: {
             include: {
+              usuarioRegistrador: {
+                select: {
+                  rol: true,
+                },
+              },
               gestion: true,
               aspecto: {
                 select: {
@@ -380,6 +398,21 @@ export const servicioRevisionesTecnicas = {
         "No puedes emitir el concepto técnico de una evaluación que registraste o cuya revisión solicitaste.",
         403,
         "REVISION_TECNICA_SIN_SEPARACION_FUNCIONES"
+      );
+    }
+
+    if (
+      !puedeResolverRevisionSegunJerarquia(
+        usuario.rol,
+        revision.evaluacion.usuarioRegistrador.rol
+      )
+    ) {
+      throw new ErrorEvaluacion(
+        descripcionJerarquiaRevision(
+          revision.evaluacion.usuarioRegistrador.rol
+        ) ?? "Tu rol no corresponde al nivel jerárquico requerido para resolver esta revisión técnica.",
+        403,
+        "REVISION_TECNICA_JERARQUIA_INVALIDA"
       );
     }
 
