@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { servicioEstadoProvisionalResultados } from "../../services/evaluacion/estado-provisional-resultados.service";
 import {
   FILTROS_GRUPO_RESULTADOS,
   servicioResultadosEvaluacion,
@@ -39,6 +40,13 @@ function obtenerGrupo(req: Request): FiltroGrupoResultados {
   return grupo as FiltroGrupoResultados;
 }
 
+const SIN_PROVISIONALES = {
+  total: 0,
+  aprobacionGestion: 0,
+  noAplica: 0,
+  revisionTecnica: 0,
+};
+
 export const controladorResultadosEvaluacion = {
   obtener: async (
     req: Request,
@@ -56,16 +64,42 @@ export const controladorResultadosEvaluacion = {
         typeof anioSolicitado === "string"
           ? Number(anioSolicitado)
           : new Date().getFullYear();
+      const grupo = obtenerGrupo(req);
+      const usuario = obtenerUsuarioSesion(req);
 
       const resultado =
         await servicioResultadosEvaluacion.obtener(
           empresaId,
           anio,
-          obtenerGrupo(req),
-          obtenerUsuarioSesion(req)
+          grupo,
+          usuario
         );
 
-      res.status(200).json(resultado);
+      const provisionales =
+        await servicioEstadoProvisionalResultados.obtener(
+          empresaId,
+          anio,
+          grupo
+        );
+
+      res.status(200).json({
+        ...resultado,
+        resumenEmpresa: resultado.resumenEmpresa
+          ? {
+              ...resultado.resumenEmpresa,
+              provisionales:
+                provisionales.resumenEmpresa,
+            }
+          : null,
+        estandares: resultado.estandares.map(
+          (estandar) => ({
+            ...estandar,
+            provisionales:
+              provisionales.estandares.get(estandar.id) ??
+              SIN_PROVISIONALES,
+          })
+        ),
+      });
     } catch (error) {
       responderErrorEvaluacion(error, res);
     }
