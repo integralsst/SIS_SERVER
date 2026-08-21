@@ -13,6 +13,10 @@ export interface ConteoProvisionalesResultado {
   revisionTecnica: number;
 }
 
+export interface OpcionesEstadoProvisionalResultados {
+  aspectoIdsPermitidos?: ReadonlySet<number>;
+}
+
 function crearConteoVacio(): ConteoProvisionalesResultado {
   return {
     total: 0,
@@ -49,7 +53,8 @@ export const servicioEstadoProvisionalResultados = {
   obtener: async (
     empresaId: string,
     anio: number,
-    grupo: "TODOS" | CodigoGrupoMinisterial
+    grupo: "TODOS" | CodigoGrupoMinisterial,
+    opciones: OpcionesEstadoProvisionalResultados = {}
   ) => {
     const periodo = await prisma.empresaPeriodo.findUnique({
       where: {
@@ -157,6 +162,13 @@ export const servicioEstadoProvisionalResultados = {
     >();
 
     for (const evaluacion of ultimas.values()) {
+      if (
+        opciones.aspectoIdsPermitidos &&
+        !opciones.aspectoIdsPermitidos.has(evaluacion.aspectoId)
+      ) {
+        continue;
+      }
+
       const coincideGrupo =
         grupo === "TODOS" ||
         evaluacion.aspecto.estandar.gruposMinisteriales.some(

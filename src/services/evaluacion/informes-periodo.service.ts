@@ -14,6 +14,7 @@ import {
   validarAnio,
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { servicioEstadoProvisionalResultados } from "./estado-provisional-resultados.service";
 import {
   FILTROS_GRUPO_RESULTADOS,
   servicioResultadosEvaluacion,
@@ -30,6 +31,13 @@ export interface GenerarInformePeriodoInput {
 const CODIGOS_CATEGORIA = new Set<string>(
   Object.values(CodigoCategoriaGestion)
 );
+
+const SIN_PROVISIONALES = {
+  total: 0,
+  aprobacionGestion: 0,
+  noAplica: 0,
+  revisionTecnica: 0,
+};
 
 function limpiarTexto(
   value: string | null | undefined,
@@ -246,6 +254,52 @@ async function obtenerEstadisticasFuente(
   };
 }
 
+async function obtenerAspectosPermitidosPorCategorias(
+  versionSupermatrizId: number,
+  categoriasGestion: CodigoCategoriaGestion[]
+): Promise<ReadonlySet<number> | undefined> {
+  if (categoriasGestion.length === 0) {
+    return undefined;
+  }
+
+  const tareas = await prisma.supermatrizTarea.findMany({
+    where: {
+      versionSupermatrizId,
+      estado: EstadoRegistro.ACTIVO,
+      proceso: {
+        estado: EstadoRegistro.ACTIVO,
+      },
+      aspecto: {
+        estado: EstadoRegistro.ACTIVO,
+        estandar: {
+          estado: EstadoRegistro.ACTIVO,
+          categoriaEstandar: {
+            estado: EstadoRegistro.ACTIVO,
+            cicloPhva: {
+              estado: EstadoRegistro.ACTIVO,
+            },
+          },
+        },
+      },
+      categoriasGestion: {
+        some: {
+          categoriaGestion: {
+            codigo: {
+              in: categoriasGestion,
+            },
+            estado: EstadoRegistro.ACTIVO,
+          },
+        },
+      },
+    },
+    select: {
+      aspectoId: true,
+    },
+  });
+
+  return new Set(tareas.map((tarea) => tarea.aspectoId));
+}
+
 async function crearVersionConsecutiva(data: {
   empresaPeriodoId: string;
   titulo: string;
@@ -433,14 +487,44 @@ export const servicioInformesPeriodo = {
       );
     }
 
+    const aspectoIdsPermitidos =
+      await obtenerAspectosPermitidosPorCategorias(
+        resultado.periodo.versionSupermatriz.id,
+        categoriasGestion
+      );
+    const provisionales =
+      await servicioEstadoProvisionalResultados.obtener(
+        empresaId,
+        anio,
+        grupo,
+        {
+          aspectoIdsPermitidos,
+        }
+      );
+    const resultadoConProvisionales = {
+      ...resultado,
+      resumenEmpresa: resultado.resumenEmpresa
+        ? {
+            ...resultado.resumenEmpresa,
+            provisionales: provisionales.resumenEmpresa,
+          }
+        : null,
+      estandares: resultado.estandares.map((estandar) => ({
+        ...estandar,
+        provisionales:
+          provisionales.estandares.get(estandar.id) ??
+          SIN_PROVISIONALES,
+      })),
+    };
+
     const fechaCorte = new Date();
     const fuente = await obtenerEstadisticasFuente(
       resultado.periodo.id,
       anio
     );
-    const resumen = resultado.resumenEmpresa;
+    const resumen = resultadoConProvisionales.resumenEmpresa;
     const snapshot = comoJsonPrismaEvaluacion({
-      schemaVersion: 1,
+      schemaVersion: 2,
       tipo: "INFORME_PERIODO_SGSST",
       fechaCorte: fechaCorte.toISOString(),
       filtros: {
@@ -452,7 +536,7 @@ export const servicioInformesPeriodo = {
         ultimaActualizacionFuente:
           fuente.ultimaActualizacionFuente?.toISOString() ?? null,
       },
-      resultado,
+      resultado: resultadoConProvisionales,
     });
 
     const informe = await crearVersionConsecutiva({
