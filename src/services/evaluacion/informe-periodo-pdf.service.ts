@@ -645,6 +645,50 @@ function ministerialStatus(value: unknown): string {
   }
 }
 
+function pluralizar(
+  cantidad: number,
+  singular: string,
+  plural: string
+): string {
+  return `${cantidad} ${cantidad === 1 ? singular : plural}`;
+}
+
+function detalleProvisional(value: unknown): {
+  total: number;
+  texto: string;
+} {
+  const conteo = asRecord(value);
+  const total = asNumber(conteo.total);
+  const detalles = [
+    asNumber(conteo.aprobacionGestion) > 0
+      ? pluralizar(
+          asNumber(conteo.aprobacionGestion),
+          "aprobación administrativa",
+          "aprobaciones administrativas"
+        )
+      : "",
+    asNumber(conteo.noAplica) > 0
+      ? pluralizar(
+          asNumber(conteo.noAplica),
+          "decisión de No Aplica",
+          "decisiones de No Aplica"
+        )
+      : "",
+    asNumber(conteo.revisionTecnica) > 0
+      ? pluralizar(
+          asNumber(conteo.revisionTecnica),
+          "revisión técnica",
+          "revisiones técnicas"
+        )
+      : "",
+  ].filter(Boolean);
+
+  return {
+    total,
+    texto: detalles.join(", "),
+  };
+}
+
 function buildInformePdf(
   detalle: Awaited<ReturnType<typeof servicioInformesPeriodo.obtenerDetalle>>
 ): { buffer: Buffer; filename: string } {
@@ -654,11 +698,17 @@ function buildInformePdf(
   const periodo = asRecord(resultado.periodo);
   const resumen = asRecord(resultado.resumenEmpresa);
   const estados = asRecord(resumen.estados);
+  const provisionales = detalleProvisional(resumen.provisionales);
   const procesos = asArray(resultado.procesos).map(asRecord);
   const estandares = asArray(resultado.estandares).map(asRecord);
   const versionSupermatriz = asRecord(periodo.versionSupermatriz);
   const empresaNombre = asString(empresa.nombre, "Empresa");
   const empresaNit = asString(empresa.nit, "Sin NIT");
+  const evaluacionesFuente = pluralizar(
+    detalle.totalEvaluacionesFuente,
+    "aspecto evaluado",
+    "aspectos evaluados"
+  );
   const document = new SimplePdfDocument();
 
   document.rect(
@@ -713,7 +763,7 @@ function buildInformePdf(
     { fontSize: 9, color: COLORS.muted, gapAfter: 3 }
   );
   document.paragraph(
-    `Fuente: ${detalle.totalGestionesFuente} gestiones y ${detalle.totalEvaluacionesFuente} aspectos evaluados. Registros históricos posteriores al año: ${detalle.registrosHistoricosPosteriores}. Última actualización de la fuente: ${formatDate(detalle.ultimaActualizacionFuente)}.`,
+    `Fuente: ${detalle.totalGestionesFuente} gestiones y ${evaluacionesFuente}. Registros históricos posteriores al año: ${detalle.registrosHistoricosPosteriores}. Última actualización de la fuente: ${formatDate(detalle.ultimaActualizacionFuente)}.`,
     { fontSize: 9, color: COLORS.muted, gapAfter: 4 }
   );
 
@@ -750,6 +800,22 @@ function buildInformePdf(
       note: `${asNumber(resumen.evaluados)}/${asNumber(resumen.totalAspectos)} aspectos`,
     },
   ]);
+
+  if (provisionales.total > 0) {
+    document.paragraph(
+      `Resultado provisional: ${pluralizar(
+        provisionales.total,
+        "evaluación pendiente",
+        "evaluaciones pendientes"
+      )}${provisionales.texto ? ` (${provisionales.texto})` : ""}. La calificación ministerial no se considera firme mientras existan controles pendientes.`,
+      {
+        font: "bold",
+        fontSize: 8.8,
+        color: COLORS.amber,
+        gapAfter: 8,
+      }
+    );
+  }
 
   document.paragraph(
     `Estados de los aspectos: ${asNumber(estados.cumplidos)} cumplidos, ${asNumber(
@@ -835,10 +901,14 @@ function buildInformePdf(
         {
           header: "Ministerial",
           width: 75,
-          value: (row) =>
-            `${ministerialStatus(row.estadoMinisterial)} ${formatNumber(
+          value: (row) => {
+            const provisional = detalleProvisional(row.provisionales);
+            const prefijo = provisional.total > 0 ? "Provisional - " : "";
+
+            return `${prefijo}${ministerialStatus(row.estadoMinisterial)} ${formatNumber(
               row.calificacionMinisterialObtenida
-            )}/${formatNumber(row.calificacionMinisterialEsperada)}`,
+            )}/${formatNumber(row.calificacionMinisterialEsperada)}`;
+          },
         },
       ],
       estandares
