@@ -2,8 +2,8 @@ import { Router } from "express";
 import { RolUsuario } from "@prisma/client";
 
 import {
-  controladorUsuarioRolesProfesionales,
-} from "../controllers/user-professional-role.controller";
+  controladorUsuario,
+} from "../controllers/user.controller";
 
 import {
   authenticate as autenticar,
@@ -23,35 +23,35 @@ router.get(
   "/",
   autenticar,
   autorizar(...rolesGestionUsuarios),
-  controladorUsuarioRolesProfesionales.obtenerTodos
+  controladorUsuario.obtenerTodos
 );
 
 router.get(
   "/:id",
   autenticar,
   autorizar(...rolesGestionUsuarios),
-  controladorUsuarioRolesProfesionales.obtenerPorId
+  controladorUsuario.obtenerPorId
 );
 
 router.post(
   "/",
   autenticar,
   autorizar(...rolesGestionUsuarios),
-  controladorUsuarioRolesProfesionales.crear
+  controladorUsuario.crear
 );
 
 router.put(
   "/:id",
   autenticar,
   autorizar(...rolesGestionUsuarios),
-  controladorUsuarioRolesProfesionales.actualizar
+  controladorUsuario.actualizar
 );
 
 router.delete(
   "/:id",
   autenticar,
   autorizar(...rolesGestionUsuarios),
-  controladorUsuarioRolesProfesionales.eliminar
+  controladorUsuario.eliminar
 );
 
 export default router;
