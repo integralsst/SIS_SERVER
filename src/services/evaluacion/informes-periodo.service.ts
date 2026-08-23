@@ -14,6 +14,7 @@ import {
   validarAnio,
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { servicioEstadoDocumentalInformes } from "./estado-documental-informes.service";
 import { servicioEstadoProvisionalResultados } from "./estado-provisional-resultados.service";
 import {
   FILTROS_GRUPO_RESULTADOS,
@@ -206,41 +207,68 @@ async function obtenerEstadisticasFuente(
     Date.UTC(anio + 1, 0, 1)
   );
 
-  const [gestiones, evaluaciones, historicas] =
-    await Promise.all([
-      prisma.gestionSgsst.aggregate({
-        where: whereGestion,
-        _count: {
-          _all: true,
-        },
-        _max: {
-          updatedAt: true,
-        },
-      }),
-      prisma.evaluacionAspecto.aggregate({
-        where: {
+  const [
+    gestiones,
+    evaluaciones,
+    evidenciasEvaluacion,
+    evidenciasCompromiso,
+    historicas,
+  ] = await Promise.all([
+    prisma.gestionSgsst.aggregate({
+      where: whereGestion,
+      _count: {
+        _all: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+    }),
+    prisma.evaluacionAspecto.aggregate({
+      where: {
+        gestion: whereGestion,
+      },
+      _count: {
+        _all: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+    }),
+    prisma.evidenciaEvaluacion.aggregate({
+      where: {
+        evaluacion: {
           gestion: whereGestion,
         },
-        _count: {
-          _all: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+    }),
+    prisma.compromisoEvidencia.aggregate({
+      where: {
+        compromiso: {
+          gestionOrigen: whereGestion,
         },
-        _max: {
-          updatedAt: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+    }),
+    prisma.gestionSgsst.count({
+      where: {
+        ...whereGestion,
+        createdAt: {
+          gte: inicioAnioSiguiente,
         },
-      }),
-      prisma.gestionSgsst.count({
-        where: {
-          ...whereGestion,
-          createdAt: {
-            gte: inicioAnioSiguiente,
-          },
-        },
-      }),
-    ]);
+      },
+    }),
+  ]);
 
   const fechas = [
     gestiones._max.updatedAt,
     evaluaciones._max.updatedAt,
+    evidenciasEvaluacion._max.updatedAt,
+    evidenciasCompromiso._max.updatedAt,
   ].filter((value): value is Date => Boolean(value));
   const ultimaActualizacionFuente = fechas.length
     ? new Date(Math.max(...fechas.map((value) => value.getTime())))
@@ -492,15 +520,24 @@ export const servicioInformesPeriodo = {
         resultado.periodo.versionSupermatriz.id,
         categoriasGestion
       );
-    const provisionales =
-      await servicioEstadoProvisionalResultados.obtener(
+    const [provisionales, estadoDocumental] = await Promise.all([
+      servicioEstadoProvisionalResultados.obtener(
         empresaId,
         anio,
         grupo,
         {
           aspectoIdsPermitidos,
         }
-      );
+      ),
+      servicioEstadoDocumentalInformes.obtener(
+        empresaId,
+        anio,
+        grupo,
+        {
+          aspectoIdsPermitidos,
+        }
+      ),
+    ]);
     const resultadoConProvisionales = {
       ...resultado,
       resumenEmpresa: resultado.resumenEmpresa
@@ -524,7 +561,7 @@ export const servicioInformesPeriodo = {
     );
     const resumen = resultadoConProvisionales.resumenEmpresa;
     const snapshot = comoJsonPrismaEvaluacion({
-      schemaVersion: 2,
+      schemaVersion: 3,
       tipo: "INFORME_PERIODO_SGSST",
       fechaCorte: fechaCorte.toISOString(),
       filtros: {
@@ -537,6 +574,7 @@ export const servicioInformesPeriodo = {
           fuente.ultimaActualizacionFuente?.toISOString() ?? null,
       },
       resultado: resultadoConProvisionales,
+      estadoDocumental,
     });
 
     const informe = await crearVersionConsecutiva({
