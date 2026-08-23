@@ -18,6 +18,11 @@ const rolesInternos = [
   RolUsuario.ADMIN,
 ];
 
+const rolesConPerfilProfesional = [
+  RolUsuario.PROFESIONAL,
+  RolUsuario.COORDINADOR,
+];
+
 // ======================================================
 // PERFIL DEL PROFESIONAL AUTENTICADO
 // ======================================================
@@ -25,7 +30,7 @@ const rolesInternos = [
 router.get(
   "/mi-perfil",
   autenticar,
-  autorizar(RolUsuario.PROFESIONAL),
+  autorizar(...rolesConPerfilProfesional),
   controladorProfesional.obtenerMiPerfil
 );
 
@@ -33,7 +38,7 @@ router.get(
 router.get(
   "/me",
   autenticar,
-  autorizar(RolUsuario.PROFESIONAL),
+  autorizar(...rolesConPerfilProfesional),
   controladorProfesional.obtenerMiPerfil
 );
 
