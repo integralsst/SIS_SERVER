@@ -7,6 +7,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 import { prisma } from "../lib/prisma";
+import {
+  esRolConPerfilProfesional,
+} from "../utils/rol-profesional";
 
 // ======================================================
 // CONFIGURACIÓN
@@ -49,6 +52,7 @@ type RolAnterior =
   | "CLIENT_USER"
   | "CLIENT_ADMIN"
   | "PROFESSIONAL"
+  | "COORDINATOR"
   | "ADMIN"
   | "OWNER"
   | "SUPERADMIN";
@@ -68,7 +72,7 @@ function convertirRolAnterior(
     [RolUsuario.PROFESIONAL]:
       "PROFESSIONAL",
     [RolUsuario.COORDINADOR]:
-      "PROFESSIONAL",
+      "COORDINATOR",
     [RolUsuario.ADMIN]: "ADMIN",
     [RolUsuario.PROPIETARIO]:
       "OWNER",
@@ -417,8 +421,9 @@ export const login = async (
     }
 
     if (
-      usuario.rol ===
-        RolUsuario.PROFESIONAL &&
+      esRolConPerfilProfesional(
+        usuario.rol
+      ) &&
       !usuario.profesional
     ) {
       res.status(403).json({
