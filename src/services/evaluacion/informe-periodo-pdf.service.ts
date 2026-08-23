@@ -41,6 +41,7 @@ interface TableColumn<Row> {
 
 interface SnapshotInformePdf {
   resultado?: unknown;
+  estadoDocumental?: unknown;
 }
 
 interface ResultadoInformePdf {
@@ -689,6 +690,49 @@ function detalleProvisional(value: unknown): {
   };
 }
 
+function detalleEstadoDocumental(value: unknown): {
+  disponible: boolean;
+  evidenciasPendientes: number;
+  aspectosPendientes: Array<{
+    codigo: string;
+    nombre: string;
+    estandarCodigo: string;
+    estandarNombre: string;
+  }>;
+} {
+  const disponible = Boolean(
+    value && typeof value === "object" && !Array.isArray(value)
+  );
+
+  if (!disponible) {
+    return {
+      disponible: false,
+      evidenciasPendientes: 0,
+      aspectosPendientes: [],
+    };
+  }
+
+  const estado = asRecord(value);
+  const aspectosPendientes = asArray(estado.aspectosPendientes)
+    .map(asRecord)
+    .map((aspecto) => {
+      const estandar = asRecord(aspecto.estandar);
+
+      return {
+        codigo: asString(aspecto.aspectoCodigo),
+        nombre: asString(aspecto.aspectoNombre, "Aspecto sin nombre"),
+        estandarCodigo: asString(estandar.codigo),
+        estandarNombre: asString(estandar.nombre, "Estándar sin nombre"),
+      };
+    });
+
+  return {
+    disponible: true,
+    evidenciasPendientes: asNumber(estado.evidenciasPendientes),
+    aspectosPendientes,
+  };
+}
+
 function buildInformePdf(
   detalle: Awaited<ReturnType<typeof servicioInformesPeriodo.obtenerDetalle>>
 ): { buffer: Buffer; filename: string } {
@@ -699,6 +743,7 @@ function buildInformePdf(
   const resumen = asRecord(resultado.resumenEmpresa);
   const estados = asRecord(resumen.estados);
   const provisionales = detalleProvisional(resumen.provisionales);
+  const estadoDocumental = detalleEstadoDocumental(snapshot.estadoDocumental);
   const procesos = asArray(resultado.procesos).map(asRecord);
   const estandares = asArray(resultado.estandares).map(asRecord);
   const versionSupermatriz = asRecord(periodo.versionSupermatriz);
@@ -815,6 +860,54 @@ function buildInformePdf(
         gapAfter: 8,
       }
     );
+  }
+
+  if (estadoDocumental.disponible) {
+    if (estadoDocumental.evidenciasPendientes > 0) {
+      document.paragraph(
+        `Estado documental: ${pluralizar(
+          estadoDocumental.evidenciasPendientes,
+          "evidencia pendiente",
+          "evidencias pendientes"
+        )}. La calificación administrativa se conserva, pero estos aspectos exigían soporte documental y no lo tenían en la fecha de corte.`,
+        {
+          font: "bold",
+          fontSize: 8.8,
+          color: COLORS.amber,
+          gapAfter: 4,
+        }
+      );
+
+      estadoDocumental.aspectosPendientes.forEach((aspecto) => {
+        const prefijoCodigo = aspecto.codigo ? `${aspecto.codigo} · ` : "";
+        const estandar = [aspecto.estandarCodigo, aspecto.estandarNombre]
+          .filter(Boolean)
+          .join(" · ");
+
+        document.paragraph(
+          `Evidencia pendiente: ${prefijoCodigo}${aspecto.nombre}${
+            estandar ? `. Estándar ${estandar}.` : "."
+          }`,
+          {
+            fontSize: 8.2,
+            color: COLORS.muted,
+            gapAfter: 3,
+          }
+        );
+      });
+
+      document.moveDown(5);
+    } else {
+      document.paragraph(
+        "Estado documental: Completo. En la fecha de corte no existían evidencias requeridas pendientes para los aspectos incluidos en esta versión.",
+        {
+          font: "bold",
+          fontSize: 8.8,
+          color: COLORS.green,
+          gapAfter: 8,
+        }
+      );
+    }
   }
 
   document.paragraph(
