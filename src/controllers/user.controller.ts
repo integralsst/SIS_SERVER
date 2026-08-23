@@ -12,6 +12,9 @@ import {
   puedeAsignarRol,
   puedeGestionarRolObjetivo,
 } from "../utils/access";
+import {
+  esRolConPerfilProfesional,
+} from "../utils/rol-profesional";
 
 const seleccionUsuarioPublico = {
   id: true,
@@ -48,6 +51,7 @@ type RolAnterior =
   | "CLIENT_USER"
   | "CLIENT_ADMIN"
   | "PROFESSIONAL"
+  | "COORDINATOR"
   | "ADMIN"
   | "OWNER"
   | "SUPERADMIN";
@@ -67,7 +71,7 @@ function convertirRolAnterior(
     [RolUsuario.PROFESIONAL]:
       "PROFESSIONAL",
     [RolUsuario.COORDINADOR]:
-      "PROFESSIONAL",
+      "COORDINATOR",
     [RolUsuario.ADMIN]: "ADMIN",
     [RolUsuario.PROPIETARIO]:
       "OWNER",
@@ -133,6 +137,8 @@ function convertirRol(
       RolUsuario.ADMIN_CLIENTE,
     PROFESSIONAL:
       RolUsuario.PROFESIONAL,
+    COORDINATOR:
+      RolUsuario.COORDINADOR,
     ADMIN: RolUsuario.ADMIN,
     OWNER: RolUsuario.PROPIETARIO,
     SUPERADMIN:
@@ -607,7 +613,7 @@ export const controladorUsuario = {
       }
 
       if (
-        rol === RolUsuario.PROFESIONAL
+        esRolConPerfilProfesional(rol)
       ) {
         empresaId = null;
 
@@ -677,8 +683,9 @@ export const controladorUsuario = {
               });
 
             if (
-              rol ===
-                RolUsuario.PROFESIONAL &&
+              esRolConPerfilProfesional(
+                rol
+              ) &&
               profesionalId
             ) {
               await tx.profesional.update({
@@ -914,8 +921,9 @@ export const controladorUsuario = {
       }
 
       if (
-        rolFinal ===
-        RolUsuario.PROFESIONAL
+        esRolConPerfilProfesional(
+          rolFinal
+        )
       ) {
         empresaIdFinal = null;
 
@@ -1052,8 +1060,9 @@ export const controladorUsuario = {
           async (tx) => {
             if (
               objetivo.profesional &&
-              (rolFinal !==
-                RolUsuario.PROFESIONAL ||
+              (!esRolConPerfilProfesional(
+                rolFinal
+              ) ||
                 profesionalIdFinal !==
                   objetivo.profesional.id)
             ) {
@@ -1076,8 +1085,9 @@ export const controladorUsuario = {
             });
 
             if (
-              rolFinal ===
-                RolUsuario.PROFESIONAL &&
+              esRolConPerfilProfesional(
+                rolFinal
+              ) &&
               profesionalIdFinal
             ) {
               await tx.profesional.update({
