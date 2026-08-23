@@ -654,6 +654,10 @@ function pluralizar(
   return `${cantidad} ${cantidad === 1 ? singular : plural}`;
 }
 
+function sinPuntoFinal(value: string): string {
+  return value.trim().replace(/\.+$/g, "");
+}
+
 function detalleProvisional(value: unknown): {
   total: number;
   texto: string;
@@ -880,12 +884,16 @@ function buildInformePdf(
 
       estadoDocumental.aspectosPendientes.forEach((aspecto) => {
         const prefijoCodigo = aspecto.codigo ? `${aspecto.codigo} · ` : "";
-        const estandar = [aspecto.estandarCodigo, aspecto.estandarNombre]
+        const nombreAspecto = sinPuntoFinal(aspecto.nombre);
+        const estandar = [
+          aspecto.estandarCodigo,
+          sinPuntoFinal(aspecto.estandarNombre),
+        ]
           .filter(Boolean)
           .join(" · ");
 
         document.paragraph(
-          `Evidencia pendiente: ${prefijoCodigo}${aspecto.nombre}${
+          `Evidencia pendiente: ${prefijoCodigo}${nombreAspecto}${
             estandar ? `. Estándar ${estandar}.` : "."
           }`,
           {
