@@ -1,7 +1,6 @@
 export type NivelAccionCentro = "ALTA" | "MEDIA" | "BAJA";
 
 export type CategoriaAccionCentro =
-  | "COMPROMISOS"
   | "GESTIONES"
   | "EVIDENCIAS"
   | "REVISION_TECNICA"
