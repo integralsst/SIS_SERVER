@@ -26,23 +26,9 @@ interface AlertaBaseCentro {
   };
 }
 
-const TIPOS_COMPROMISO = new Set([
-  "REASIGNACION",
-  "REVISION_CIERRE",
-  "REVISION_AMPLIACION",
-  "DEVOLUCION",
-  "ACTIVIDAD",
-  "RECALIFICACION",
-  "SOLICITUD_CIERRE",
-]);
-
 export function clasificarCategoriaAccion(
   tipo: string
 ): CategoriaAccionCentro {
-  if (TIPOS_COMPROMISO.has(tipo)) {
-    return "COMPROMISOS";
-  }
-
   if (tipo === "GESTION_ASIGNADA") {
     return "GESTIONES";
   }
