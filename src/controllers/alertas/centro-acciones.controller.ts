@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 
 import { servicioCentroAccionesMultiempresa } from "../../services/alertas/centro-acciones-multiempresa.service";
+import { servicioCentroAcciones } from "../../services/alertas/centro-acciones.service";
 import { normalizarConsultaCentroAcciones } from "../../validators/alertas/centro-acciones.validator";
 import {
   obtenerParametroRuta,
@@ -9,6 +10,18 @@ import {
 } from "../evaluacion/shared/evaluacion-controller.utils";
 
 export const controladorCentroAcciones = {
+  destacadas: async (req: Request, res: Response): Promise<void> => {
+    try {
+      const resultado = await servicioCentroAcciones.listar(
+        obtenerUsuarioSesion(req)
+      );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorEvaluacion(error, res);
+    }
+  },
+
   resumen: async (req: Request, res: Response): Promise<void> => {
     try {
       const resultado = await servicioCentroAccionesMultiempresa.resumen(
