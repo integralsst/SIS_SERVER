@@ -9,7 +9,6 @@ import { servicioCentroAcciones } from "./centro-acciones.service";
 import { normalizarAccionCentro } from "./normalizador-acciones.service";
 
 const CATEGORIAS: CategoriaAccionCentro[] = [
-  "COMPROMISOS",
   "GESTIONES",
   "EVIDENCIAS",
   "REVISION_TECNICA",
@@ -21,7 +20,6 @@ const CATEGORIAS: CategoriaAccionCentro[] = [
 
 function crearConteoCategorias(): Record<CategoriaAccionCentro, number> {
   return {
-    COMPROMISOS: 0,
     GESTIONES: 0,
     EVIDENCIAS: 0,
     REVISION_TECNICA: 0,

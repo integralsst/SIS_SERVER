@@ -1,5 +1,4 @@
 import {
-  EstadoCompromiso,
   EstadoCumplimientoAspecto,
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
@@ -7,26 +6,11 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "../../../lib/prisma";
-import type {
-  CompromisoFinalizacionInput,
-} from "../../../types/evaluacion/compromisos/finalizacion-gestion.types";
 import type { UsuarioSesionEvaluacion } from "../../../types/evaluacion.types";
-import {
-  convertirFecha,
-  ErrorEvaluacion,
-} from "../../../utils/evaluacion";
+import { ErrorEvaluacion } from "../../../utils/evaluacion";
 import { validarCalificacionAdministrativa } from "../../../validators/evaluacion/calificacion-administrativa.validator";
-import { normalizarFinalizacionGestion } from "../../../validators/evaluacion/compromisos/finalizacion-gestion.validator";
 import { asegurarAccesoGestion } from "../acceso-evaluacion.service";
 import { registrarControlesFinalizacion } from "../controles-finalizacion.service";
-import {
-  correspondeAlMismoAspecto,
-  ESTADOS_COMPROMISO_ABIERTO,
-} from "./identidad-aspecto-compromiso.service";
-import {
-  asegurarResponsablesDisponibles,
-  listarResponsablesDisponibles,
-} from "./responsables-disponibles.service";
 
 interface EvaluacionFinalizacion {
   id: string;
@@ -37,7 +21,6 @@ interface EvaluacionFinalizacion {
   motivoRevisionTecnica: string | null;
   aspecto: {
     id: number;
-    codigo: string | null;
     nombre: string;
     configuracionRevision: {
       requiereRevisionTecnica: boolean;
@@ -46,53 +29,23 @@ interface EvaluacionFinalizacion {
   };
 }
 
-function validarCompromisosEnviados(
-  evaluacionesNuevas: EvaluacionFinalizacion[],
-  compromisos: CompromisoFinalizacionInput[]
-): Map<string, CompromisoFinalizacionInput> {
-  const esperadas = new Set(
-    evaluacionesNuevas.map(
-      (evaluacion) => evaluacion.id
-    )
-  );
-  const recibidas = new Map(
-    compromisos.map((compromiso) => [
-      compromiso.evaluacionId,
-      compromiso,
-    ])
-  );
-
-  const faltantes = [...esperadas].filter(
-    (evaluacionId) => !recibidas.has(evaluacionId)
-  );
-
-  if (faltantes.length > 0) {
-    throw new ErrorEvaluacion(
-      `Debes registrar ${faltantes.length} compromiso(s) obligatorio(s) antes de finalizar la gestión.`,
-      409,
-      "COMPROMISOS_OBLIGATORIOS_PENDIENTES"
-    );
-  }
-
-  const adicionales = [...recibidas.keys()].filter(
-    (evaluacionId) => !esperadas.has(evaluacionId)
-  );
-
-  if (adicionales.length > 0) {
-    throw new ErrorEvaluacion(
-      "Se enviaron compromisos para evaluaciones que no requieren uno nuevo.",
-      400,
-      "COMPROMISOS_NO_REQUERIDOS"
-    );
-  }
-
-  return recibidas;
-}
-
+/**
+ * Finaliza una gestión SG-SST sin crear compromisos operativos.
+ *
+ * Regla vigente:
+ * - Una calificación administrativa 0 o 3 deja el aspecto con
+ *   "compromiso pendiente" calculado desde su última evaluación válida.
+ * - Una calificación 5 o No aplica no deja compromiso pendiente.
+ * - La finalización no solicita responsables, actividades, fechas límite,
+ *   ampliaciones, cierres ni ninguna otra entidad del flujo legado.
+ *
+ * Las tablas históricas de compromisos se conservan intactas para consulta
+ * y trazabilidad de registros creados antes de esta simplificación.
+ */
 export const servicioFinalizacionObligatoria = {
   finalizar: async (
     gestionId: string,
-    data: unknown,
+    _data: unknown,
     usuario: UsuarioSesionEvaluacion
   ) => {
     const gestion = await asegurarAccesoGestion(
@@ -128,9 +81,6 @@ export const servicioFinalizacionObligatoria = {
       );
     }
 
-    const entrada =
-      normalizarFinalizacionGestion(data);
-
     return prisma.$transaction(
       async (tx) => {
         const evaluaciones =
@@ -148,7 +98,6 @@ export const servicioFinalizacionObligatoria = {
               aspecto: {
                 select: {
                   id: true,
-                  codigo: true,
                   nombre: true,
                   configuracionRevision: {
                     select: {
@@ -179,276 +128,6 @@ export const servicioFinalizacionObligatoria = {
             evaluacion.estadoCumplimiento,
             evaluacion.calificacionAdministrativa.toNumber()
           );
-        }
-
-        const [compromisosAbiertos, compromisosTerminados] =
-          await Promise.all([
-            tx.compromiso.findMany({
-              where: {
-                empresaId:
-                  gestion.empresaPeriodo.empresaId,
-                estado: {
-                  in: ESTADOS_COMPROMISO_ABIERTO,
-                },
-              },
-              select: {
-                id: true,
-                aspectoId: true,
-                aspectoCodigo: true,
-                aspecto: {
-                  select: {
-                    nombre: true,
-                  },
-                },
-              },
-            }),
-            tx.compromiso.findMany({
-              where: {
-                empresaId:
-                  gestion.empresaPeriodo.empresaId,
-                estado: {
-                  in: [
-                    EstadoCompromiso.CUMPLIDO,
-                    EstadoCompromiso.CANCELADO,
-                  ],
-                },
-              },
-              select: {
-                id: true,
-                aspectoId: true,
-                aspectoCodigo: true,
-                createdAt: true,
-                aspecto: {
-                  select: {
-                    nombre: true,
-                  },
-                },
-              },
-              orderBy: {
-                createdAt: "desc",
-              },
-            }),
-          ]);
-
-        const compromisoPorEvaluacion = new Map<
-          string,
-          (typeof compromisosAbiertos)[number]
-        >();
-
-        for (const evaluacion of evaluaciones) {
-          const existente =
-            compromisosAbiertos.find((compromiso) =>
-              correspondeAlMismoAspecto(
-                compromiso,
-                evaluacion.aspecto
-              )
-            );
-
-          if (existente) {
-            compromisoPorEvaluacion.set(
-              evaluacion.id,
-              existente
-            );
-          }
-        }
-
-        const evaluacionesNuevas =
-          evaluaciones.filter((evaluacion) => {
-            const calificacion =
-              evaluacion.calificacionAdministrativa.toNumber();
-
-            return (
-              (calificacion === 0 ||
-                calificacion === 3) &&
-              !compromisoPorEvaluacion.has(
-                evaluacion.id
-              )
-            );
-          });
-
-        const compromisosPorEvaluacion =
-          validarCompromisosEnviados(
-            evaluacionesNuevas,
-            entrada.compromisos ?? []
-          );
-
-        const responsablesDisponibles =
-          evaluacionesNuevas.length > 0
-            ? await listarResponsablesDisponibles(
-                tx,
-                gestion.empresaPeriodo.empresaId
-              )
-            : [];
-
-        const compromisosCreados: string[] = [];
-
-        for (const evaluacion of evaluacionesNuevas) {
-          const compromisoInput =
-            compromisosPorEvaluacion.get(
-              evaluacion.id
-            );
-
-          if (!compromisoInput) {
-            throw new ErrorEvaluacion(
-              "No fue posible asociar uno de los compromisos obligatorios.",
-              409,
-              "COMPROMISO_SIN_EVALUACION"
-            );
-          }
-
-          asegurarResponsablesDisponibles(
-            responsablesDisponibles,
-            compromisoInput.responsables.map(
-              (responsable) =>
-                responsable.usuarioResponsableId
-            )
-          );
-
-          const fechaLimite = convertirFecha(
-            compromisoInput.fechaLimite,
-            "fechaLimite",
-            true
-          ) as Date;
-
-          if (fechaLimite < gestion.fechaGestion) {
-            throw new ErrorEvaluacion(
-              `La fecha límite del aspecto "${evaluacion.aspecto.nombre}" no puede ser anterior a la fecha de la gestión.`,
-              400,
-              "FECHA_LIMITE_INVALIDA"
-            );
-          }
-
-          const compromisoAnterior =
-            compromisosTerminados.find((compromiso) =>
-              correspondeAlMismoAspecto(
-                compromiso,
-                evaluacion.aspecto
-              )
-            ) ?? null;
-
-          const compromiso =
-            await tx.compromiso.create({
-              data: {
-                empresaId:
-                  gestion.empresaPeriodo.empresaId,
-                gestionOrigenId: gestionId,
-                evaluacionOrigenId:
-                  evaluacion.id,
-                aspectoId:
-                  evaluacion.aspecto.id,
-                aspectoCodigo:
-                  evaluacion.aspecto.codigo,
-                creadoPorUsuarioId:
-                  usuario.usuarioId,
-                descripcion:
-                  compromisoInput.descripcion,
-                recursos:
-                  compromisoInput.recursos ?? null,
-                fechaLimite,
-                responsables: {
-                  create:
-                    compromisoInput.responsables.map(
-                      (responsable) => ({
-                        usuarioResponsableId:
-                          responsable.usuarioResponsableId,
-                        asignadoPorUsuarioId:
-                          usuario.usuarioId,
-                        tipo: responsable.tipo,
-                        actividad: {
-                          create: {
-                            descripcion:
-                              responsable.actividad,
-                          },
-                        },
-                      })
-                    ),
-                },
-              },
-              select: {
-                id: true,
-              },
-            });
-
-          compromisosCreados.push(
-            compromiso.id
-          );
-
-          await tx.historialCompromiso.create({
-            data: {
-              compromisoId: compromiso.id,
-              entidadTipo: "COMPROMISO",
-              entidadId: compromiso.id,
-              accion: "CREAR_COMPROMISO",
-              descripcion: `Se creó el compromiso obligatorio para el aspecto ${evaluacion.aspecto.nombre} al finalizar la gestión.`,
-              usuarioId: usuario.usuarioId,
-            },
-          });
-
-          if (compromisoAnterior) {
-            await tx.historialCompromiso.create({
-              data: {
-                compromisoId: compromiso.id,
-                entidadTipo: "COMPROMISO_ANTERIOR",
-                entidadId: compromisoAnterior.id,
-                accion: "RELACIONAR_COMPROMISO_ANTERIOR",
-                descripcion: `El nuevo compromiso conserva continuidad con el compromiso anterior ${compromisoAnterior.id}; el registro anterior no se reabre.`,
-                usuarioId: usuario.usuarioId,
-              },
-            });
-          }
-        }
-
-        const evaluacionesVinculadas =
-          evaluaciones
-            .map((evaluacion) => ({
-              evaluacionId: evaluacion.id,
-              compromiso:
-                compromisoPorEvaluacion.get(
-                  evaluacion.id
-                ),
-            }))
-            .filter(
-              (
-                vinculacion
-              ): vinculacion is {
-                evaluacionId: string;
-                compromiso: (typeof compromisosAbiertos)[number];
-              } =>
-                Boolean(vinculacion.compromiso)
-            );
-
-        if (evaluacionesVinculadas.length > 0) {
-          await tx.compromisoEvaluacionSeguimiento.createMany(
-            {
-              data: evaluacionesVinculadas.map(
-                (vinculacion) => ({
-                  compromisoId:
-                    vinculacion.compromiso.id,
-                  evaluacionId:
-                    vinculacion.evaluacionId,
-                })
-              ),
-              skipDuplicates: true,
-            }
-          );
-
-          await tx.historialCompromiso.createMany({
-            data: evaluacionesVinculadas.map(
-              (vinculacion) => ({
-                compromisoId:
-                  vinculacion.compromiso.id,
-                entidadTipo:
-                  "EVALUACION_ASPECTO",
-                entidadId:
-                  vinculacion.evaluacionId,
-                accion:
-                  "VINCULAR_REEVALUACION",
-                descripcion:
-                  "Se vinculó una nueva evaluación del aspecto a la trazabilidad del compromiso abierto.",
-                usuarioId: usuario.usuarioId,
-              })
-            ),
-          });
         }
 
         const evaluacionesParaRevision =
@@ -521,6 +200,15 @@ export const servicioFinalizacionObligatoria = {
           usuario
         );
 
+        const compromisosPendientes = evaluaciones.filter(
+          (evaluacion) => {
+            const calificacion =
+              evaluacion.calificacionAdministrativa.toNumber();
+
+            return calificacion === 0 || calificacion === 3;
+          }
+        ).length;
+
         const actualizada =
           await tx.gestionSgsst.update({
             where: {
@@ -538,16 +226,16 @@ export const servicioFinalizacionObligatoria = {
             gestionId,
             usuarioId: usuario.usuarioId,
             accion: "FINALIZAR_GESTION",
-            descripcion: `La gestión fue finalizada con ${compromisosCreados.length} compromiso(s) nuevo(s), ${evaluacionesVinculadas.length} evaluación(es) vinculada(s) a compromisos abiertos y ${evaluacionesParaRevision.length} revisión(es) técnica(s).`,
+            descripcion: `La gestión fue finalizada con ${evaluaciones.length} evaluación(es). ${compromisosPendientes} aspecto(s) quedan con compromiso pendiente calculado por calificación 0/3 y ${evaluacionesParaRevision.length} revisión(es) técnica(s) fueron generadas.`,
           },
         });
 
         return {
           ...actualizada,
-          compromisosCreados:
-            compromisosCreados.length,
-          evaluacionesVinculadas:
-            evaluacionesVinculadas.length,
+          // Compatibilidad temporal con consumidores anteriores.
+          compromisosCreados: 0,
+          evaluacionesVinculadas: 0,
+          compromisosPendientes,
           revisionesTecnicasCreadas:
             evaluacionesParaRevision.length,
         };
