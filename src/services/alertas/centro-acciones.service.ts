@@ -4,10 +4,6 @@ import {
   type AlertaAuditoria,
 } from "../auditorias/alertas-auditorias.service";
 import {
-  servicioAlertasCompromisos,
-  type AlertaCompromiso,
-} from "../compromisos/alertas-compromisos.service";
-import {
   asegurarEmpresaAccesible,
   listarEmpresasAccesibles,
 } from "../empresas/acceso-empresas.service";
@@ -25,7 +21,6 @@ import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/aler
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
 type AlertaCentro =
   | AlertaControlEvaluacion
-  | AlertaCompromiso
   | AlertaAuditoria
   | AlertaGestionAsignada;
 
@@ -62,18 +57,12 @@ async function cargar(
   const empresasPermitidas = new Set(empresas.map((empresa) => empresa.id));
 
   const [
-    compromisos,
     controlesEvaluacion,
     evidenciasPendientes,
     revisionesTecnicas,
     auditorias,
     gestionesAsignadas,
   ] = await Promise.all([
-    servicioAlertasCompromisos.listar(usuario, {
-      empresaId: opciones.empresaId,
-      limiteConsulta,
-      limiteRespuesta: null,
-    }),
     servicioAlertasControlEvaluacion.listar(usuario, {
       empresaId: opciones.empresaId,
       limiteConsulta,
@@ -96,9 +85,6 @@ async function cargar(
     }),
   ]);
 
-  const alertasCompromisos = compromisos.alertas.filter((alerta) =>
-    empresasPermitidas.has(alerta.empresa.id)
-  );
   const alertasControl = [
     ...controlesEvaluacion,
     ...evidenciasPendientes,
@@ -112,7 +98,6 @@ async function cargar(
   );
 
   return ordenar([
-    ...alertasCompromisos,
     ...alertasControl,
     ...alertasAuditorias,
     ...alertasGestiones,
