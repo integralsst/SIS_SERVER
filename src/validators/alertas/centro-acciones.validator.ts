@@ -7,7 +7,6 @@ import { ErrorEvaluacion } from "../../utils/evaluacion";
 
 const CATEGORIAS = new Set<CategoriaAccionCentro | "TODAS">([
   "TODAS",
-  "COMPROMISOS",
   "GESTIONES",
   "EVIDENCIAS",
   "REVISION_TECNICA",
