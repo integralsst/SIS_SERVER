@@ -22,6 +22,7 @@ const rolesCentroAcciones = [
 router.use(autenticar);
 router.use(autorizar(...rolesCentroAcciones));
 
+router.get("/destacadas", controladorCentroAcciones.destacadas);
 router.get("/resumen", controladorCentroAcciones.resumen);
 router.get("/empresas", controladorCentroAcciones.listarEmpresas);
 router.get(
