@@ -7,6 +7,7 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import { RolUsuario } from "@prisma/client";
 
 import { prisma } from "../lib/prisma";
+import { esRolConPerfilProfesional } from "../utils/rol-profesional";
 
 interface PayloadTokenAcceso extends JwtPayload {
   usuarioId?: string;
@@ -141,8 +142,9 @@ export const autenticar = async (
     }
 
     if (
-      usuario.rol ===
-        RolUsuario.PROFESIONAL &&
+      esRolConPerfilProfesional(
+        usuario.rol
+      ) &&
       !usuario.profesional
     ) {
       res.status(403).json({
@@ -153,8 +155,9 @@ export const autenticar = async (
     }
 
     if (
-      usuario.rol ===
-        RolUsuario.PROFESIONAL &&
+      esRolConPerfilProfesional(
+        usuario.rol
+      ) &&
       usuario.profesional &&
       !usuario.profesional.activo
     ) {
