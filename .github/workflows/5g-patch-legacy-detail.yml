@@ -1,0 +1,154 @@
+name: 5G Patch Legacy Detail
+
+on:
+  push:
+    branches:
+      - feat/5g-a-continuidad-temporal
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build:
+    if: "github.event.head_commit.message != 'feat(5g): align legacy detail with temporal continuity'"
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: mysql://stack44:stack44@127.0.0.1:3306/stack44_ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply guarded legacy detail patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/services/evaluacion/detalle-aspecto.service.ts')
+          text = path.read_text(encoding='utf-8')
+
+          old = 'import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";\n'
+          new = old + 'import {\n  construirCorteAnual,\n  servicioPeriodosEvaluacion,\n} from "./periodos-evaluacion.service";\n'
+          if text.count(old) != 1:
+              raise SystemExit('import acceso no encontrado de forma única')
+          text = text.replace(old, new, 1)
+
+          anchor = '''    if (!periodo) {
+                  throw new ErrorEvaluacion(
+                    "El periodo seleccionado todavía no está abierto.",
+                    404,
+                    "PERIODO_NO_ENCONTRADO"
+                  );
+                }
+
+                const tarea ='''
+          insertion = '''    if (!periodo) {
+                  throw new ErrorEvaluacion(
+                    "El periodo seleccionado todavía no está abierto.",
+                    404,
+                    "PERIODO_NO_ENCONTRADO"
+                  );
+                }
+
+                const gestionActivaContexto =
+                  await prisma.gestionSgsst.findFirst({
+                    where: {
+                      empresaPeriodoId: periodo.id,
+                      usuarioCreadorId: usuario.usuarioId,
+                      estado: EstadoGestionSgsst.BORRADOR,
+                      valida: true,
+                    },
+                    orderBy: {
+                      createdAt: "desc",
+                    },
+                    select: {
+                      id: true,
+                      fechaGestion: true,
+                      tipoActividad: true,
+                      estado: true,
+                    },
+                  });
+                const fechaCorte =
+                  gestionActivaContexto?.fechaGestion ??
+                  construirCorteAnual(anio);
+                const versionAplicable =
+                  await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+                    fechaCorte
+                  );
+
+                const tarea ='''
+          if text.count(anchor) != 1:
+              raise SystemExit('ancla periodo/tarea no encontrada')
+          text = text.replace(anchor, insertion, 1)
+
+          old = '''          versionSupermatrizId:
+                    periodo.versionSupermatrizId,'''
+          new = '''          versionSupermatrizId:
+                    versionAplicable.id,'''
+          if text.count(old) != 1:
+              raise SystemExit('versión anual legacy no encontrada')
+          text = text.replace(old, new, 1)
+
+          pattern = r'    const gestionActiva =\s*await prisma\.gestionSgsst\.findFirst\(\{[\s\S]*?\n      \}\);\n\n    const evaluacionBorrador = gestionActiva'
+          replacement = '''    const gestionActiva = gestionActivaContexto;
+
+                const evaluacionBorrador = gestionActiva'''
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'bloque gestionActiva legacy no reemplazado: {count}')
+
+          pattern = r'    const filtroAspectoHistorico: Prisma\.EvaluacionAspectoWhereInput = tarea\.aspecto\.codigo[\s\S]*?\n      \};\n'
+          replacement = '''    const filtroAspectoHistorico: Prisma.EvaluacionAspectoWhereInput = {
+                  aspecto: {
+                    identidadHistorica:
+                      tarea.aspecto.identidadHistorica,
+                  },
+                };
+'''
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'filtro histórico legacy no reemplazado: {count}')
+
+          old = '''          gestion: {
+                    empresaPeriodo: {
+                      empresaId,
+                    },
+                    ...(esCliente'''
+          new = '''          gestion: {
+                    empresaPeriodo: {
+                      empresaId,
+                    },
+                    fechaGestion: {
+                      lte: fechaCorte,
+                    },
+                    ...(esCliente'''
+          if text.count(old) != 1:
+              raise SystemExit('corte historial legacy no encontrado')
+          text = text.replace(old, new, 1)
+
+          old = '''        versionSupermatriz:
+                  periodo.versionSupermatriz,'''
+          new = '''        versionSupermatriz:
+                  versionAplicable,'''
+          if text.count(old) != 1:
+              raise SystemExit('respuesta versión legacy no encontrada')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - run: npm ci
+      - run: npm run build
+      - name: Commit source only after successful build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/services/evaluacion/detalle-aspecto.service.ts
+          git commit -m "feat(5g): align legacy detail with temporal continuity"
+          git push
