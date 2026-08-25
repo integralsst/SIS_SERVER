@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch-build:
-    if: "github.event.head_commit.message != 'feat(5g): align legacy detail with temporal continuity'"
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: mysql://stack44:stack44@127.0.0.1:3306/stack44_ci
@@ -34,112 +33,96 @@ jobs:
           path = Path('src/services/evaluacion/detalle-aspecto.service.ts')
           text = path.read_text(encoding='utf-8')
 
+          if 'servicioPeriodosEvaluacion' in text:
+              print('Legacy detail already patched')
+              raise SystemExit(0)
+
           old = 'import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";\n'
           new = old + 'import {\n  construirCorteAnual,\n  servicioPeriodosEvaluacion,\n} from "./periodos-evaluacion.service";\n'
           if text.count(old) != 1:
               raise SystemExit('import acceso no encontrado de forma única')
           text = text.replace(old, new, 1)
 
-          anchor = '''    if (!periodo) {
-                  throw new ErrorEvaluacion(
-                    "El periodo seleccionado todavía no está abierto.",
-                    404,
-                    "PERIODO_NO_ENCONTRADO"
-                  );
-                }
+          marker = '''    const tarea =
+                  await prisma.supermatrizTarea.findFirst({'''
+          if marker not in text:
+              marker = '''    const tarea =
+      await prisma.supermatrizTarea.findFirst({'''
+          if text.count(marker) != 1:
+              raise SystemExit(f'marcador tarea no encontrado de forma única: {text.count(marker)}')
 
-                const tarea ='''
-          insertion = '''    if (!periodo) {
-                  throw new ErrorEvaluacion(
-                    "El periodo seleccionado todavía no está abierto.",
-                    404,
-                    "PERIODO_NO_ENCONTRADO"
-                  );
-                }
+          insertion = '''    const gestionActivaContexto =
+      await prisma.gestionSgsst.findFirst({
+        where: {
+          empresaPeriodoId: periodo.id,
+          usuarioCreadorId: usuario.usuarioId,
+          estado: EstadoGestionSgsst.BORRADOR,
+          valida: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          fechaGestion: true,
+          tipoActividad: true,
+          estado: true,
+        },
+      });
+    const fechaCorte =
+      gestionActivaContexto?.fechaGestion ??
+      construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
 
-                const gestionActivaContexto =
-                  await prisma.gestionSgsst.findFirst({
-                    where: {
-                      empresaPeriodoId: periodo.id,
-                      usuarioCreadorId: usuario.usuarioId,
-                      estado: EstadoGestionSgsst.BORRADOR,
-                      valida: true,
-                    },
-                    orderBy: {
-                      createdAt: "desc",
-                    },
-                    select: {
-                      id: true,
-                      fechaGestion: true,
-                      tipoActividad: true,
-                      estado: true,
-                    },
-                  });
-                const fechaCorte =
-                  gestionActivaContexto?.fechaGestion ??
-                  construirCorteAnual(anio);
-                const versionAplicable =
-                  await servicioPeriodosEvaluacion.resolverVersionParaFecha(
-                    fechaCorte
-                  );
+'''
+          text = text.replace(marker, insertion + marker, 1)
 
-                const tarea ='''
-          if text.count(anchor) != 1:
-              raise SystemExit('ancla periodo/tarea no encontrada')
-          text = text.replace(anchor, insertion, 1)
+          text, count = re.subn(
+              r'versionSupermatrizId:\s*periodo\.versionSupermatrizId,',
+              'versionSupermatrizId:\n            versionAplicable.id,',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'versión anual legacy no reemplazada: {count}')
 
-          old = '''          versionSupermatrizId:
-                    periodo.versionSupermatrizId,'''
-          new = '''          versionSupermatrizId:
-                    versionAplicable.id,'''
-          if text.count(old) != 1:
-              raise SystemExit('versión anual legacy no encontrada')
-          text = text.replace(old, new, 1)
-
-          pattern = r'    const gestionActiva =\s*await prisma\.gestionSgsst\.findFirst\(\{[\s\S]*?\n      \}\);\n\n    const evaluacionBorrador = gestionActiva'
+          pattern = r'    const gestionActiva =\s*await prisma\.gestionSgsst\.findFirst\(\{[\s\S]*?\n    \}\);\n\n    const evaluacionBorrador = gestionActiva'
           replacement = '''    const gestionActiva = gestionActivaContexto;
 
-                const evaluacionBorrador = gestionActiva'''
+    const evaluacionBorrador = gestionActiva'''
           text, count = re.subn(pattern, replacement, text, count=1)
           if count != 1:
               raise SystemExit(f'bloque gestionActiva legacy no reemplazado: {count}')
 
-          pattern = r'    const filtroAspectoHistorico: Prisma\.EvaluacionAspectoWhereInput = tarea\.aspecto\.codigo[\s\S]*?\n      \};\n'
+          pattern = r'    const filtroAspectoHistorico: Prisma\.EvaluacionAspectoWhereInput = tarea\.aspecto\.codigo[\s\S]*?\n    };\n'
           replacement = '''    const filtroAspectoHistorico: Prisma.EvaluacionAspectoWhereInput = {
-                  aspecto: {
-                    identidadHistorica:
-                      tarea.aspecto.identidadHistorica,
-                  },
-                };
+      aspecto: {
+        identidadHistorica:
+          tarea.aspecto.identidadHistorica,
+      },
+    };
 '''
           text, count = re.subn(pattern, replacement, text, count=1)
           if count != 1:
               raise SystemExit(f'filtro histórico legacy no reemplazado: {count}')
 
-          old = '''          gestion: {
-                    empresaPeriodo: {
-                      empresaId,
-                    },
-                    ...(esCliente'''
-          new = '''          gestion: {
-                    empresaPeriodo: {
-                      empresaId,
-                    },
-                    fechaGestion: {
-                      lte: fechaCorte,
-                    },
-                    ...(esCliente'''
-          if text.count(old) != 1:
-              raise SystemExit('corte historial legacy no encontrado')
-          text = text.replace(old, new, 1)
+          pattern = r'(gestion:\s*\{\s*empresaPeriodo:\s*\{\s*empresaId,\s*\},)(\s*\.\.\.\(esCliente)'
+          replacement = r'\1\n            fechaGestion: {\n              lte: fechaCorte,\n            },\2'
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'corte historial legacy no reemplazado: {count}')
 
-          old = '''        versionSupermatriz:
-                  periodo.versionSupermatriz,'''
-          new = '''        versionSupermatriz:
-                  versionAplicable,'''
-          if text.count(old) != 1:
-              raise SystemExit('respuesta versión legacy no encontrada')
-          text = text.replace(old, new, 1)
+          text, count = re.subn(
+              r'(periodo:\s*\{[\s\S]*?versionSupermatriz:)\s*periodo\.versionSupermatriz,',
+              r'\1\n          versionAplicable,',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f'respuesta versión legacy no reemplazada: {count}')
 
           path.write_text(text, encoding='utf-8')
           PY
@@ -147,6 +130,10 @@ jobs:
       - run: npm run build
       - name: Commit source only after successful build
         run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/services/evaluacion/detalle-aspecto.service.ts
