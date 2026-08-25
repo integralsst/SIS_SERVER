@@ -366,7 +366,7 @@ export async function clonarVersionSupermatrizPorEtapas(
         );
 
       const nuevoId =
-        categoriasNuevasPorClave.get(
+        categoriasNuevosPorClave.get(
           `${cicloNuevoId}::${categoria.nombre}`
         );
 
@@ -614,6 +614,7 @@ export async function clonarVersionSupermatrizPorEtapas(
       origen.aspectos.map(
         (aspecto) => ({
           versionSupermatrizId: nueva.id,
+          identidadHistorica: aspecto.identidadHistorica,
           estandarId:
             obtenerMapeado(
               estandares,
@@ -625,6 +626,8 @@ export async function clonarVersionSupermatrizPorEtapas(
           descripcion:
             aspecto.descripcion,
           orden: aspecto.orden,
+          calificacionMinisterialEsperada:
+            aspecto.calificacionMinisterialEsperada,
           estado: aspecto.estado,
         })
       ),
