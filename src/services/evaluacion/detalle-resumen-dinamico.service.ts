@@ -20,6 +20,10 @@ import {
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 type BooleanoMysql = boolean | number | bigint | null;
 
@@ -28,6 +32,7 @@ interface TareaResumenRaw {
   tareaCodigo: string | null;
   tareaOrden: number;
   aspectoId: number;
+  aspectoIdentidadHistorica: string;
   versionId: number;
   versionNombre: string;
   versionEstado: string;
@@ -138,6 +143,7 @@ async function obtenerTareaBase(
         st.codigo AS tareaCodigo,
         st.orden AS tareaOrden,
         st.aspectoId AS aspectoId,
+        a.identidadHistorica AS aspectoIdentidadHistorica,
         vs.id AS versionId,
         vs.nombre AS versionNombre,
         vs.estado AS versionEstado,
@@ -227,13 +233,9 @@ async function obtenerEvaluacionBorrador(
 
 async function obtenerUltimaEvaluacion(
   empresaId: string,
-  aspectoId: number,
-  codigoAspecto: string | null
+  identidadHistorica: string,
+  fechaCorte: Date
 ): Promise<EvaluacionVigenciaRaw | undefined> {
-  const filtroAspecto = codigoAspecto
-    ? Prisma.sql`a.codigo = ${codigoAspecto}`
-    : Prisma.sql`ea.aspectoId = ${aspectoId}`;
-
   const filas = await prisma.$queryRaw<
     EvaluacionVigenciaRaw[]
   >(
@@ -253,8 +255,9 @@ async function obtenerUltimaEvaluacion(
       WHERE ep.empresaId = ${empresaId}
         AND gs.valida = 1
         AND gs.estado = ${EstadoGestionSgsst.FINALIZADA}
-        AND ${filtroAspecto}
-      ORDER BY gs.fechaGestion DESC, ea.createdAt DESC
+        AND gs.fechaGestion <= ${fechaCorte}
+        AND a.identidadHistorica = ${identidadHistorica}
+      ORDER BY gs.fechaGestion DESC, ea.createdAt DESC, ea.id DESC
       LIMIT 1
     `
   );
@@ -292,7 +295,6 @@ export const servicioDetalleResumenDinamico = {
           id: true,
           anio: true,
           estado: true,
-          versionSupermatrizId: true,
         },
       }),
     ]);
@@ -309,29 +311,37 @@ export const servicioDetalleResumenDinamico = {
       );
     }
 
+    const gestionSeleccionada =
+      await resolverBorradorSeleccionado(
+        periodo.id,
+        usuario,
+        gestionId
+      );
+    const fechaCorte =
+      gestionSeleccionada?.fechaGestion ?? construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+
     const inicioTarea = process.hrtime.bigint();
-    const [tarea, categoriasGestion, gestionSeleccionada] =
-      await Promise.all([
-        obtenerTareaBase(
-          tareaId,
-          periodo.versionSupermatrizId
-        ),
-        obtenerCategoriasGestion(tareaId),
-        resolverBorradorSeleccionado(
-          periodo.id,
-          usuario,
-          gestionId
-        ),
-      ]);
-    const tareaMs = milisegundosDesde(inicioTarea);
+    const tarea = await obtenerTareaBase(
+      tareaId,
+      versionAplicable.id
+    );
 
     if (!tarea) {
       throw new ErrorEvaluacion(
-        "La fila seleccionada no pertenece a la versión de este periodo.",
+        "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
         404,
         "FILA_NO_ENCONTRADA"
       );
     }
+
+    const categoriasGestion = await obtenerCategoriasGestion(
+      tareaId
+    );
+    const tareaMs = milisegundosDesde(inicioTarea);
 
     const inicioEvaluaciones = process.hrtime.bigint();
     const [borradorRaw, ultimaRaw] = await Promise.all([
@@ -341,8 +351,8 @@ export const servicioDetalleResumenDinamico = {
       ),
       obtenerUltimaEvaluacion(
         empresaId,
-        tarea.aspectoId,
-        tarea.aspectoCodigo
+        tarea.aspectoIdentidadHistorica,
+        fechaCorte
       ),
     ]);
     const evaluacionesMs = milisegundosDesde(
@@ -385,6 +395,8 @@ export const servicioDetalleResumenDinamico = {
           empresaId,
           tareaId,
           anio,
+          fechaCorte: fechaCorte.toISOString(),
+          versionSupermatrizId: versionAplicable.id,
           gestionId: gestionSeleccionada?.id ?? null,
           accesoPeriodoMs,
           tareaMs,
@@ -396,6 +408,7 @@ export const servicioDetalleResumenDinamico = {
 
     return {
       empresa,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: {
         id: periodo.id,
         anio: periodo.anio,
@@ -424,6 +437,7 @@ export const servicioDetalleResumenDinamico = {
         categoriasGestion,
         aspecto: {
           id: tarea.aspectoId,
+          identidadHistorica: tarea.aspectoIdentidadHistorica,
           codigo: tarea.aspectoCodigo,
           nombre: tarea.aspectoNombre,
         },
