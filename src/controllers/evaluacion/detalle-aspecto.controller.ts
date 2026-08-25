@@ -160,13 +160,20 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoSecciones.obtenerResumen(
             empresaId,
             tareaId,
             anio,
-            usuario
+            usuario,
+            gestionId
           );
 
         return enriquecerDetalleConEstadoEvidencia(
