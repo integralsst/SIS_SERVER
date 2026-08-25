@@ -37,6 +37,18 @@ const incluirVersionDetalle = {
   },
 } satisfies Prisma.VersionSupermatrizInclude;
 
+function finDiaAnterior(fecha: Date): Date {
+  return new Date(Date.UTC(
+    fecha.getUTCFullYear(),
+    fecha.getUTCMonth(),
+    fecha.getUTCDate() - 1,
+    12,
+    0,
+    0,
+    0
+  ));
+}
+
 export const servicioVersionesSupermatriz = {
   obtenerTodas: () =>
     prisma.versionSupermatriz.findMany({
@@ -237,25 +249,56 @@ export const servicioVersionesSupermatriz = {
       }
 
       const anterior =
-        await tx.versionSupermatriz.findUniqueOrThrow(
-          {
-            where: {
-              id,
-            },
-          }
-        );
+        await tx.versionSupermatriz.findUniqueOrThrow({
+          where: { id },
+        });
+
+      const vigenteActual =
+        await tx.versionSupermatriz.findFirst({
+          where: {
+            estado: EstadoVersionSupermatriz.VIGENTE,
+            id: { not: id },
+          },
+          orderBy: [
+            { vigenteDesde: "desc" },
+            { id: "desc" },
+          ],
+        });
+
+      if (vigenteActual) {
+        if (!anterior.vigenteDesde) {
+          throw new ErrorValidacionSupermatriz(
+            "Indica la fecha desde la cual empezará a aplicar la nueva versión."
+          );
+        }
+
+        if (
+          vigenteActual.vigenteDesde &&
+          anterior.vigenteDesde <= vigenteActual.vigenteDesde
+        ) {
+          throw new ErrorValidacionSupermatriz(
+            "La nueva versión debe iniciar después de la versión actualmente vigente."
+          );
+        }
+
+        await tx.versionSupermatriz.update({
+          where: {
+            id: vigenteActual.id,
+          },
+          data: {
+            estado: EstadoVersionSupermatriz.CERRADA,
+            vigenteHasta: finDiaAnterior(anterior.vigenteDesde),
+          },
+        });
+      }
 
       await tx.versionSupermatriz.updateMany({
         where: {
-          estado:
-            EstadoVersionSupermatriz.VIGENTE,
-          id: {
-            not: id,
-          },
+          estado: EstadoVersionSupermatriz.VIGENTE,
+          id: { not: id },
         },
         data: {
-          estado:
-            EstadoVersionSupermatriz.CERRADA,
+          estado: EstadoVersionSupermatriz.CERRADA,
         },
       });
 
@@ -265,8 +308,8 @@ export const servicioVersionesSupermatriz = {
             id,
           },
           data: {
-            estado:
-              EstadoVersionSupermatriz.VIGENTE,
+            estado: EstadoVersionSupermatriz.VIGENTE,
+            vigenteHasta: null,
           },
         });
 
@@ -277,7 +320,11 @@ export const servicioVersionesSupermatriz = {
             "VersionSupermatriz",
           entidadId: id,
           accion: "PUBLICAR",
-          descripcion: `La versión ${publicada.nombre} fue publicada como vigente.`,
+          descripcion: `La versión ${publicada.nombre} fue publicada como vigente desde ${
+            publicada.vigenteDesde
+              ? publicada.vigenteDesde.toISOString().slice(0, 10)
+              : "el inicio de la operación"
+          }.`,
           datosAntes:
             comoJsonPrisma(anterior),
           datosDespues:
