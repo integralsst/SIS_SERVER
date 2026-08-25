@@ -1,0 +1,125 @@
+name: 5G Fix Detail Compile
+
+on:
+  push:
+    branches:
+      - feat/5g-a-continuidad-temporal
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: "github.event.head_commit.message != 'chore(5g): fix temporal detail compile'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fix legacy detail methods
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/services/evaluacion/detalle-aspecto-secciones.service.ts')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''    const { periodo } = await resolverEmpresaPeriodo(
+                empresaId,
+                anio,
+                usuario
+              );
+
+              const [tarea, gestionActiva] = await Promise.all([
+                resolverTareaMinima(
+                  tareaId,
+                  periodo.versionSupermatrizId
+                ),
+                buscarGestionActiva(
+                  periodo.id,
+                  usuario.usuarioId
+                ),
+              ]);'''
+          new = '''    const { periodo } = await resolverEmpresaPeriodo(
+                empresaId,
+                anio,
+                usuario
+              );
+              const fechaCorte = construirCorteAnual(anio);
+              const versionAplicable =
+                await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+                  fechaCorte
+                );
+
+              const [tarea, gestionActiva] = await Promise.all([
+                resolverTareaMinima(
+                  tareaId,
+                  versionAplicable.id
+                ),
+                buscarGestionActiva(
+                  periodo.id,
+                  usuario.usuarioId
+                ),
+              ]);'''
+
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'contexto legacy: esperadas 2 coincidencias, encontradas {count}')
+          text = text.replace(old, new)
+
+          old = '''        buscarUltimaFinalizada(
+                    empresaId,
+                    tarea.aspectoId,
+                    tarea.aspecto.codigo
+                  ),'''
+          new = '''        buscarUltimaFinalizada(
+                    empresaId,
+                    tarea.aspectoId,
+                    tarea.aspecto.identidadHistorica,
+                    tarea.aspecto.codigo,
+                    fechaCorte
+                  ),'''
+          if text.count(old) != 1:
+              raise SystemExit('No se encontró la llamada legacy de evidencias')
+          text = text.replace(old, new, 1)
+
+          old = '''            ...filtroAspectoHistorico(
+                        tarea.aspectoId,
+                        tarea.aspecto.codigo
+                      ),'''
+          new = '''            ...filtroAspectoHistorico(
+                        tarea.aspectoId,
+                        tarea.aspecto.identidadHistorica,
+                        tarea.aspecto.codigo
+                      ),'''
+          if text.count(old) != 1:
+              raise SystemExit('No se encontró el filtro legacy de revisión')
+          text = text.replace(old, new, 1)
+
+          old = '''              empresaPeriodo: {
+                            empresaId,
+                          },
+                          OR: ['''
+          new = '''              empresaPeriodo: {
+                            empresaId,
+                          },
+                          fechaGestion: {
+                            lte: fechaCorte,
+                          },
+                          OR: ['''
+          if text.count(old) != 1:
+              raise SystemExit('No se encontró el corte legacy de revisión')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/services/evaluacion/detalle-aspecto-secciones.service.ts
+          git commit -m "chore(5g): fix temporal detail compile"
+          git push
