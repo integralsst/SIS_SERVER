@@ -49,6 +49,102 @@ function finDiaAnterior(fecha: Date): Date {
   ));
 }
 
+function claveLinajeAspecto(aspecto: {
+  codigo: string | null;
+  nombre: string;
+  estandar: {
+    codigo: string | null;
+    nombre: string;
+    categoriaEstandar: {
+      codigo: string | null;
+      nombre: string;
+      cicloPhva: {
+        codigo: string;
+      };
+    };
+  };
+}): string {
+  const categoria = aspecto.estandar.categoriaEstandar;
+
+  return [
+    categoria.cicloPhva.codigo,
+    categoria.codigo ?? categoria.nombre,
+    aspecto.estandar.codigo ?? aspecto.estandar.nombre,
+    aspecto.codigo ?? aspecto.nombre,
+  ].join("::");
+}
+
+async function sincronizarIdentidadesAspectosClonados(
+  versionOrigenId: number,
+  versionNuevaId: number
+): Promise<void> {
+  const seleccion = {
+    id: true,
+    identidadHistorica: true,
+    codigo: true,
+    nombre: true,
+    estandar: {
+      select: {
+        codigo: true,
+        nombre: true,
+        categoriaEstandar: {
+          select: {
+            codigo: true,
+            nombre: true,
+            cicloPhva: {
+              select: {
+                codigo: true,
+              },
+            },
+          },
+        },
+      },
+    },
+  } satisfies Prisma.AspectoSelect;
+
+  const [origen, destino] = await Promise.all([
+    prisma.aspecto.findMany({
+      where: { versionSupermatrizId: versionOrigenId },
+      select: seleccion,
+    }),
+    prisma.aspecto.findMany({
+      where: { versionSupermatrizId: versionNuevaId },
+      select: seleccion,
+    }),
+  ]);
+
+  const origenPorClave = new Map(
+    origen.map((aspecto) => [
+      claveLinajeAspecto(aspecto),
+      aspecto.identidadHistorica,
+    ])
+  );
+  const actualizaciones = destino.map((aspecto) => {
+    const identidadHistorica = origenPorClave.get(
+      claveLinajeAspecto(aspecto)
+    );
+
+    if (!identidadHistorica) {
+      throw new ErrorValidacionSupermatriz(
+        `No fue posible conservar la identidad histórica del aspecto "${aspecto.nombre}" durante la clonación.`
+      );
+    }
+
+    return prisma.aspecto.update({
+      where: { id: aspecto.id },
+      data: { identidadHistorica },
+    });
+  });
+
+  if (origen.length !== destino.length) {
+    throw new ErrorValidacionSupermatriz(
+      "La versión clonada no contiene la misma cantidad de aspectos que su origen."
+    );
+  }
+
+  await prisma.$transaction(actualizaciones);
+}
+
 export const servicioVersionesSupermatriz = {
   obtenerTodas: () =>
     prisma.versionSupermatriz.findMany({
@@ -398,6 +494,11 @@ export const servicioVersionesSupermatriz = {
         data,
         usuarioId
       );
+
+    await sincronizarIdentidadesAspectosClonados(
+      id,
+      nuevaVersionId
+    );
 
     return prisma.versionSupermatriz.findUniqueOrThrow({
       where: {
