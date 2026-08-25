@@ -14,18 +14,49 @@ import {
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 
-async function resolverVersionParaAnio(
-  anio: number,
+export function construirCorteAnual(anio: number): Date {
+  const ahora = new Date();
+  const anioActual = ahora.getUTCFullYear();
+
+  if (anio < anioActual) {
+    return new Date(Date.UTC(anio, 11, 31, 23, 59, 59, 999));
+  }
+
+  if (anio === anioActual) {
+    return ahora;
+  }
+
+  return new Date(Date.UTC(anio, 11, 31, 23, 59, 59, 999));
+}
+
+export async function resolverVersionParaFecha(
+  fecha: Date,
   versionSupermatrizId?: number
 ) {
-  const inicio = new Date(`${anio}-01-01T12:00:00.000Z`);
-  const fin = new Date(`${anio}-12-31T12:00:00.000Z`);
-
   if (versionSupermatrizId) {
     const version = await prisma.versionSupermatriz.findFirst({
       where: {
         id: versionSupermatrizId,
-        estado: EstadoVersionSupermatriz.VIGENTE,
+        estado: {
+          in: [
+            EstadoVersionSupermatriz.VIGENTE,
+            EstadoVersionSupermatriz.CERRADA,
+          ],
+        },
+        AND: [
+          {
+            OR: [
+              { vigenteDesde: null },
+              { vigenteDesde: { lte: fecha } },
+            ],
+          },
+          {
+            OR: [
+              { vigenteHasta: null },
+              { vigenteHasta: { gte: fecha } },
+            ],
+          },
+        ],
       },
       select: {
         id: true,
@@ -38,9 +69,9 @@ async function resolverVersionParaAnio(
 
     if (!version) {
       throw new ErrorEvaluacion(
-        "La versión seleccionada no existe o no está vigente.",
+        "La versión seleccionada no es aplicable a la fecha indicada.",
         409,
-        "VERSION_NO_VIGENTE"
+        "VERSION_NO_APLICABLE"
       );
     }
 
@@ -49,41 +80,30 @@ async function resolverVersionParaAnio(
 
   const version = await prisma.versionSupermatriz.findFirst({
     where: {
-      estado: EstadoVersionSupermatriz.VIGENTE,
+      estado: {
+        in: [
+          EstadoVersionSupermatriz.VIGENTE,
+          EstadoVersionSupermatriz.CERRADA,
+        ],
+      },
       AND: [
         {
           OR: [
-            {
-              vigenteDesde: null,
-            },
-            {
-              vigenteDesde: {
-                lte: fin,
-              },
-            },
+            { vigenteDesde: null },
+            { vigenteDesde: { lte: fecha } },
           ],
         },
         {
           OR: [
-            {
-              vigenteHasta: null,
-            },
-            {
-              vigenteHasta: {
-                gte: inicio,
-              },
-            },
+            { vigenteHasta: null },
+            { vigenteHasta: { gte: fecha } },
           ],
         },
       ],
     },
     orderBy: [
-      {
-        vigenteDesde: "desc",
-      },
-      {
-        id: "desc",
-      },
+      { vigenteDesde: "desc" },
+      { id: "desc" },
     ],
     select: {
       id: true,
@@ -96,7 +116,7 @@ async function resolverVersionParaAnio(
 
   if (!version) {
     throw new ErrorEvaluacion(
-      `No existe una versión vigente de la Supermatriz aplicable al año ${anio}.`,
+      "No existe una versión de la Supermatriz aplicable a la fecha indicada.",
       409,
       "VERSION_NO_DISPONIBLE"
     );
@@ -105,8 +125,19 @@ async function resolverVersionParaAnio(
   return version;
 }
 
+async function resolverVersionParaAnio(
+  anio: number,
+  versionSupermatrizId?: number
+) {
+  return resolverVersionParaFecha(
+    construirCorteAnual(anio),
+    versionSupermatrizId
+  );
+}
+
 export const servicioPeriodosEvaluacion = {
   obtenerVersionDisponible: resolverVersionParaAnio,
+  resolverVersionParaFecha,
 
   abrir: async (
     empresaId: string,
