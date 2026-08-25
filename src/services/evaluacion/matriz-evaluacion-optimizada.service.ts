@@ -16,7 +16,11 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
-import { servicioPeriodosEvaluacion } from "./periodos-evaluacion.service";
+import { servicioEstadoAspectosAlCorte } from "./estado-aspectos-al-corte.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
 const CACHE_ESTRUCTURA_MS = Number(
@@ -113,6 +117,11 @@ const seleccionEvaluacionMatriz = {
       fechaGestion: true,
       tipoActividad: true,
       estado: true,
+      empresaPeriodo: {
+        select: {
+          anio: true,
+        },
+      },
     },
   },
   revisionTecnica: {
@@ -388,6 +397,7 @@ function serializarEvaluacion(
         : null,
     creadaEn: evaluacion.createdAt.toISOString(),
     actualizadaEn: evaluacion.updatedAt.toISOString(),
+    anioOrigen: evaluacion.gestion.empresaPeriodo.anio,
     gestion: {
       id: evaluacion.gestion.id,
       fechaGestion:
@@ -664,34 +674,6 @@ function seleccionarGestionActiva(
   return gestion;
 }
 
-async function buscarEvaluacionesFinalizadas(
-  periodoId: string
-): Promise<EvaluacionMatriz[]> {
-  return prisma.evaluacionAspecto.findMany({
-    where: {
-      gestion: {
-        empresaPeriodoId: periodoId,
-        estado: EstadoGestionSgsst.FINALIZADA,
-        valida: true,
-      },
-    },
-    orderBy: [
-      {
-        gestion: {
-          fechaGestion: "desc",
-        },
-      },
-      {
-        createdAt: "desc",
-      },
-      {
-        id: "desc",
-      },
-    ],
-    select: seleccionEvaluacionMatriz,
-  });
-}
-
 async function buscarEvaluacionesBorrador(
   gestionId: string
 ): Promise<EvaluacionMatriz[]> {
@@ -736,13 +718,6 @@ export const servicioMatrizEvaluacionOptimizada = {
             fechaApertura: true,
             fechaCierre: true,
             versionSupermatrizId: true,
-            versionSupermatriz: {
-              select: {
-                id: true,
-                nombre: true,
-                estado: true,
-              },
-            },
           },
         }),
         obtenerCategoriasCacheadas(),
@@ -753,45 +728,57 @@ export const servicioMatrizEvaluacionOptimizada = {
       usuario.rol === "ADMIN_CLIENTE" ||
       usuario.rol === "USUARIO_CLIENTE";
 
-    let versionDisponible: {
-      id: number;
-      nombre: string;
-      estado: string;
-      vigenteDesde: Date | null;
-      vigenteHasta: Date | null;
-    } | null = null;
+    const gestionesActivas = periodo
+      ? await buscarGestionesActivas(periodo.id, usuario)
+      : [];
+    const gestionActiva = seleccionarGestionActiva(
+      gestionesActivas,
+      gestionIdSolicitada
+    );
+    const fechaCorte =
+      gestionActiva?.fechaGestion ?? construirCorteAnual(anio);
 
-    if (!periodo) {
-      try {
-        versionDisponible =
-          await servicioPeriodosEvaluacion.obtenerVersionDisponible(
-            anio
-          );
-      } catch (error) {
-        if (
-          !(
-            error instanceof ErrorEvaluacion &&
-            error.code === "VERSION_NO_DISPONIBLE"
-          )
-        ) {
-          throw error;
-        }
+    let versionAplicable: Awaited<
+      ReturnType<typeof servicioPeriodosEvaluacion.resolverVersionParaFecha>
+    > | null = null;
+
+    try {
+      versionAplicable =
+        await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+          fechaCorte
+        );
+    } catch (error) {
+      if (
+        !(
+          error instanceof ErrorEvaluacion &&
+          error.code === "VERSION_NO_DISPONIBLE"
+        )
+      ) {
+        throw error;
       }
     }
 
-    const versionSupermatrizId =
-      periodo?.versionSupermatrizId ??
-      versionDisponible?.id ??
-      null;
-
-    if (!versionSupermatrizId) {
+    if (!versionAplicable) {
       return {
         empresa,
         anio,
-        periodo: null,
+        periodo: periodo
+          ? {
+              id: periodo.id,
+              anio: periodo.anio,
+              estado: periodo.estado,
+              fechaApertura: periodo.fechaApertura.toISOString(),
+              fechaCierre: serializarFecha(periodo.fechaCierre),
+              versionSupermatriz: null,
+            }
+          : null,
         versionDisponible: null,
-        gestionActiva: null,
-        gestionesActivas: [],
+        gestionActiva: gestionActiva
+          ? serializarGestionBorrador(gestionActiva, usuario)
+          : null,
+        gestionesActivas: gestionesActivas.map((gestion) =>
+          serializarGestionBorrador(gestion, usuario)
+        ),
         categoriasGestion: categoriasResultado.categorias,
         filas: [],
         resumen: {
@@ -810,25 +797,29 @@ export const servicioMatrizEvaluacionOptimizada = {
     }
 
     const inicioPrincipal = process.hrtime.bigint();
-
-    const [
-      gestionesActivas,
-      estructuraResultado,
-      evaluacionesFinalizadas,
-    ] = await Promise.all([
-      periodo
-        ? buscarGestionesActivas(periodo.id, usuario)
-        : Promise.resolve([] as GestionBorradorMatriz[]),
-      obtenerTareasCacheadas(versionSupermatrizId),
-      periodo
-        ? buscarEvaluacionesFinalizadas(periodo.id)
-        : Promise.resolve([] as EvaluacionMatriz[]),
-    ]);
-
-    const gestionActiva = seleccionarGestionActiva(
-      gestionesActivas,
-      gestionIdSolicitada
+    const estructuraResultado = await obtenerTareasCacheadas(
+      versionAplicable.id
     );
+    const aspectosReferencia = Array.from(
+      new Map(
+        estructuraResultado.tareas.map((tarea) => [
+          tarea.aspecto.id,
+          {
+            id: tarea.aspecto.id,
+            identidadHistorica:
+              tarea.aspecto.identidadHistorica,
+          },
+        ])
+      ).values()
+    );
+    const ultimaPorAspecto =
+      (await servicioEstadoAspectosAlCorte.obtenerUltimasEvaluaciones(
+        empresaId,
+        aspectosReferencia,
+        fechaCorte,
+        seleccionEvaluacionMatriz
+      )) as Map<number, EvaluacionMatriz>;
+
     const principalMs = milisegundosDesde(inicioPrincipal);
     const inicioBorrador = process.hrtime.bigint();
 
@@ -840,20 +831,6 @@ export const servicioMatrizEvaluacionOptimizada = {
 
     const borradorMs = milisegundosDesde(inicioBorrador);
     const inicioArmado = process.hrtime.bigint();
-
-    const ultimaPorAspecto = new Map<
-      number,
-      EvaluacionMatriz
-    >();
-
-    for (const evaluacion of evaluacionesFinalizadas) {
-      if (!ultimaPorAspecto.has(evaluacion.aspectoId)) {
-        ultimaPorAspecto.set(
-          evaluacion.aspectoId,
-          evaluacion
-        );
-      }
-    }
 
     const borradorPorAspecto = new Map<
       number,
@@ -930,6 +907,8 @@ export const servicioMatrizEvaluacionOptimizada = {
           id: tarea.aspecto.id,
           codigo: tarea.aspecto.codigo,
           nombre: tarea.aspecto.nombre,
+          identidadHistorica:
+            tarea.aspecto.identidadHistorica,
           planAccionEspecifico:
             tarea.aspecto.planAccionEspecifico
               ?.descripcion ?? null,
@@ -1051,6 +1030,8 @@ export const servicioMatrizEvaluacionOptimizada = {
         {
           empresaId,
           anio,
+          fechaCorte: fechaCorte.toISOString(),
+          versionSupermatrizId: versionAplicable.id,
           inicialMs,
           principalMs,
           borradorMs,
@@ -1062,7 +1043,7 @@ export const servicioMatrizEvaluacionOptimizada = {
             categoriasResultado.cacheHit,
           totalFilas: filas.length,
           evaluacionesFinalizadas:
-            evaluacionesFinalizadas.length,
+            ultimaPorAspecto.size,
           evaluacionesBorrador:
             evaluacionesBorrador.length,
           gestionesActivas: gestionesActivas.length,
@@ -1073,10 +1054,22 @@ export const servicioMatrizEvaluacionOptimizada = {
     const gestionActivaSerializada = gestionActiva
       ? serializarGestionBorrador(gestionActiva, usuario)
       : null;
+    const versionSerializada = {
+      id: versionAplicable.id,
+      nombre: versionAplicable.nombre,
+      estado: versionAplicable.estado,
+      vigenteDesde: serializarFecha(
+        versionAplicable.vigenteDesde
+      ),
+      vigenteHasta: serializarFecha(
+        versionAplicable.vigenteHasta
+      ),
+    };
 
     return {
       empresa,
       anio,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: periodo
         ? {
             id: periodo.id,
@@ -1088,19 +1081,11 @@ export const servicioMatrizEvaluacionOptimizada = {
               periodo.fechaCierre
             ),
             versionSupermatriz:
-              periodo.versionSupermatriz,
+              versionSerializada,
           }
         : null,
-      versionDisponible: versionDisponible
-        ? {
-            ...versionDisponible,
-            vigenteDesde: serializarFecha(
-              versionDisponible.vigenteDesde
-            ),
-            vigenteHasta: serializarFecha(
-              versionDisponible.vigenteHasta
-            ),
-          }
+      versionDisponible: !periodo
+        ? versionSerializada
         : null,
       gestionActiva: gestionActivaSerializada,
       gestionesActivas: gestionesActivas.map((gestion) =>
