@@ -2,11 +2,11 @@
 ALTER TABLE `aspectos`
   ADD COLUMN `identidadHistorica` VARCHAR(36) NULL;
 
--- Para datos existentes se conserva el mejor linaje inferible antes de 5G-A:
--- estándar (código/nombre) + aspecto (código/nombre). Las nuevas clonaciones
--- conservarán la identidad explícita y ya no dependerán de esta heurística.
+-- Para datos existentes se conserva el mejor linaje inferible antes de 5G-A.
+-- La clave usa toda la jerarquía funcional para evitar colisiones entre
+-- estándares/aspectos con nombres o códigos repetidos en categorías distintas.
 CREATE TEMPORARY TABLE `_tmp_aspecto_identidad_historica` (
-  `clave` VARCHAR(512) NOT NULL,
+  `clave` VARCHAR(768) NOT NULL,
   `identidadHistorica` VARCHAR(36) NOT NULL,
   PRIMARY KEY (`clave`)
 );
@@ -14,18 +14,30 @@ CREATE TEMPORARY TABLE `_tmp_aspecto_identidad_historica` (
 INSERT INTO `_tmp_aspecto_identidad_historica` (`clave`, `identidadHistorica`)
 SELECT DISTINCT
   CONCAT(
+    TRIM(cp.`codigo`),
+    '::',
+    COALESCE(NULLIF(TRIM(ce.`codigo`), ''), TRIM(ce.`nombre`)),
+    '::',
     COALESCE(NULLIF(TRIM(e.`codigo`), ''), TRIM(e.`nombre`)),
     '::',
     COALESCE(NULLIF(TRIM(a.`codigo`), ''), TRIM(a.`nombre`))
   ) AS `clave`,
   UUID() AS `identidadHistorica`
 FROM `aspectos` a
-INNER JOIN `estandares` e ON e.`id` = a.`estandarId`;
+INNER JOIN `estandares` e ON e.`id` = a.`estandarId`
+INNER JOIN `categorias_estandar` ce ON ce.`id` = e.`categoriaEstandarId`
+INNER JOIN `ciclos_phva` cp ON cp.`id` = ce.`cicloPhvaId`;
 
 UPDATE `aspectos` a
 INNER JOIN `estandares` e ON e.`id` = a.`estandarId`
+INNER JOIN `categorias_estandar` ce ON ce.`id` = e.`categoriaEstandarId`
+INNER JOIN `ciclos_phva` cp ON cp.`id` = ce.`cicloPhvaId`
 INNER JOIN `_tmp_aspecto_identidad_historica` t
   ON t.`clave` = CONCAT(
+    TRIM(cp.`codigo`),
+    '::',
+    COALESCE(NULLIF(TRIM(ce.`codigo`), ''), TRIM(ce.`nombre`)),
+    '::',
     COALESCE(NULLIF(TRIM(e.`codigo`), ''), TRIM(e.`nombre`)),
     '::',
     COALESCE(NULLIF(TRIM(a.`codigo`), ''), TRIM(a.`nombre`))
