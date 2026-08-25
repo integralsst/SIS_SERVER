@@ -1,6 +1,7 @@
 import {
   EstadoPeriodoSgsst,
   EstadoVersionSupermatriz,
+  Prisma,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
@@ -29,6 +30,44 @@ export function construirCorteAnual(anio: number): Date {
   return new Date(Date.UTC(anio, 11, 31, 23, 59, 59, 999));
 }
 
+function filtroVersionPublicada(): Prisma.VersionSupermatrizWhereInput {
+  return {
+    OR: [
+      {
+        estado: EstadoVersionSupermatriz.VIGENTE,
+      },
+      {
+        estado: EstadoVersionSupermatriz.CERRADA,
+        vigenteHasta: {
+          not: null,
+        },
+      },
+    ],
+  };
+}
+
+function filtroAplicableEnFecha(
+  fecha: Date
+): Prisma.VersionSupermatrizWhereInput {
+  return {
+    ...filtroVersionPublicada(),
+    AND: [
+      {
+        OR: [
+          { vigenteDesde: null },
+          { vigenteDesde: { lte: fecha } },
+        ],
+      },
+      {
+        OR: [
+          { vigenteHasta: null },
+          { vigenteHasta: { gte: fecha } },
+        ],
+      },
+    ],
+  };
+}
+
 export async function resolverVersionParaFecha(
   fecha: Date,
   versionSupermatrizId?: number
@@ -37,26 +76,7 @@ export async function resolverVersionParaFecha(
     const version = await prisma.versionSupermatriz.findFirst({
       where: {
         id: versionSupermatrizId,
-        estado: {
-          in: [
-            EstadoVersionSupermatriz.VIGENTE,
-            EstadoVersionSupermatriz.CERRADA,
-          ],
-        },
-        AND: [
-          {
-            OR: [
-              { vigenteDesde: null },
-              { vigenteDesde: { lte: fecha } },
-            ],
-          },
-          {
-            OR: [
-              { vigenteHasta: null },
-              { vigenteHasta: { gte: fecha } },
-            ],
-          },
-        ],
+        ...filtroAplicableEnFecha(fecha),
       },
       select: {
         id: true,
@@ -69,7 +89,7 @@ export async function resolverVersionParaFecha(
 
     if (!version) {
       throw new ErrorEvaluacion(
-        "La versión seleccionada no es aplicable a la fecha indicada.",
+        "La versión seleccionada no es una versión publicada aplicable a la fecha indicada.",
         409,
         "VERSION_NO_APLICABLE"
       );
@@ -79,28 +99,7 @@ export async function resolverVersionParaFecha(
   }
 
   const version = await prisma.versionSupermatriz.findFirst({
-    where: {
-      estado: {
-        in: [
-          EstadoVersionSupermatriz.VIGENTE,
-          EstadoVersionSupermatriz.CERRADA,
-        ],
-      },
-      AND: [
-        {
-          OR: [
-            { vigenteDesde: null },
-            { vigenteDesde: { lte: fecha } },
-          ],
-        },
-        {
-          OR: [
-            { vigenteHasta: null },
-            { vigenteHasta: { gte: fecha } },
-          ],
-        },
-      ],
-    },
+    where: filtroAplicableEnFecha(fecha),
     orderBy: [
       { vigenteDesde: "desc" },
       { id: "desc" },
@@ -116,7 +115,7 @@ export async function resolverVersionParaFecha(
 
   if (!version) {
     throw new ErrorEvaluacion(
-      "No existe una versión de la Supermatriz aplicable a la fecha indicada.",
+      "No existe una versión publicada de la Supermatriz aplicable a la fecha indicada.",
       409,
       "VERSION_NO_DISPONIBLE"
     );
@@ -181,6 +180,8 @@ export const servicioPeriodosEvaluacion = {
     return prisma.empresaPeriodo.create({
       data: {
         empresaId,
+        // Se conserva esta relación por compatibilidad histórica. La fuente
+        // de verdad para la estructura operativa se resuelve por fecha.
         versionSupermatrizId: version.id,
         anio: data.anio,
         estado: EstadoPeriodoSgsst.ABIERTO,
