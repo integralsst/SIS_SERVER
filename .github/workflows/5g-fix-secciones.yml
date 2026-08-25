@@ -23,97 +23,92 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('src/services/evaluacion/detalle-aspecto-secciones.service.ts')
           text = path.read_text(encoding='utf-8')
 
-          old = '''    const { periodo } = await resolverEmpresaPeriodo(
-                empresaId,
-                anio,
-                usuario
-              );
+          old_context = '''    const { periodo } = await resolverEmpresaPeriodo(
+            empresaId,
+            anio,
+            usuario
+          );
 
-              const [tarea, gestionActiva] = await Promise.all([
-                resolverTareaMinima(
-                  tareaId,
-                  periodo.versionSupermatrizId
-                ),
-                buscarGestionActiva(
-                  periodo.id,
-                  usuario.usuarioId
-                ),
-              ]);'''
-          new = '''    const { periodo } = await resolverEmpresaPeriodo(
-                empresaId,
-                anio,
-                usuario
-              );
-              const fechaCorte = construirCorteAnual(anio);
-              const versionAplicable =
-                await servicioPeriodosEvaluacion.resolverVersionParaFecha(
-                  fechaCorte
-                );
+          const [tarea, gestionActiva] = await Promise.all([
+            resolverTareaMinima(
+              tareaId,
+              periodo.versionSupermatrizId
+            ),
+            buscarGestionActiva(
+              periodo.id,
+              usuario.usuarioId
+            ),
+          ]);'''
+          new_context = '''    const { periodo } = await resolverEmpresaPeriodo(
+            empresaId,
+            anio,
+            usuario
+          );
+          const fechaCorte = construirCorteAnual(anio);
+          const versionAplicable =
+            await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+              fechaCorte
+            );
 
-              const [tarea, gestionActiva] = await Promise.all([
-                resolverTareaMinima(
-                  tareaId,
-                  versionAplicable.id
-                ),
-                buscarGestionActiva(
-                  periodo.id,
-                  usuario.usuarioId
-                ),
-              ]);'''
-
-          count = text.count(old)
+          const [tarea, gestionActiva] = await Promise.all([
+            resolverTareaMinima(
+              tareaId,
+              versionAplicable.id
+            ),
+            buscarGestionActiva(
+              periodo.id,
+              usuario.usuarioId
+            ),
+          ]);'''
+          count = text.count(old_context)
           if count != 2:
               raise SystemExit(f'contexto legacy: esperadas 2 coincidencias, encontradas {count}')
-          text = text.replace(old, new)
+          text = text.replace(old_context, new_context)
 
-          old = '''        buscarUltimaFinalizada(
+          old_last = '''        buscarUltimaFinalizada(
                     empresaId,
                     tarea.aspectoId,
                     tarea.aspecto.codigo
                   ),'''
-          new = '''        buscarUltimaFinalizada(
+          new_last = '''        buscarUltimaFinalizada(
                     empresaId,
                     tarea.aspectoId,
                     tarea.aspecto.identidadHistorica,
                     tarea.aspecto.codigo,
                     fechaCorte
                   ),'''
-          if text.count(old) != 1:
+          if text.count(old_last) != 1:
               raise SystemExit('No se encontró la llamada legacy de evidencias')
-          text = text.replace(old, new, 1)
+          text = text.replace(old_last, new_last, 1)
 
-          old = '''            ...filtroAspectoHistorico(
+          marker = '  obtenerRevisionTecnica: async ('
+          before, revision = text.split(marker, 1)
+
+          old_filter = '''            ...filtroAspectoHistorico(
                         tarea.aspectoId,
                         tarea.aspecto.codigo
                       ),'''
-          new = '''            ...filtroAspectoHistorico(
+          new_filter = '''            ...filtroAspectoHistorico(
                         tarea.aspectoId,
                         tarea.aspecto.identidadHistorica,
                         tarea.aspecto.codigo
                       ),'''
-          if text.count(old) != 1:
+          if revision.count(old_filter) != 1:
               raise SystemExit('No se encontró el filtro legacy de revisión')
-          text = text.replace(old, new, 1)
+          revision = revision.replace(old_filter, new_filter, 1)
 
-          old = '''              empresaPeriodo: {
-                            empresaId,
-                          },
-                          OR: ['''
-          new = '''              empresaPeriodo: {
-                            empresaId,
-                          },
-                          fechaGestion: {
-                            lte: fechaCorte,
-                          },
-                          OR: ['''
-          if text.count(old) != 1:
-              raise SystemExit('No se encontró el corte legacy de revisión')
-          text = text.replace(old, new, 1)
+          pattern = r'(gestion:\s*\{\s*empresaPeriodo:\s*\{\s*empresaId,\s*\},)(\s*OR:\s*\[)'
+          replacement = r'\1\n              fechaGestion: {\n                lte: fechaCorte,\n              },\2'
+          revision, count = re.subn(pattern, replacement, revision, count=1)
+          if count != 1:
+              raise SystemExit(f'corte legacy revisión: esperada 1 coincidencia, encontradas {count}')
 
+          text = before + marker + revision
           path.write_text(text, encoding='utf-8')
           PY
       - name: Commit fix
