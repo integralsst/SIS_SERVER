@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Fix legacy detail methods
+      - name: Fix legacy detail calls
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -28,88 +28,37 @@ jobs:
           path = Path('src/services/evaluacion/detalle-aspecto-secciones.service.ts')
           text = path.read_text(encoding='utf-8')
 
-          old_context = '''    const { periodo } = await resolverEmpresaPeriodo(
-            empresaId,
-            anio,
-            usuario
-          );
-
-          const [tarea, gestionActiva] = await Promise.all([
-            resolverTareaMinima(
-              tareaId,
-              periodo.versionSupermatrizId
-            ),
-            buscarGestionActiva(
-              periodo.id,
-              usuario.usuarioId
-            ),
-          ]);'''
-          new_context = '''    const { periodo } = await resolverEmpresaPeriodo(
-            empresaId,
-            anio,
-            usuario
-          );
-          const fechaCorte = construirCorteAnual(anio);
-          const versionAplicable =
-            await servicioPeriodosEvaluacion.resolverVersionParaFecha(
-              fechaCorte
-            );
-
-          const [tarea, gestionActiva] = await Promise.all([
-            resolverTareaMinima(
-              tareaId,
-              versionAplicable.id
-            ),
-            buscarGestionActiva(
-              periodo.id,
-              usuario.usuarioId
-            ),
-          ]);'''
-          count = text.count(old_context)
-          if count != 2:
-              raise SystemExit(f'contexto legacy: esperadas 2 coincidencias, encontradas {count}')
-          text = text.replace(old_context, new_context)
-
-          old_last = '''        buscarUltimaFinalizada(
-                    empresaId,
-                    tarea.aspectoId,
-                    tarea.aspecto.codigo
-                  ),'''
-          new_last = '''        buscarUltimaFinalizada(
+          pattern = r'buscarUltimaFinalizada\(\s*empresaId,\s*tarea\.aspectoId,\s*tarea\.aspecto\.codigo\s*\)'
+          replacement = '''buscarUltimaFinalizada(
                     empresaId,
                     tarea.aspectoId,
                     tarea.aspecto.identidadHistorica,
                     tarea.aspecto.codigo,
-                    fechaCorte
-                  ),'''
-          if text.count(old_last) != 1:
-              raise SystemExit('No se encontró la llamada legacy de evidencias')
-          text = text.replace(old_last, new_last, 1)
+                    construirCorteAnual(anio)
+                  )'''
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'llamada legacy última evaluación: {count}')
 
           marker = '  obtenerRevisionTecnica: async ('
           before, revision = text.split(marker, 1)
-
-          old_filter = '''            ...filtroAspectoHistorico(
-                        tarea.aspectoId,
-                        tarea.aspecto.codigo
-                      ),'''
-          new_filter = '''            ...filtroAspectoHistorico(
-                        tarea.aspectoId,
-                        tarea.aspecto.identidadHistorica,
-                        tarea.aspecto.codigo
-                      ),'''
-          if revision.count(old_filter) != 1:
-              raise SystemExit('No se encontró el filtro legacy de revisión')
-          revision = revision.replace(old_filter, new_filter, 1)
-
-          pattern = r'(gestion:\s*\{\s*empresaPeriodo:\s*\{\s*empresaId,\s*\},)(\s*OR:\s*\[)'
-          replacement = r'\1\n              fechaGestion: {\n                lte: fechaCorte,\n              },\2'
+          pattern = r'filtroAspectoHistorico\(\s*tarea\.aspectoId,\s*tarea\.aspecto\.codigo\s*\)'
+          replacement = '''filtroAspectoHistorico(
+              tarea.aspectoId,
+              tarea.aspecto.identidadHistorica,
+              tarea.aspecto.codigo
+            )'''
           revision, count = re.subn(pattern, replacement, revision, count=1)
           if count != 1:
-              raise SystemExit(f'corte legacy revisión: esperada 1 coincidencia, encontradas {count}')
+              raise SystemExit(f'filtro legacy revisión: {count}')
 
-          text = before + marker + revision
-          path.write_text(text, encoding='utf-8')
+          pattern = r'(gestion:\s*\{\s*empresaPeriodo:\s*\{\s*empresaId,\s*\},)(\s*OR:\s*\[)'
+          replacement = r'\1\n              fechaGestion: {\n                lte: construirCorteAnual(anio),\n              },\2'
+          revision, count = re.subn(pattern, replacement, revision, count=1)
+          if count != 1:
+              raise SystemExit(f'corte legacy revisión: {count}')
+
+          path.write_text(before + marker + revision, encoding='utf-8')
           PY
       - name: Commit fix
         run: |
