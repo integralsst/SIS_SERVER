@@ -837,7 +837,9 @@ export const servicioDetalleAspectoSecciones = {
         buscarUltimaFinalizada(
           empresaId,
           tarea.aspectoId,
-          tarea.aspecto.codigo
+          tarea.aspecto.identidadHistorica,
+          tarea.aspecto.codigo,
+          construirCorteAnual(anio)
         ),
       ]);
 
@@ -1029,12 +1031,16 @@ export const servicioDetalleAspectoSecciones = {
         prisma.evaluacionAspecto.findMany({
           where: {
             ...filtroAspectoHistorico(
-              tarea.aspectoId,
-              tarea.aspecto.codigo
-            ),
+    tarea.aspectoId,
+    tarea.aspecto.identidadHistorica,
+    tarea.aspecto.codigo
+  ),
             gestion: {
               empresaPeriodo: {
                 empresaId,
+              },
+              fechaGestion: {
+                lte: construirCorteAnual(anio),
               },
               OR: [
                 {
