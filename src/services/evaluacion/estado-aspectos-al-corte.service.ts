@@ -7,49 +7,35 @@ import { prisma } from "../../lib/prisma";
 
 export interface AspectoReferenciaTemporal {
   id: number;
-  identidadHistorica?: string | null;
-  codigo?: string | null;
-}
-
-export interface EvaluacionTemporalSeleccionada {
-  aspectoId: number;
-  evaluacionId: string;
-}
-
-function filtroIdentidadAspecto(
-  aspecto: AspectoReferenciaTemporal
-): Prisma.EvaluacionAspectoWhereInput {
-  if (aspecto.identidadHistorica) {
-    return {
-      aspecto: {
-        identidadHistorica: aspecto.identidadHistorica,
-      },
-    };
-  }
-
-  if (aspecto.codigo) {
-    return {
-      aspecto: {
-        codigo: aspecto.codigo,
-      },
-    };
-  }
-
-  return {
-    aspectoId: aspecto.id,
-  };
+  identidadHistorica: string;
 }
 
 export const servicioEstadoAspectosAlCorte = {
-  obtenerUltimaEvaluacion: async <TSelect extends Prisma.EvaluacionAspectoSelect>(
+  obtenerUltimasEvaluaciones: async <TSelect extends Prisma.EvaluacionAspectoSelect>(
     empresaId: string,
-    aspecto: AspectoReferenciaTemporal,
+    aspectos: AspectoReferenciaTemporal[],
     fechaCorte: Date,
     select: TSelect
   ) => {
-    return prisma.evaluacionAspecto.findFirst({
+    if (aspectos.length === 0) {
+      return new Map<number, unknown>();
+    }
+
+    const aspectoActualPorIdentidad = new Map(
+      aspectos.map((aspecto) => [
+        aspecto.identidadHistorica,
+        aspecto.id,
+      ])
+    );
+    const identidades = [...aspectoActualPorIdentidad.keys()];
+
+    const candidatos = await prisma.evaluacionAspecto.findMany({
       where: {
-        ...filtroIdentidadAspecto(aspecto),
+        aspecto: {
+          identidadHistorica: {
+            in: identidades,
+          },
+        },
         gestion: {
           empresaPeriodo: {
             empresaId,
@@ -74,32 +60,56 @@ export const servicioEstadoAspectosAlCorte = {
           id: "desc",
         },
       ],
+      select: {
+        id: true,
+        aspecto: {
+          select: {
+            identidadHistorica: true,
+          },
+        },
+      },
+    });
+
+    const evaluacionIdPorIdentidad = new Map<string, string>();
+
+    for (const candidato of candidatos) {
+      const identidad = candidato.aspecto.identidadHistorica;
+      if (!evaluacionIdPorIdentidad.has(identidad)) {
+        evaluacionIdPorIdentidad.set(identidad, candidato.id);
+      }
+    }
+
+    const evaluacionIds = [...evaluacionIdPorIdentidad.values()];
+
+    if (evaluacionIds.length === 0) {
+      return new Map<number, unknown>();
+    }
+
+    const evaluaciones = await prisma.evaluacionAspecto.findMany({
+      where: {
+        id: {
+          in: evaluacionIds,
+        },
+      },
       select,
     });
-  },
-
-  obtenerUltimasEvaluaciones: async <TSelect extends Prisma.EvaluacionAspectoSelect>(
-    empresaId: string,
-    aspectos: AspectoReferenciaTemporal[],
-    fechaCorte: Date,
-    select: TSelect
-  ) => {
-    const resultados = await Promise.all(
-      aspectos.map(async (aspecto) => ({
-        aspectoIdActual: aspecto.id,
-        evaluacion: await servicioEstadoAspectosAlCorte.obtenerUltimaEvaluacion(
-          empresaId,
-          aspecto,
-          fechaCorte,
-          select
-        ),
-      }))
+    const evaluacionesPorId = new Map(
+      evaluaciones.map((evaluacion) => [
+        (evaluacion as { id: string }).id,
+        evaluacion,
+      ])
     );
+    const resultado = new Map<number, (typeof evaluaciones)[number]>();
 
-    return new Map(
-      resultados
-        .filter((item) => Boolean(item.evaluacion))
-        .map((item) => [item.aspectoIdActual, item.evaluacion] as const)
-    );
+    for (const [identidad, evaluacionId] of evaluacionIdPorIdentidad) {
+      const aspectoIdActual = aspectoActualPorIdentidad.get(identidad);
+      const evaluacion = evaluacionesPorId.get(evaluacionId);
+
+      if (aspectoIdActual && evaluacion) {
+        resultado.set(aspectoIdActual, evaluacion);
+      }
+    }
+
+    return resultado;
   },
 };
