@@ -186,12 +186,12 @@ model Usuario {
   aprobacionesGestionDecididas  AprobacionGestion[]         @relation("AprobacionGestionDecididaPor")
 
   // Auditorías, hallazgos y recomendaciones
-  auditoriasCreadas                  AuditoriaSgsst[]         @relation("AuditoriaCreadaPor")
-  hallazgosAuditoriaCreados          HallazgoAuditoria[]      @relation("HallazgoAuditoriaCreadoPor")
-  hallazgosAuditoriaResponsable      HallazgoAuditoria[]      @relation("HallazgoAuditoriaResponsable")
-  recomendacionesAuditoriaCreadas    RecomendacionAuditoria[] @relation("RecomendacionAuditoriaCreadaPor")
+  auditoriasCreadas                   AuditoriaSgsst[]         @relation("AuditoriaCreadaPor")
+  hallazgosAuditoriaCreados           HallazgoAuditoria[]      @relation("HallazgoAuditoriaCreadoPor")
+  hallazgosAuditoriaResponsable       HallazgoAuditoria[]      @relation("HallazgoAuditoriaResponsable")
+  recomendacionesAuditoriaCreadas     RecomendacionAuditoria[] @relation("RecomendacionAuditoriaCreadaPor")
   recomendacionesAuditoriaResponsable RecomendacionAuditoria[] @relation("RecomendacionAuditoriaResponsable")
-  seguimientosAuditoria              SeguimientoAuditoria[]   @relation("SeguimientoAuditoriaUsuario")
+  seguimientosAuditoria               SeguimientoAuditoria[]   @relation("SeguimientoAuditoriaUsuario")
 
   // Compromisos y permisos por aspecto
   compromisosCreados                Compromiso[]                     @relation("CompromisoCreadoPor")
@@ -520,6 +520,7 @@ model Proceso {
 
 model Aspecto {
   id                              Int            @id @default(autoincrement())
+  identidadHistorica              String         @default(uuid()) @db.VarChar(36)
   versionSupermatrizId            Int
   estandarId                      Int
   codigo                          String?        @db.VarChar(50)
@@ -550,6 +551,8 @@ model Aspecto {
   hallazgosAuditoria          HallazgoAuditoria[]
 
   @@unique([versionSupermatrizId, estandarId, nombre])
+  @@unique([versionSupermatrizId, identidadHistorica], map: "uq_aspecto_version_identidad_historica")
+  @@index([identidadHistorica])
   @@index([versionSupermatrizId])
   @@index([estandarId, orden])
   @@index([estado])
@@ -911,9 +914,9 @@ model EmpresaPeriodo {
   createdAt            DateTime           @default(now()) @db.DateTime(3)
   updatedAt            DateTime           @updatedAt @db.DateTime(3)
 
-  empresa            Empresa               @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  versionSupermatriz VersionSupermatriz    @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  creadoPor          Usuario               @relation("EmpresaPeriodoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  empresa            Empresa            @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  versionSupermatriz VersionSupermatriz @relation(fields: [versionSupermatrizId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor          Usuario            @relation("EmpresaPeriodoCreadoPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   gestiones          GestionSgsst[]
   informes           InformePeriodoSgsst[]
   auditorias         AuditoriaSgsst[]
@@ -1196,20 +1199,20 @@ model AprobacionGestionEvaluacion {
 // ======================================================
 
 model AuditoriaSgsst {
-  id                   String              @id @default(uuid())
-  empresaPeriodoId     String
-  titulo               String              @db.VarChar(191)
-  objetivo             String?             @db.Text
-  alcance              String?             @db.Text
-  fechaAuditoria       DateTime            @db.Date
-  estado               EstadoAuditoriaSgsst @default(BORRADOR)
-  creadoPorUsuarioId   String
-  iniciadaEn           DateTime?           @db.DateTime(3)
-  finalizadaEn         DateTime?           @db.DateTime(3)
-  canceladaEn          DateTime?           @db.DateTime(3)
-  motivoCancelacion    String?             @db.Text
-  createdAt            DateTime            @default(now()) @db.DateTime(3)
-  updatedAt            DateTime            @updatedAt @db.DateTime(3)
+  id                 String               @id @default(uuid())
+  empresaPeriodoId   String
+  titulo             String               @db.VarChar(191)
+  objetivo           String?              @db.Text
+  alcance            String?              @db.Text
+  fechaAuditoria     DateTime             @db.Date
+  estado             EstadoAuditoriaSgsst @default(BORRADOR)
+  creadoPorUsuarioId String
+  iniciadaEn         DateTime?            @db.DateTime(3)
+  finalizadaEn       DateTime?            @db.DateTime(3)
+  canceladaEn        DateTime?            @db.DateTime(3)
+  motivoCancelacion  String?              @db.Text
+  createdAt          DateTime             @default(now()) @db.DateTime(3)
+  updatedAt          DateTime             @updatedAt @db.DateTime(3)
 
   empresaPeriodo EmpresaPeriodo      @relation(fields: [empresaPeriodoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   creadoPor      Usuario             @relation("AuditoriaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -1222,21 +1225,21 @@ model AuditoriaSgsst {
 }
 
 model HallazgoAuditoria {
-  id                    String                  @id @default(uuid())
-  auditoriaId           String
-  aspectoId             Int?
-  tipo                  TipoHallazgoAuditoria
-  titulo                String                  @db.VarChar(191)
-  descripcion           String                  @db.Text
-  evidencia             String?                 @db.Text
-  estado                EstadoHallazgoAuditoria @default(ABIERTO)
-  responsableUsuarioId  String?
-  fechaObjetivo         DateTime?               @db.Date
-  resueltoEn            DateTime?               @db.DateTime(3)
-  cerradoEn             DateTime?               @db.DateTime(3)
-  creadoPorUsuarioId    String
-  createdAt             DateTime                @default(now()) @db.DateTime(3)
-  updatedAt             DateTime                @updatedAt @db.DateTime(3)
+  id                   String                   @id @default(uuid())
+  auditoriaId          String
+  aspectoId            Int?
+  tipo                 TipoHallazgoAuditoria
+  titulo               String                   @db.VarChar(191)
+  descripcion          String                   @db.Text
+  evidencia            String?                  @db.Text
+  estado               EstadoHallazgoAuditoria @default(ABIERTO)
+  responsableUsuarioId String?
+  fechaObjetivo        DateTime?                @db.Date
+  resueltoEn           DateTime?                @db.DateTime(3)
+  cerradoEn            DateTime?                @db.DateTime(3)
+  creadoPorUsuarioId   String
+  createdAt            DateTime                 @default(now()) @db.DateTime(3)
+  updatedAt            DateTime                 @updatedAt @db.DateTime(3)
 
   auditoria       AuditoriaSgsst            @relation(fields: [auditoriaId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   aspecto         Aspecto?                  @relation(fields: [aspectoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -1254,21 +1257,21 @@ model HallazgoAuditoria {
 }
 
 model RecomendacionAuditoria {
-  id                   String                       @id @default(uuid())
+  id                   String                        @id @default(uuid())
   hallazgoId           String
-  descripcion          String                       @db.Text
+  descripcion          String                        @db.Text
   estado               EstadoRecomendacionAuditoria @default(PENDIENTE)
   responsableUsuarioId String?
-  fechaObjetivo        DateTime?                    @db.Date
-  atendidaEn           DateTime?                    @db.DateTime(3)
+  fechaObjetivo        DateTime?                     @db.Date
+  atendidaEn           DateTime?                     @db.DateTime(3)
   creadoPorUsuarioId   String
-  createdAt            DateTime                     @default(now()) @db.DateTime(3)
-  updatedAt            DateTime                     @updatedAt @db.DateTime(3)
+  createdAt            DateTime                      @default(now()) @db.DateTime(3)
+  updatedAt            DateTime                      @updatedAt @db.DateTime(3)
 
-  hallazgo      HallazgoAuditoria       @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  responsable   Usuario?                @relation("RecomendacionAuditoriaResponsable", fields: [responsableUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  creadoPor     Usuario                 @relation("RecomendacionAuditoriaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  seguimientos  SeguimientoAuditoria[]
+  hallazgo     HallazgoAuditoria      @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  responsable  Usuario?               @relation("RecomendacionAuditoriaResponsable", fields: [responsableUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creadoPor    Usuario                @relation("RecomendacionAuditoriaCreadaPor", fields: [creadoPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  seguimientos SeguimientoAuditoria[]
 
   @@index([hallazgoId, estado])
   @@index([responsableUsuarioId, estado])
@@ -1278,18 +1281,18 @@ model RecomendacionAuditoria {
 }
 
 model SeguimientoAuditoria {
-  id                   String                        @id @default(uuid())
-  hallazgoId           String
-  recomendacionId      String?
-  usuarioId            String
-  descripcion          String                        @db.Text
-  estadoHallazgo       EstadoHallazgoAuditoria?
-  estadoRecomendacion  EstadoRecomendacionAuditoria?
-  createdAt            DateTime                      @default(now()) @db.DateTime(3)
+  id                  String                        @id @default(uuid())
+  hallazgoId          String
+  recomendacionId     String?
+  usuarioId           String
+  descripcion         String                        @db.Text
+  estadoHallazgo      EstadoHallazgoAuditoria?
+  estadoRecomendacion EstadoRecomendacionAuditoria?
+  createdAt           DateTime                      @default(now()) @db.DateTime(3)
 
-  hallazgo      HallazgoAuditoria        @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  recomendacion RecomendacionAuditoria?  @relation(fields: [recomendacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  usuario       Usuario                  @relation("SeguimientoAuditoriaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  hallazgo      HallazgoAuditoria       @relation(fields: [hallazgoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recomendacion RecomendacionAuditoria? @relation(fields: [recomendacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  usuario       Usuario                 @relation("SeguimientoAuditoriaUsuario", fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([hallazgoId, createdAt])
   @@index([recomendacionId, createdAt])
@@ -1352,7 +1355,7 @@ model CompromisoEvaluacionSeguimiento {
   evaluacionId String   @unique
   createdAt    DateTime @default(now()) @db.DateTime(3)
 
-  compromiso Compromiso       @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  compromiso Compromiso        @relation(fields: [compromisoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   evaluacion  EvaluacionAspecto @relation(fields: [evaluacionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([compromisoId, evaluacionId])
@@ -1403,7 +1406,7 @@ model ActividadCompromiso {
   updatedAt DateTime @updatedAt @db.DateTime(3)
 
   compromisoResponsable CompromisoResponsable @relation(fields: [compromisoResponsableId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  atendidaPor           Usuario?              @relation("ActividadCompromisoAtendidaPor", fields: [atendidaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  atendidaPor           Usuario?               @relation("ActividadCompromisoAtendidaPor", fields: [atendidaPorUsuarioId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   seguimientos          SeguimientoCompromiso[]
 
   @@index([estado])
@@ -1412,7 +1415,7 @@ model ActividadCompromiso {
 }
 
 model SeguimientoCompromiso {
-  id           String  @id @default(uuid())
+  id           String @id @default(uuid())
   compromisoId String
   actividadId  String?
   usuarioId    String
@@ -1466,7 +1469,7 @@ model CompromisoEvidencia {
 }
 
 model SolicitudCierreCompromiso {
-  id                         String  @id @default(uuid())
+  id                         String @id @default(uuid())
   compromisoId               String
   solicitadaPorId            String
   decididaPorId              String?
