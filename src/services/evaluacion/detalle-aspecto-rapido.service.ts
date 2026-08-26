@@ -16,6 +16,7 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
 import {
   construirCorteAnual,
   servicioPeriodosEvaluacion,
@@ -176,12 +177,12 @@ function filtroAspectoHistorico(
 async function resolverEmpresaPeriodo(
   empresaId: string,
   anio: number,
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  gestionId?: string | null
 ) {
   validarAnio(anio);
 
-  const fechaCorte = construirCorteAnual(anio);
-  const [empresa, periodo, versionAplicable] = await Promise.all([
+  const [empresa, periodo] = await Promise.all([
     asegurarAccesoEmpresa(
       usuario,
       empresaId,
@@ -200,9 +201,6 @@ async function resolverEmpresaPeriodo(
         estado: true,
       },
     }),
-    servicioPeriodosEvaluacion.resolverVersionParaFecha(
-      fechaCorte
-    ),
   ]);
 
   if (!periodo) {
@@ -213,32 +211,26 @@ async function resolverEmpresaPeriodo(
     );
   }
 
+  const gestionActiva =
+    await resolverBorradorSeleccionado(
+      periodo.id,
+      usuario,
+      gestionId
+    );
+  const fechaCorte =
+    gestionActiva?.fechaGestion ?? construirCorteAnual(anio);
+  const versionAplicable =
+    await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+      fechaCorte
+    );
+
   return {
     empresa,
     periodo,
+    gestionActiva,
     fechaCorte,
     versionAplicable,
   };
-}
-
-async function buscarGestionActiva(
-  periodoId: string,
-  usuarioId: string
-) {
-  return prisma.gestionSgsst.findFirst({
-    where: {
-      empresaPeriodoId: periodoId,
-      usuarioCreadorId: usuarioId,
-      estado: EstadoGestionSgsst.BORRADOR,
-      valida: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    select: {
-      id: true,
-    },
-  });
 }
 
 const seleccionEvaluacionVigencia = {
@@ -333,7 +325,7 @@ async function resolverTareaMinima(
 
   if (!tarea) {
     throw new ErrorEvaluacion(
-      "La fila seleccionada no pertenece a la versión de este periodo.",
+      "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
       404,
       "FILA_NO_ENCONTRADA"
     );
@@ -696,7 +688,7 @@ async function obtenerConfiguracionCacheada(
 
   if (!tarea) {
     throw new ErrorEvaluacion(
-      "La fila seleccionada no pertenece a la versión de este periodo.",
+      "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
       404,
       "FILA_NO_ENCONTRADA"
     );
@@ -720,84 +712,81 @@ export const servicioDetalleAspectoRapido = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     const {
       empresa,
       periodo,
+      gestionActiva,
       fechaCorte,
       versionAplicable,
     } = await resolverEmpresaPeriodo(
-        empresaId,
-        anio,
-        usuario
-      );
+      empresaId,
+      anio,
+      usuario,
+      gestionId
+    );
 
-    const [tarea, gestionActiva] = await Promise.all([
-      prisma.supermatrizTarea.findFirst({
-        where: {
-          id: tareaId,
-          versionSupermatrizId:
-            versionAplicable.id,
-          estado: EstadoRegistro.ACTIVO,
+    const tarea = await prisma.supermatrizTarea.findFirst({
+      where: {
+        id: tareaId,
+        versionSupermatrizId:
+          versionAplicable.id,
+        estado: EstadoRegistro.ACTIVO,
+      },
+      select: {
+        id: true,
+        codigo: true,
+        orden: true,
+        aspectoId: true,
+        versionSupermatriz: {
+          select: {
+            id: true,
+            nombre: true,
+            estado: true,
+          },
         },
-        select: {
-          id: true,
-          codigo: true,
-          orden: true,
-          aspectoId: true,
-          versionSupermatriz: {
-            select: {
-              id: true,
-              nombre: true,
-              estado: true,
-            },
+        proceso: {
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            descripcion: true,
           },
-          proceso: {
-            select: {
-              id: true,
-              codigo: true,
-              nombre: true,
-              descripcion: true,
-            },
-          },
-          categoriasGestion: {
-            select: {
-              categoriaGestion: {
-                select: {
-                  id: true,
-                  codigo: true,
-                  nombre: true,
-                  descripcion: true,
-                },
+        },
+        categoriasGestion: {
+          select: {
+            categoriaGestion: {
+              select: {
+                id: true,
+                codigo: true,
+                nombre: true,
+                descripcion: true,
               },
             },
           },
-          aspecto: {
-            select: {
-              id: true,
-              identidadHistorica: true,
-              codigo: true,
-              nombre: true,
-              configuracion: {
-                select: {
-                  esEvergreen: true,
-                },
+        },
+        aspecto: {
+          select: {
+            id: true,
+            identidadHistorica: true,
+            codigo: true,
+            nombre: true,
+            configuracion: {
+              select: {
+                esEvergreen: true,
               },
-              configuracionVigencia: true,
             },
+            configuracionVigencia: true,
           },
         },
-      }),
-      buscarGestionActiva(
-        periodo.id,
-        usuario.usuarioId
-      ),
-    ]);
+      },
+    });
 
     if (!tarea) {
       throw new ErrorEvaluacion(
-        "La fila seleccionada no pertenece a la versión de este periodo.",
+        "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
         404,
         "FILA_NO_ENCONTRADA"
       );
@@ -831,6 +820,7 @@ export const servicioDetalleAspectoRapido = {
 
     return {
       empresa,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: {
         id: periodo.id,
         anio: periodo.anio,
@@ -869,20 +859,23 @@ export const servicioDetalleAspectoRapido = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
-    const { periodo, versionAplicable } =
+    const { fechaCorte, versionAplicable } =
       await resolverEmpresaPeriodo(
-      empresaId,
-      anio,
-      usuario
-    );
+        empresaId,
+        anio,
+        usuario,
+        gestionId
+      );
     const tarea = await obtenerConfiguracionCacheada(
       tareaId,
       versionAplicable.id
     );
 
     return {
+      fechaCorte: fechaCorte.toISOString(),
       tarea: {
         id: tarea.id,
         codigo: tarea.codigo,
@@ -998,20 +991,21 @@ export const servicioDetalleAspectoRapido = {
     tareaId: number,
     anio: number,
     pagina: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     const paginaValida =
       Number.isInteger(pagina) && pagina > 0
         ? pagina
         : 1;
     const {
-      periodo,
       fechaCorte,
       versionAplicable,
     } = await resolverEmpresaPeriodo(
       empresaId,
       anio,
-      usuario
+      usuario,
+      gestionId
     );
     const tarea = await resolverTareaMinima(
       tareaId,
@@ -1071,6 +1065,9 @@ export const servicioDetalleAspectoRapido = {
           },
           {
             createdAt: "desc",
+          },
+          {
+            id: "desc",
           },
         ],
         skip: (paginaValida - 1) * LIMITE_HISTORIAL,
@@ -1166,6 +1163,7 @@ export const servicioDetalleAspectoRapido = {
     );
 
     return {
+      fechaCorte: fechaCorte.toISOString(),
       compromisos,
       historial: historial.map((evaluacion) => ({
         id: evaluacion.id,
