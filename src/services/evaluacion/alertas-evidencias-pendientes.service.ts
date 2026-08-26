@@ -1,6 +1,7 @@
 import {
   EstadoGestionSgsst,
   EstadoPeriodoSgsst,
+  EstadoRegistro,
   RolUsuario,
 } from "@prisma/client";
 
@@ -8,6 +9,10 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "./alertas-control-evaluacion.service";
 import { resolverEstadoEvidenciaAspecto } from "./estado-evidencia-aspecto.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 export interface OpcionesAlertasEvidenciasPendientes {
   empresaId?: string;
@@ -78,21 +83,19 @@ export const servicioAlertasEvidenciasPendientes = {
         {
           createdAt: "desc",
         },
+        {
+          id: "desc",
+        },
       ],
       select: {
         id: true,
-        aspectoId: true,
         estadoCumplimiento: true,
         calificacionAdministrativa: true,
         createdAt: true,
-        supermatrizTarea: {
-          select: {
-            id: true,
-          },
-        },
         aspecto: {
           select: {
             id: true,
+            identidadHistorica: true,
             nombre: true,
           },
         },
@@ -126,7 +129,6 @@ export const servicioAlertasEvidenciasPendientes = {
         gestion: {
           select: {
             finalizadaEn: true,
-            empresaPeriodoId: true,
             empresaPeriodo: {
               select: {
                 anio: true,
@@ -145,10 +147,16 @@ export const servicioAlertasEvidenciasPendientes = {
 
     const vistos = new Set<string>();
     const alertas: AlertaControlEvaluacion[] = [];
+    const versionPorAnio = new Map<number, number>();
+    const tareaPorVersionIdentidad = new Map<string, number | null>();
 
     for (const evaluacion of evaluaciones) {
-      const clave = `${evaluacion.gestion.empresaPeriodoId}:${evaluacion.aspectoId}`;
+      const periodo = evaluacion.gestion.empresaPeriodo;
+      const identidad = evaluacion.aspecto.identidadHistorica;
+      const clave = `${periodo.empresa.id}:${identidad}`;
 
+      // La consulta viene ordenada de más reciente a más antigua. Una sola
+      // alerta por identidad histórica evita duplicados al cambiar de versión.
       if (vistos.has(clave)) continue;
       vistos.add(clave);
 
@@ -170,14 +178,51 @@ export const servicioAlertasEvidenciasPendientes = {
             .map(({ compromiso }) => compromiso.id),
       });
 
-      if (
-        !estadoEvidencia.evidenciaPendiente ||
-        !evaluacion.supermatrizTarea
-      ) {
+      if (!estadoEvidencia.evidenciaPendiente) {
         continue;
       }
 
-      const periodo = evaluacion.gestion.empresaPeriodo;
+      let versionSupermatrizId = versionPorAnio.get(periodo.anio);
+
+      if (!versionSupermatrizId) {
+        const version =
+          await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+            construirCorteAnual(periodo.anio)
+          );
+        versionSupermatrizId = version.id;
+        versionPorAnio.set(periodo.anio, version.id);
+      }
+
+      const claveTarea = `${versionSupermatrizId}:${identidad}`;
+      let tareaId = tareaPorVersionIdentidad.get(claveTarea);
+
+      if (tareaId === undefined) {
+        const tareaActual = await prisma.supermatrizTarea.findFirst({
+          where: {
+            versionSupermatrizId,
+            estado: EstadoRegistro.ACTIVO,
+            aspecto: {
+              identidadHistorica: identidad,
+              estado: EstadoRegistro.ACTIVO,
+            },
+          },
+          select: {
+            id: true,
+          },
+          orderBy: {
+            id: "asc",
+          },
+        });
+
+        tareaId = tareaActual?.id ?? null;
+        tareaPorVersionIdentidad.set(claveTarea, tareaId);
+      }
+
+      // Si el aspecto ya no existe en la estructura aplicable actual, no se
+      // genera un enlace hacia una fila histórica que el drawer no puede abrir.
+      if (!tareaId) {
+        continue;
+      }
 
       alertas.push({
         id: `EVIDENCIA_PENDIENTE:${evaluacion.id}`,
@@ -187,7 +232,10 @@ export const servicioAlertasEvidenciasPendientes = {
         titulo: "Evidencia requerida pendiente",
         descripcion: `${periodo.empresa.nombre}: “${evaluacion.aspecto.nombre}” está calificado en 5, pero el aspecto exige evidencia y todavía no tiene un soporte asociado.`,
         empresa: periodo.empresa,
-        aspecto: evaluacion.aspecto,
+        aspecto: {
+          id: evaluacion.aspecto.id,
+          nombre: evaluacion.aspecto.nombre,
+        },
         fechaLimite: (
           evaluacion.gestion.finalizadaEn ?? evaluacion.createdAt
         ).toISOString(),
@@ -196,7 +244,7 @@ export const servicioAlertasEvidenciasPendientes = {
           ruta: rutaEvidenciaPendiente(
             periodo.empresa.id,
             periodo.anio,
-            evaluacion.supermatrizTarea.id
+            tareaId
           ),
         },
       });
