@@ -3,30 +3,41 @@ ALTER TABLE `aspectos`
   ADD COLUMN `identidadHistorica` VARCHAR(36) NULL;
 
 -- Para datos existentes se conserva el mejor linaje inferible antes de 5G-A.
--- La clave usa toda la jerarquía funcional para evitar colisiones entre
--- estándares/aspectos con nombres o códigos repetidos en categorías distintas.
+-- La clave usa la jerarquía funcional completa e incluye código y nombre para
+-- evitar colapsar dos registros distintos que compartan un código no único.
 CREATE TEMPORARY TABLE `_tmp_aspecto_identidad_historica` (
-  `clave` VARCHAR(768) NOT NULL,
+  `clave` VARCHAR(1536) NOT NULL,
   `identidadHistorica` VARCHAR(36) NOT NULL,
   PRIMARY KEY (`clave`)
 );
 
+-- IMPORTANTE: primero deduplicamos las claves y solo después generamos UUID().
+-- Si UUID() estuviera dentro del SELECT DISTINCT, cada fila seguiría siendo
+-- distinta y una misma clave histórica podría intentar insertarse varias veces.
 INSERT INTO `_tmp_aspecto_identidad_historica` (`clave`, `identidadHistorica`)
-SELECT DISTINCT
-  CONCAT(
-    TRIM(cp.`codigo`),
-    '::',
-    COALESCE(NULLIF(TRIM(ce.`codigo`), ''), TRIM(ce.`nombre`)),
-    '::',
-    COALESCE(NULLIF(TRIM(e.`codigo`), ''), TRIM(e.`nombre`)),
-    '::',
-    COALESCE(NULLIF(TRIM(a.`codigo`), ''), TRIM(a.`nombre`))
-  ) AS `clave`,
-  UUID() AS `identidadHistorica`
-FROM `aspectos` a
-INNER JOIN `estandares` e ON e.`id` = a.`estandarId`
-INNER JOIN `categorias_estandar` ce ON ce.`id` = e.`categoriaEstandarId`
-INNER JOIN `ciclos_phva` cp ON cp.`id` = ce.`cicloPhvaId`;
+SELECT linajes.`clave`, UUID()
+FROM (
+  SELECT DISTINCT
+    CONCAT(
+      TRIM(cp.`codigo`),
+      '::',
+      COALESCE(TRIM(ce.`codigo`), ''),
+      '::',
+      TRIM(ce.`nombre`),
+      '::',
+      COALESCE(TRIM(e.`codigo`), ''),
+      '::',
+      TRIM(e.`nombre`),
+      '::',
+      COALESCE(TRIM(a.`codigo`), ''),
+      '::',
+      TRIM(a.`nombre`)
+    ) AS `clave`
+  FROM `aspectos` a
+  INNER JOIN `estandares` e ON e.`id` = a.`estandarId`
+  INNER JOIN `categorias_estandar` ce ON ce.`id` = e.`categoriaEstandarId`
+  INNER JOIN `ciclos_phva` cp ON cp.`id` = ce.`cicloPhvaId`
+) linajes;
 
 UPDATE `aspectos` a
 INNER JOIN `estandares` e ON e.`id` = a.`estandarId`
@@ -36,11 +47,17 @@ INNER JOIN `_tmp_aspecto_identidad_historica` t
   ON t.`clave` = CONCAT(
     TRIM(cp.`codigo`),
     '::',
-    COALESCE(NULLIF(TRIM(ce.`codigo`), ''), TRIM(ce.`nombre`)),
+    COALESCE(TRIM(ce.`codigo`), ''),
     '::',
-    COALESCE(NULLIF(TRIM(e.`codigo`), ''), TRIM(e.`nombre`)),
+    TRIM(ce.`nombre`),
     '::',
-    COALESCE(NULLIF(TRIM(a.`codigo`), ''), TRIM(a.`nombre`))
+    COALESCE(TRIM(e.`codigo`), ''),
+    '::',
+    TRIM(e.`nombre`),
+    '::',
+    COALESCE(TRIM(a.`codigo`), ''),
+    '::',
+    TRIM(a.`nombre`)
   )
 SET a.`identidadHistorica` = t.`identidadHistorica`
 WHERE a.`identidadHistorica` IS NULL;
