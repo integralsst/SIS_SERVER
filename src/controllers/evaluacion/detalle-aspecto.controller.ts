@@ -142,12 +142,13 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-aspecto",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({ empresaId, tareaId, anio, gestionId, usuario }) =>
         servicioDetalleAspecto.obtener(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
