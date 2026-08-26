@@ -39,8 +39,8 @@ export interface OpcionesAlertasControlEvaluacion {
 }
 
 interface CondicionCorreccion {
-  empresaPeriodoId: string;
-  aspectoId: number;
+  empresaId: string;
+  identidadHistorica: string;
   despuesDe: Date;
 }
 
@@ -79,23 +79,35 @@ async function buscarCorreccionesPosteriores(
 
   const whereOr: Prisma.EvaluacionAspectoWhereInput[] =
     condiciones.map((condicion) => ({
-      aspectoId: condicion.aspectoId,
+      aspecto: {
+        identidadHistorica: condicion.identidadHistorica,
+      },
       createdAt: { gt: condicion.despuesDe },
       gestion: {
-        empresaPeriodoId: condicion.empresaPeriodoId,
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
+        empresaPeriodo: {
+          empresaId: condicion.empresaId,
+        },
       },
     }));
 
   return prisma.evaluacionAspecto.findMany({
     where: { OR: whereOr },
     select: {
-      aspectoId: true,
       createdAt: true,
+      aspecto: {
+        select: {
+          identidadHistorica: true,
+        },
+      },
       gestion: {
         select: {
-          empresaPeriodoId: true,
+          empresaPeriodo: {
+            select: {
+              empresaId: true,
+            },
+          },
         },
       },
     },
@@ -108,9 +120,10 @@ function tieneCorreccionPosterior(
 ): boolean {
   return correcciones.some(
     (correccion) =>
-      correccion.aspectoId === condicion.aspectoId &&
-      correccion.gestion.empresaPeriodoId ===
-        condicion.empresaPeriodoId &&
+      correccion.aspecto.identidadHistorica ===
+        condicion.identidadHistorica &&
+      correccion.gestion.empresaPeriodo.empresaId ===
+        condicion.empresaId &&
       correccion.createdAt > condicion.despuesDe
   );
 }
@@ -235,11 +248,15 @@ async function alertasNoAplicaRechazadas(
       observacionDecision: true,
       evaluacion: {
         select: {
-          aspectoId: true,
-          aspecto: { select: { id: true, nombre: true } },
+          aspecto: {
+            select: {
+              id: true,
+              identidadHistorica: true,
+              nombre: true,
+            },
+          },
           gestion: {
             select: {
-              empresaPeriodoId: true,
               empresaPeriodo: {
                 select: {
                   anio: true,
@@ -258,9 +275,10 @@ async function alertasNoAplicaRechazadas(
       decision.decididaEn
         ? [
             {
-              empresaPeriodoId:
-                decision.evaluacion.gestion.empresaPeriodoId,
-              aspectoId: decision.evaluacion.aspectoId,
+              empresaId:
+                decision.evaluacion.gestion.empresaPeriodo.empresa.id,
+              identidadHistorica:
+                decision.evaluacion.aspecto.identidadHistorica,
               despuesDe: decision.decididaEn,
             },
           ]
@@ -271,9 +289,11 @@ async function alertasNoAplicaRechazadas(
   return decisiones.flatMap((decision) => {
     if (!decision.decididaEn) return [];
 
-    const condicion = {
-      empresaPeriodoId: decision.evaluacion.gestion.empresaPeriodoId,
-      aspectoId: decision.evaluacion.aspectoId,
+    const condicion: CondicionCorreccion = {
+      empresaId:
+        decision.evaluacion.gestion.empresaPeriodo.empresa.id,
+      identidadHistorica:
+        decision.evaluacion.aspecto.identidadHistorica,
       despuesDe: decision.decididaEn,
     };
 
@@ -282,6 +302,10 @@ async function alertasNoAplicaRechazadas(
     }
 
     const periodo = decision.evaluacion.gestion.empresaPeriodo;
+    const aspecto = {
+      id: decision.evaluacion.aspecto.id,
+      nombre: decision.evaluacion.aspecto.nombre,
+    };
 
     return [
       {
@@ -292,9 +316,9 @@ async function alertasNoAplicaRechazadas(
         titulo: "No aplica rechazado: requiere nueva evaluación",
         descripcion:
           decision.observacionDecision ||
-          `${periodo.empresa.nombre}: registra una nueva gestión para corregir “${decision.evaluacion.aspecto.nombre}”.`,
+          `${periodo.empresa.nombre}: registra una nueva gestión para corregir “${aspecto.nombre}”.`,
         empresa: periodo.empresa,
-        aspecto: decision.evaluacion.aspecto,
+        aspecto,
         fechaLimite: decision.decididaEn.toISOString(),
         accion: {
           etiqueta: "Revisar decisión",
@@ -417,7 +441,6 @@ async function alertasAprobacionRechazada(
       gestion: {
         select: {
           tipoActividad: true,
-          empresaPeriodoId: true,
           empresaPeriodo: {
             select: {
               anio: true,
@@ -430,8 +453,13 @@ async function alertasAprobacionRechazada(
         select: {
           evaluacion: {
             select: {
-              aspectoId: true,
-              aspecto: { select: { id: true, nombre: true } },
+              aspecto: {
+                select: {
+                  id: true,
+                  identidadHistorica: true,
+                  nombre: true,
+                },
+              },
             },
           },
         },
@@ -443,8 +471,9 @@ async function alertasAprobacionRechazada(
     (aprobacion) =>
       aprobacion.decididaEn
         ? aprobacion.evaluaciones.map((relacion) => ({
-            empresaPeriodoId: aprobacion.gestion.empresaPeriodoId,
-            aspectoId: relacion.evaluacion.aspectoId,
+            empresaId: aprobacion.gestion.empresaPeriodo.empresa.id,
+            identidadHistorica:
+              relacion.evaluacion.aspecto.identidadHistorica,
             despuesDe: aprobacion.decididaEn as Date,
           }))
         : []
@@ -457,12 +486,16 @@ async function alertasAprobacionRechazada(
     const pendientesCorreccion = aprobacion.evaluaciones
       .filter((relacion) =>
         !tieneCorreccionPosterior(correcciones, {
-          empresaPeriodoId: aprobacion.gestion.empresaPeriodoId,
-          aspectoId: relacion.evaluacion.aspectoId,
+          empresaId: aprobacion.gestion.empresaPeriodo.empresa.id,
+          identidadHistorica:
+            relacion.evaluacion.aspecto.identidadHistorica,
           despuesDe: aprobacion.decididaEn as Date,
         })
       )
-      .map((relacion) => relacion.evaluacion.aspecto);
+      .map((relacion) => ({
+        id: relacion.evaluacion.aspecto.id,
+        nombre: relacion.evaluacion.aspecto.nombre,
+      }));
 
     if (pendientesCorreccion.length === 0) return [];
 
