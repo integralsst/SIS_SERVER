@@ -68,9 +68,12 @@ function claveLinajeAspecto(aspecto: {
 
   return [
     categoria.cicloPhva.codigo,
-    categoria.codigo ?? categoria.nombre,
-    aspecto.estandar.codigo ?? aspecto.estandar.nombre,
-    aspecto.codigo ?? aspecto.nombre,
+    categoria.codigo ?? "",
+    categoria.nombre,
+    aspecto.estandar.codigo ?? "",
+    aspecto.estandar.nombre,
+    aspecto.codigo ?? "",
+    aspecto.nombre,
   ].join("::");
 }
 
@@ -113,12 +116,34 @@ async function sincronizarIdentidadesAspectosClonados(
     }),
   ]);
 
+  if (origen.length !== destino.length) {
+    throw new ErrorValidacionSupermatriz(
+      "La versión clonada no contiene la misma cantidad de aspectos que su origen."
+    );
+  }
+
   const origenPorClave = new Map(
     origen.map((aspecto) => [
       claveLinajeAspecto(aspecto),
       aspecto.identidadHistorica,
     ])
   );
+  const destinoPorClave = new Map(
+    destino.map((aspecto) => [
+      claveLinajeAspecto(aspecto),
+      aspecto,
+    ])
+  );
+
+  if (
+    origenPorClave.size !== origen.length ||
+    destinoPorClave.size !== destino.length
+  ) {
+    throw new ErrorValidacionSupermatriz(
+      "La clonación contiene claves de aspecto ambiguas y no es seguro inferir su identidad histórica."
+    );
+  }
+
   const actualizaciones = destino.map((aspecto) => {
     const identidadHistorica = origenPorClave.get(
       claveLinajeAspecto(aspecto)
@@ -135,12 +160,6 @@ async function sincronizarIdentidadesAspectosClonados(
       data: { identidadHistorica },
     });
   });
-
-  if (origen.length !== destino.length) {
-    throw new ErrorValidacionSupermatriz(
-      "La versión clonada no contiene la misma cantidad de aspectos que su origen."
-    );
-  }
 
   await prisma.$transaction(actualizaciones);
 }
@@ -349,8 +368,8 @@ export const servicioVersionesSupermatriz = {
           where: { id },
         });
 
-      const vigenteActual =
-        await tx.versionSupermatriz.findFirst({
+      const vigentesActuales =
+        await tx.versionSupermatriz.findMany({
           where: {
             estado: EstadoVersionSupermatriz.VIGENTE,
             id: { not: id },
@@ -361,25 +380,30 @@ export const servicioVersionesSupermatriz = {
           ],
         });
 
-      if (vigenteActual) {
+      if (vigentesActuales.length > 0) {
         if (!anterior.vigenteDesde) {
           throw new ErrorValidacionSupermatriz(
             "Indica la fecha desde la cual empezará a aplicar la nueva versión."
           );
         }
 
-        if (
-          vigenteActual.vigenteDesde &&
-          anterior.vigenteDesde <= vigenteActual.vigenteDesde
-        ) {
+        const versionNoAnterior = vigentesActuales.find(
+          (vigente) =>
+            vigente.vigenteDesde &&
+            anterior.vigenteDesde &&
+            anterior.vigenteDesde <= vigente.vigenteDesde
+        );
+
+        if (versionNoAnterior) {
           throw new ErrorValidacionSupermatriz(
             "La nueva versión debe iniciar después de la versión actualmente vigente."
           );
         }
 
-        await tx.versionSupermatriz.update({
+        await tx.versionSupermatriz.updateMany({
           where: {
-            id: vigenteActual.id,
+            estado: EstadoVersionSupermatriz.VIGENTE,
+            id: { not: id },
           },
           data: {
             estado: EstadoVersionSupermatriz.CERRADA,
@@ -387,16 +411,6 @@ export const servicioVersionesSupermatriz = {
           },
         });
       }
-
-      await tx.versionSupermatriz.updateMany({
-        where: {
-          estado: EstadoVersionSupermatriz.VIGENTE,
-          id: { not: id },
-        },
-        data: {
-          estado: EstadoVersionSupermatriz.CERRADA,
-        },
-      });
 
       const publicada =
         await tx.versionSupermatriz.update({
@@ -451,6 +465,15 @@ export const servicioVersionesSupermatriz = {
         EstadoVersionSupermatriz.CERRADA
       ) {
         return anterior;
+      }
+
+      if (
+        anterior.estado ===
+        EstadoVersionSupermatriz.VIGENTE
+      ) {
+        throw new ErrorValidacionSupermatriz(
+          "Una versión vigente solo puede cerrarse al publicar su versión sucesora. Así se conserva la continuidad temporal de la Supermatriz."
+        );
       }
 
       const cerrada =
