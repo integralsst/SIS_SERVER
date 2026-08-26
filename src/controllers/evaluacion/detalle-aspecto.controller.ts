@@ -13,6 +13,7 @@ import {
   enriquecerTrazabilidadConEvidencias,
 } from "../../services/evaluacion/estado-evidencia-aspecto.service";
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
+import { enriquecerTrazabilidadConAuditoriaTemporal } from "../../services/evaluacion/trazabilidad-auditoria-temporal.service";
 import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
@@ -297,18 +298,24 @@ export const controladorDetalleAspecto = {
           await enriquecerHistorialConResultadoEfectivo(
             resultado
           );
-        const conTrazabilidad =
+        // La trazabilidad base conserva evaluaciones, controles y compromisos.
+        // Auditoría se agrega después por identidad histórica y fecha de corte.
+        const conTrazabilidadBase =
           await enriquecerHistorialConTrazabilidad(
-            conResultadoEfectivo,
+            conResultadoEfectivo
+          );
+        const conAuditoriaTemporal =
+          await enriquecerTrazabilidadConAuditoriaTemporal(
+            conTrazabilidadBase,
             {
               empresaId,
               tareaId,
-              anio,
+              fechaCorte: new Date(resultado.fechaCorte),
             }
           );
 
         return enriquecerTrazabilidadConEvidencias(
-          conTrazabilidad as unknown as Parameters<
+          conAuditoriaTemporal as unknown as Parameters<
             typeof enriquecerTrazabilidadConEvidencias
           >[0]
         );
