@@ -554,7 +554,10 @@ export const servicioInformesPeriodo = {
       })),
     };
 
-    const fechaCorte = new Date();
+    // El informe debe persistir exactamente el mismo corte temporal que usó
+    // Resultados. Así un informe histórico no queda fechado con el día en que
+    // fue generado, sino con el estado real consultado para ese periodo.
+    const fechaCorte = new Date(resultado.fechaCorte);
     const fuente = await obtenerEstadisticasFuente(
       resultado.periodo.id,
       anio
