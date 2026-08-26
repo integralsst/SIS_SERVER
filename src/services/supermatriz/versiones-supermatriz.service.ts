@@ -5,6 +5,7 @@ import {
 
 import { prisma } from "../../lib/prisma";
 import { clonarVersionSupermatrizPorEtapas } from "./clonar-version-supermatriz.service";
+import { limpiarVersionClonadaIncompleta } from "./limpiar-version-clonada.service";
 import type {
   DatosClonarVersion,
   DatosVersionSupermatriz,
@@ -527,10 +528,17 @@ export const servicioVersionesSupermatriz = {
         usuarioId
       );
 
-    await sincronizarIdentidadesAspectosClonados(
-      id,
-      nuevaVersionId
-    );
+    try {
+      await sincronizarIdentidadesAspectosClonados(
+        id,
+        nuevaVersionId
+      );
+    } catch (error) {
+      await limpiarVersionClonadaIncompleta(
+        nuevaVersionId
+      );
+      throw error;
+    }
 
     return prisma.versionSupermatriz.findUniqueOrThrow({
       where: {
