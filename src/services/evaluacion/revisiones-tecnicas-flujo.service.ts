@@ -75,22 +75,51 @@ export const servicioRevisionesTecnicasFlujo = {
         )
       ),
     ];
+    const aspectosLinaje = await prisma.aspecto.findMany({
+      where: {
+        id: {
+          in: aspectoIds,
+        },
+      },
+      select: {
+        id: true,
+        identidadHistorica: true,
+      },
+    });
+    const identidadPorAspectoId = new Map(
+      aspectosLinaje.map((aspecto) => [
+        aspecto.id,
+        aspecto.identidadHistorica,
+      ])
+    );
+    const identidades = [
+      ...new Set(
+        aspectosLinaje.map(
+          (aspecto) => aspecto.identidadHistorica
+        )
+      ),
+    ];
     const accionesVinculo = revisionesConAjustes.map(
       (revision) =>
         accionVinculoCorreccionRevision(revision.id)
     );
     const profesionalActualId =
       usuario.profesionalId ?? "__SIN_PERFIL_PROFESIONAL__";
+    const empresaId = base.periodo.empresa.id;
 
     const [evaluacionesPosteriores, vinculosCorreccion] =
       await Promise.all([
         prisma.evaluacionAspecto.findMany({
           where: {
-            aspectoId: {
-              in: aspectoIds,
+            aspecto: {
+              identidadHistorica: {
+                in: identidades,
+              },
             },
             gestion: {
-              empresaPeriodoId: periodoId,
+              empresaPeriodo: {
+                empresaId,
+              },
               valida: true,
               estado: {
                 in: [
@@ -109,6 +138,11 @@ export const servicioRevisionesTecnicasFlujo = {
             },
           ],
           include: {
+            aspecto: {
+              select: {
+                identidadHistorica: true,
+              },
+            },
             gestion: {
               include: {
                 profesional: {
@@ -143,7 +177,9 @@ export const servicioRevisionesTecnicasFlujo = {
               in: accionesVinculo,
             },
             gestion: {
-              empresaPeriodoId: periodoId,
+              empresaPeriodo: {
+                empresaId,
+              },
               valida: true,
               estado: {
                 in: [
@@ -210,6 +246,22 @@ export const servicioRevisionesTecnicasFlujo = {
         };
       }
 
+      const identidadHistorica = identidadPorAspectoId.get(
+        revision.evaluacion.aspecto.id
+      );
+
+      if (!identidadHistorica) {
+        return {
+          ...revision,
+          estadoFlujo:
+            EstadoRevisionTecnica.REQUIERE_AJUSTES,
+          requiereAccion: true,
+          puedeCorregir: puedeCorregirRol,
+          gestionCorreccion: null,
+          evaluacionCorrectiva: null,
+        };
+      }
+
       const accionVinculo =
         accionVinculoCorreccionRevision(revision.id);
       const vinculosRevision = vinculosCorreccion.filter(
@@ -232,8 +284,8 @@ export const servicioRevisionesTecnicasFlujo = {
             (evaluacion) =>
               evaluacion.gestionId ===
                 vinculoFinalizado.gestion.id &&
-              evaluacion.aspectoId ===
-                revision.evaluacion.aspecto.id
+              evaluacion.aspecto.identidadHistorica ===
+                identidadHistorica
           ) ?? null;
 
         return {
@@ -277,8 +329,8 @@ export const servicioRevisionesTecnicasFlujo = {
             (evaluacion) =>
               evaluacion.gestionId ===
                 vinculoBorrador.gestion.id &&
-              evaluacion.aspectoId ===
-                revision.evaluacion.aspecto.id
+              evaluacion.aspecto.identidadHistorica ===
+                identidadHistorica
           ) ?? null;
         const puedeOperarBorrador =
           esAdminCorreccion ||
@@ -330,8 +382,8 @@ export const servicioRevisionesTecnicasFlujo = {
 
       const candidatas = evaluacionesPosteriores.filter(
         (evaluacion) =>
-          evaluacion.aspectoId ===
-            revision.evaluacion.aspecto.id &&
+          evaluacion.aspecto.identidadHistorica ===
+            identidadHistorica &&
           evaluacion.id !== revision.evaluacion.id &&
           evaluacion.createdAt.getTime() >
             fechaResolucion.getTime()
