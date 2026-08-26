@@ -219,12 +219,19 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen-configuracion",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) =>
         servicioDetalleAspectoRapido.obtenerConfiguracion(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
@@ -257,14 +264,21 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-historial-paginado",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoRapido.obtenerHistorialPaginado(
             empresaId,
             tareaId,
             anio,
             pagina,
-            usuario
+            usuario,
+            gestionId
           );
         const conResultadoEfectivo =
           await enriquecerHistorialConResultadoEfectivo(
