@@ -89,11 +89,9 @@ router.post(
   controladorVersionesSupermatriz.publicar
 );
 
-router.post(
-  "/versiones/:id/cerrar",
-  autorizar(...rolesEdicion),
-  controladorVersionesSupermatriz.cerrar
-);
+// Las versiones no se cierran manualmente.
+// La versión vigente pasa a histórica de forma automática
+// al publicar su sucesora con una nueva fecha de vigencia.
 
 // ======================================================
 // CONSTRUCTOR TRANSACCIONAL EN ORDEN INVERSO
