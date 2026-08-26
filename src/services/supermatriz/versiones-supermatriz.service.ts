@@ -380,30 +380,39 @@ export const servicioVersionesSupermatriz = {
           ],
         });
 
-      if (vigentesActuales.length > 0) {
+      if (vigentesActuales.length > 1) {
+        throw new ErrorValidacionSupermatriz(
+          "Existe más de una versión vigente de la Supermatriz. Corrige esa inconsistencia antes de publicar una nueva versión."
+        );
+      }
+
+      if (vigentesActuales.length === 1) {
+        const vigenteActual = vigentesActuales[0];
+
+        if (anterior.clonadaDeId !== vigenteActual.id) {
+          throw new ErrorValidacionSupermatriz(
+            `La versión sucesora debe crearse clonando la versión vigente "${vigenteActual.nombre}". Esto conserva la identidad histórica de los aspectos.`
+          );
+        }
+
         if (!anterior.vigenteDesde) {
           throw new ErrorValidacionSupermatriz(
             "Indica la fecha desde la cual empezará a aplicar la nueva versión."
           );
         }
 
-        const versionNoAnterior = vigentesActuales.find(
-          (vigente) =>
-            vigente.vigenteDesde &&
-            anterior.vigenteDesde &&
-            anterior.vigenteDesde <= vigente.vigenteDesde
-        );
-
-        if (versionNoAnterior) {
+        if (
+          vigenteActual.vigenteDesde &&
+          anterior.vigenteDesde <= vigenteActual.vigenteDesde
+        ) {
           throw new ErrorValidacionSupermatriz(
             "La nueva versión debe iniciar después de la versión actualmente vigente."
           );
         }
 
-        await tx.versionSupermatriz.updateMany({
+        await tx.versionSupermatriz.update({
           where: {
-            estado: EstadoVersionSupermatriz.VIGENTE,
-            id: { not: id },
+            id: vigenteActual.id,
           },
           data: {
             estado: EstadoVersionSupermatriz.CERRADA,
