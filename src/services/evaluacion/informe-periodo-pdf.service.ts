@@ -100,6 +100,25 @@ function formatDate(value: unknown): string {
   });
 }
 
+function formatDateOnly(value: unknown): string {
+  if (typeof value !== "string" && !(value instanceof Date)) {
+    return "-";
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString("es-CO", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+}
+
 function normalizePdfText(value: string): string {
   return value
     .replace(/[–—]/g, "-")
@@ -786,7 +805,7 @@ function buildInformePdf(
     width: CONTENT_WIDTH - 32,
   });
   document.textAt(
-    `Periodo: enero a diciembre de ${detalle.anio}   |   Versión: ${detalle.numeroVersion}   |   Corte: ${formatDate(detalle.fechaCorte)}`,
+    `Periodo: enero a diciembre de ${detalle.anio}   |   Versión: ${detalle.numeroVersion}   |   Corte: ${formatDateOnly(detalle.fechaCorte)}`,
     MARGIN_X + 16,
     document.top + 79,
     {
