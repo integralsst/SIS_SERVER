@@ -16,6 +16,11 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 const LIMITE_HISTORIAL = 20;
 const CACHE_CONFIGURACION_MS = Number(
@@ -145,23 +150,35 @@ function usuarioEsCliente(
 
 function filtroAspectoHistorico(
   aspectoId: number,
+  identidadHistorica: string | null,
   codigo: string | null
 ): Prisma.EvaluacionAspectoWhereInput {
-  return codigo
-    ? {
-        aspecto: {
-          codigo,
-        },
-      }
-    : {
-        aspectoId,
-      };
+  if (identidadHistorica) {
+    return {
+      aspecto: {
+        identidadHistorica,
+      },
+    };
+  }
+
+  if (codigo) {
+    return {
+      aspecto: {
+        codigo,
+      },
+    };
+  }
+
+  return {
+    aspectoId,
+  };
 }
 
 async function resolverEmpresaPeriodo(
   empresaId: string,
   anio: number,
-  usuario: UsuarioSesionEvaluacion
+  usuario: UsuarioSesionEvaluacion,
+  gestionId?: string | null
 ) {
   validarAnio(anio);
 
@@ -182,14 +199,6 @@ async function resolverEmpresaPeriodo(
         id: true,
         anio: true,
         estado: true,
-        versionSupermatrizId: true,
-        versionSupermatriz: {
-          select: {
-            id: true,
-            nombre: true,
-            estado: true,
-          },
-        },
       },
     }),
   ]);
@@ -202,30 +211,26 @@ async function resolverEmpresaPeriodo(
     );
   }
 
+  const gestionActiva =
+    await resolverBorradorSeleccionado(
+      periodo.id,
+      usuario,
+      gestionId
+    );
+  const fechaCorte =
+    gestionActiva?.fechaGestion ?? construirCorteAnual(anio);
+  const versionAplicable =
+    await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+      fechaCorte
+    );
+
   return {
     empresa,
     periodo,
+    gestionActiva,
+    fechaCorte,
+    versionAplicable,
   };
-}
-
-async function buscarGestionActiva(
-  periodoId: string,
-  usuarioId: string
-) {
-  return prisma.gestionSgsst.findFirst({
-    where: {
-      empresaPeriodoId: periodoId,
-      usuarioCreadorId: usuarioId,
-      estado: EstadoGestionSgsst.BORRADOR,
-      valida: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    select: {
-      id: true,
-    },
-  });
 }
 
 const seleccionEvaluacionVigencia = {
@@ -255,14 +260,23 @@ async function buscarEvaluacionBorradorVigencia(
 async function buscarUltimaEvaluacionVigencia(
   empresaId: string,
   aspectoId: number,
-  codigo: string | null
+  identidadHistorica: string | null,
+  codigo: string | null,
+  fechaCorte: Date
 ) {
   return prisma.evaluacionAspecto.findFirst({
     where: {
-      ...filtroAspectoHistorico(aspectoId, codigo),
+      ...filtroAspectoHistorico(
+        aspectoId,
+        identidadHistorica,
+        codigo
+      ),
       gestion: {
         empresaPeriodo: {
           empresaId,
+        },
+        fechaGestion: {
+          lte: fechaCorte,
         },
         valida: true,
         estado: EstadoGestionSgsst.FINALIZADA,
@@ -276,6 +290,9 @@ async function buscarUltimaEvaluacionVigencia(
       },
       {
         createdAt: "desc",
+      },
+      {
+        id: "desc",
       },
     ],
     select: seleccionEvaluacionVigencia,
@@ -298,6 +315,7 @@ async function resolverTareaMinima(
       aspecto: {
         select: {
           id: true,
+          identidadHistorica: true,
           codigo: true,
           nombre: true,
         },
@@ -307,7 +325,7 @@ async function resolverTareaMinima(
 
   if (!tarea) {
     throw new ErrorEvaluacion(
-      "La fila seleccionada no pertenece a la versión de este periodo.",
+      "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
       404,
       "FILA_NO_ENCONTRADA"
     );
@@ -329,33 +347,27 @@ async function obtenerCompromisosHistorialAspecto(
   tarea: {
     aspectoId: number;
     aspecto: {
+      identidadHistorica: string;
       codigo: string | null;
       nombre: string;
     };
   },
   usuario: UsuarioSesionEvaluacion,
-  esCliente: boolean
+  esCliente: boolean,
+  fechaCorte: Date
 ) {
   const compromisos = await prisma.compromiso.findMany({
     where: {
       empresaId,
-      ...(tarea.aspecto.codigo
-        ? {
-            OR: [
-              {
-                aspectoCodigo:
-                  tarea.aspecto.codigo,
-              },
-              {
-                aspecto: {
-                  codigo: tarea.aspecto.codigo,
-                },
-              },
-            ],
-          }
-        : {
-            aspectoId: tarea.aspectoId,
-          }),
+      aspecto: {
+        identidadHistorica:
+          tarea.aspecto.identidadHistorica,
+      },
+      gestionOrigen: {
+        fechaGestion: {
+          lte: fechaCorte,
+        },
+      },
       ...(esCliente
         ? {
             responsables: {
@@ -676,7 +688,7 @@ async function obtenerConfiguracionCacheada(
 
   if (!tarea) {
     throw new ErrorEvaluacion(
-      "La fila seleccionada no pertenece a la versión de este periodo.",
+      "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
       404,
       "FILA_NO_ENCONTRADA"
     );
@@ -700,79 +712,81 @@ export const servicioDetalleAspectoRapido = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
-    const { empresa, periodo } =
-      await resolverEmpresaPeriodo(
-        empresaId,
-        anio,
-        usuario
-      );
+    const {
+      empresa,
+      periodo,
+      gestionActiva,
+      fechaCorte,
+      versionAplicable,
+    } = await resolverEmpresaPeriodo(
+      empresaId,
+      anio,
+      usuario,
+      gestionId
+    );
 
-    const [tarea, gestionActiva] = await Promise.all([
-      prisma.supermatrizTarea.findFirst({
-        where: {
-          id: tareaId,
-          versionSupermatrizId:
-            periodo.versionSupermatrizId,
-          estado: EstadoRegistro.ACTIVO,
+    const tarea = await prisma.supermatrizTarea.findFirst({
+      where: {
+        id: tareaId,
+        versionSupermatrizId:
+          versionAplicable.id,
+        estado: EstadoRegistro.ACTIVO,
+      },
+      select: {
+        id: true,
+        codigo: true,
+        orden: true,
+        aspectoId: true,
+        versionSupermatriz: {
+          select: {
+            id: true,
+            nombre: true,
+            estado: true,
+          },
         },
-        select: {
-          id: true,
-          codigo: true,
-          orden: true,
-          aspectoId: true,
-          versionSupermatriz: {
-            select: {
-              id: true,
-              nombre: true,
-              estado: true,
-            },
+        proceso: {
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            descripcion: true,
           },
-          proceso: {
-            select: {
-              id: true,
-              codigo: true,
-              nombre: true,
-              descripcion: true,
-            },
-          },
-          categoriasGestion: {
-            select: {
-              categoriaGestion: {
-                select: {
-                  id: true,
-                  codigo: true,
-                  nombre: true,
-                  descripcion: true,
-                },
+        },
+        categoriasGestion: {
+          select: {
+            categoriaGestion: {
+              select: {
+                id: true,
+                codigo: true,
+                nombre: true,
+                descripcion: true,
               },
             },
           },
-          aspecto: {
-            select: {
-              id: true,
-              codigo: true,
-              nombre: true,
-              configuracion: {
-                select: {
-                  esEvergreen: true,
-                },
+        },
+        aspecto: {
+          select: {
+            id: true,
+            identidadHistorica: true,
+            codigo: true,
+            nombre: true,
+            configuracion: {
+              select: {
+                esEvergreen: true,
               },
-              configuracionVigencia: true,
             },
+            configuracionVigencia: true,
           },
         },
-      }),
-      buscarGestionActiva(
-        periodo.id,
-        usuario.usuarioId
-      ),
-    ]);
+      },
+    });
 
     if (!tarea) {
       throw new ErrorEvaluacion(
-        "La fila seleccionada no pertenece a la versión de este periodo.",
+        "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
         404,
         "FILA_NO_ENCONTRADA"
       );
@@ -787,7 +801,9 @@ export const servicioDetalleAspectoRapido = {
         buscarUltimaEvaluacionVigencia(
           empresaId,
           tarea.aspectoId,
-          tarea.aspecto.codigo
+          tarea.aspecto.identidadHistorica,
+          tarea.aspecto.codigo,
+          fechaCorte
         ),
       ]);
 
@@ -804,12 +820,13 @@ export const servicioDetalleAspectoRapido = {
 
     return {
       empresa,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: {
         id: periodo.id,
         anio: periodo.anio,
         estado: periodo.estado,
         versionSupermatriz:
-          periodo.versionSupermatriz,
+          versionAplicable,
       },
       tarea: {
         id: tarea.id,
@@ -842,19 +859,23 @@ export const servicioDetalleAspectoRapido = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
-    const { periodo } = await resolverEmpresaPeriodo(
-      empresaId,
-      anio,
-      usuario
-    );
+    const { fechaCorte, versionAplicable } =
+      await resolverEmpresaPeriodo(
+        empresaId,
+        anio,
+        usuario,
+        gestionId
+      );
     const tarea = await obtenerConfiguracionCacheada(
       tareaId,
-      periodo.versionSupermatrizId
+      versionAplicable.id
     );
 
     return {
+      fechaCorte: fechaCorte.toISOString(),
       tarea: {
         id: tarea.id,
         codigo: tarea.codigo,
@@ -970,20 +991,25 @@ export const servicioDetalleAspectoRapido = {
     tareaId: number,
     anio: number,
     pagina: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     const paginaValida =
       Number.isInteger(pagina) && pagina > 0
         ? pagina
         : 1;
-    const { periodo } = await resolverEmpresaPeriodo(
+    const {
+      fechaCorte,
+      versionAplicable,
+    } = await resolverEmpresaPeriodo(
       empresaId,
       anio,
-      usuario
+      usuario,
+      gestionId
     );
     const tarea = await resolverTareaMinima(
       tareaId,
-      periodo.versionSupermatrizId
+      versionAplicable.id
     );
     const esCliente = usuarioEsCliente(usuario);
     const compromisos =
@@ -992,7 +1018,8 @@ export const servicioDetalleAspectoRapido = {
             empresaId,
             tarea,
             usuario,
-            esCliente
+            esCliente,
+            fechaCorte
           )
         : [];
 
@@ -1001,11 +1028,15 @@ export const servicioDetalleAspectoRapido = {
         where: {
           ...filtroAspectoHistorico(
             tarea.aspectoId,
+            tarea.aspecto.identidadHistorica,
             tarea.aspecto.codigo
           ),
           gestion: {
             empresaPeriodo: {
               empresaId,
+            },
+            fechaGestion: {
+              lte: fechaCorte,
             },
             ...(esCliente
               ? {
@@ -1034,6 +1065,9 @@ export const servicioDetalleAspectoRapido = {
           },
           {
             createdAt: "desc",
+          },
+          {
+            id: "desc",
           },
         ],
         skip: (paginaValida - 1) * LIMITE_HISTORIAL,
@@ -1129,6 +1163,7 @@ export const servicioDetalleAspectoRapido = {
     );
 
     return {
+      fechaCorte: fechaCorte.toISOString(),
       compromisos,
       historial: historial.map((evaluacion) => ({
         id: evaluacion.id,

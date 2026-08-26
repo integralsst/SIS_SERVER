@@ -16,6 +16,11 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 const inclusionEvaluacionDetalle = {
   gestion: {
@@ -144,17 +149,28 @@ function usuarioEsCliente(
 
 function filtroAspectoHistorico(
   aspectoId: number,
+  identidadHistorica: string | null,
   codigo: string | null
 ): Prisma.EvaluacionAspectoWhereInput {
-  return codigo
-    ? {
-        aspecto: {
-          codigo,
-        },
-      }
-    : {
-        aspectoId,
-      };
+  if (identidadHistorica) {
+    return {
+      aspecto: {
+        identidadHistorica,
+      },
+    };
+  }
+
+  if (codigo) {
+    return {
+      aspecto: {
+        codigo,
+      },
+    };
+  }
+
+  return {
+    aspectoId,
+  };
 }
 
 async function resolverEmpresaPeriodo(
@@ -219,6 +235,7 @@ async function resolverTareaMinima(
       aspecto: {
         select: {
           id: true,
+          identidadHistorica: true,
           codigo: true,
           nombre: true,
           configuracion: true,
@@ -283,14 +300,23 @@ async function buscarEvaluacionBorrador(
 async function buscarUltimaFinalizada(
   empresaId: string,
   aspectoId: number,
-  codigo: string | null
+  identidadHistorica: string | null,
+  codigo: string | null,
+  fechaCorte: Date
 ) {
   return prisma.evaluacionAspecto.findFirst({
     where: {
-      ...filtroAspectoHistorico(aspectoId, codigo),
+      ...filtroAspectoHistorico(
+        aspectoId,
+        identidadHistorica,
+        codigo
+      ),
       gestion: {
         empresaPeriodo: {
           empresaId,
+        },
+        fechaGestion: {
+          lte: fechaCorte,
         },
         valida: true,
         estado: EstadoGestionSgsst.FINALIZADA,
@@ -304,6 +330,9 @@ async function buscarUltimaFinalizada(
       },
       {
         createdAt: "desc",
+      },
+      {
+        id: "desc",
       },
     ],
     include: inclusionEvaluacionDetalle,
@@ -407,7 +436,8 @@ export const servicioDetalleAspectoSecciones = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     const { empresa, periodo } =
       await resolverEmpresaPeriodo(
@@ -416,12 +446,24 @@ export const servicioDetalleAspectoSecciones = {
         usuario
       );
 
-    const [tarea, gestionActiva] = await Promise.all([
-      prisma.supermatrizTarea.findFirst({
+    const gestionActiva =
+      await resolverBorradorSeleccionado(
+        periodo.id,
+        usuario,
+        gestionId
+      );
+    const fechaCorte =
+      gestionActiva?.fechaGestion ?? construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+
+    const tarea = await prisma.supermatrizTarea.findFirst({
         where: {
           id: tareaId,
           versionSupermatrizId:
-            periodo.versionSupermatrizId,
+            versionAplicable.id,
           estado: EstadoRegistro.ACTIVO,
         },
         include: {
@@ -492,12 +534,7 @@ export const servicioDetalleAspectoSecciones = {
             },
           },
         },
-      }),
-      buscarGestionActiva(
-        periodo.id,
-        usuario.usuarioId
-      ),
-    ]);
+      });
 
     if (!tarea) {
       throw new ErrorEvaluacion(
@@ -516,7 +553,9 @@ export const servicioDetalleAspectoSecciones = {
         buscarUltimaFinalizada(
           empresaId,
           tarea.aspectoId,
-          tarea.aspecto.codigo
+          tarea.aspecto.identidadHistorica,
+          tarea.aspecto.codigo,
+          fechaCorte
         ),
       ]);
 
@@ -539,7 +578,7 @@ export const servicioDetalleAspectoSecciones = {
         anio: periodo.anio,
         estado: periodo.estado,
         versionSupermatriz:
-          periodo.versionSupermatriz,
+          versionAplicable,
       },
       tarea: {
         id: tarea.id,
@@ -686,9 +725,14 @@ export const servicioDetalleAspectoSecciones = {
       anio,
       usuario
     );
+    const fechaCorte = construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
     const tarea = await resolverTareaMinima(
       tareaId,
-      periodo.versionSupermatrizId
+      versionAplicable.id
     );
     const esCliente = usuarioEsCliente(usuario);
 
@@ -697,11 +741,15 @@ export const servicioDetalleAspectoSecciones = {
         where: {
           ...filtroAspectoHistorico(
             tarea.aspectoId,
+            tarea.aspecto.identidadHistorica,
             tarea.aspecto.codigo
           ),
           gestion: {
             empresaPeriodo: {
               empresaId,
+            },
+            fechaGestion: {
+              lte: fechaCorte,
             },
             ...(esCliente
               ? {
@@ -789,7 +837,9 @@ export const servicioDetalleAspectoSecciones = {
         buscarUltimaFinalizada(
           empresaId,
           tarea.aspectoId,
-          tarea.aspecto.codigo
+          tarea.aspecto.identidadHistorica,
+          tarea.aspecto.codigo,
+          construirCorteAnual(anio)
         ),
       ]);
 
@@ -981,12 +1031,16 @@ export const servicioDetalleAspectoSecciones = {
         prisma.evaluacionAspecto.findMany({
           where: {
             ...filtroAspectoHistorico(
-              tarea.aspectoId,
-              tarea.aspecto.codigo
-            ),
+    tarea.aspectoId,
+    tarea.aspecto.identidadHistorica,
+    tarea.aspecto.codigo
+  ),
             gestion: {
               empresaPeriodo: {
                 empresaId,
+              },
+              fechaGestion: {
+                lte: construirCorteAnual(anio),
               },
               OR: [
                 {

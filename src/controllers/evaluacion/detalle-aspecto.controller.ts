@@ -13,6 +13,7 @@ import {
   enriquecerTrazabilidadConEvidencias,
 } from "../../services/evaluacion/estado-evidencia-aspecto.service";
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
+import { enriquecerTrazabilidadConAuditoriaTemporal } from "../../services/evaluacion/trazabilidad-auditoria-temporal.service";
 import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
@@ -142,12 +143,13 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-aspecto",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({ empresaId, tareaId, anio, gestionId, usuario }) =>
         servicioDetalleAspecto.obtener(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
@@ -160,19 +162,26 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoSecciones.obtenerResumen(
             empresaId,
             tareaId,
             anio,
-            usuario
+            usuario,
+            gestionId
           );
 
         return enriquecerDetalleConEstadoEvidencia(
           resultado,
           usuario,
-          { empresaId, tareaId, anio }
+          { empresaId, tareaId, anio, gestionId }
         );
       }
     );
@@ -211,12 +220,19 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-resumen-configuracion",
-      ({ empresaId, tareaId, anio, usuario }) =>
+      ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) =>
         servicioDetalleAspectoRapido.obtenerConfiguracion(
           empresaId,
           tareaId,
           anio,
-          usuario
+          usuario,
+          gestionId
         )
     );
   },
@@ -229,13 +245,26 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-historial",
-      ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoSecciones.obtenerHistorial(
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
+        const detalle = await servicioDetalleAspecto.obtener(
           empresaId,
           tareaId,
           anio,
-          usuario
-        )
+          usuario,
+          gestionId
+        );
+
+        return {
+          fechaCorte: detalle.fechaCorte,
+          historial: detalle.historial,
+        };
+      }
     );
   },
 
@@ -249,31 +278,44 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-historial-paginado",
-      async ({ empresaId, tareaId, anio, usuario }) => {
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
         const resultado =
           await servicioDetalleAspectoRapido.obtenerHistorialPaginado(
             empresaId,
             tareaId,
             anio,
             pagina,
-            usuario
+            usuario,
+            gestionId
           );
         const conResultadoEfectivo =
           await enriquecerHistorialConResultadoEfectivo(
             resultado
           );
-        const conTrazabilidad =
+        // La trazabilidad base conserva evaluaciones, controles y compromisos.
+        // Auditoría se agrega después por identidad histórica y fecha de corte.
+        const conTrazabilidadBase =
           await enriquecerHistorialConTrazabilidad(
-            conResultadoEfectivo,
+            conResultadoEfectivo
+          );
+        const conAuditoriaTemporal =
+          await enriquecerTrazabilidadConAuditoriaTemporal(
+            conTrazabilidadBase,
             {
               empresaId,
               tareaId,
-              anio,
+              fechaCorte: new Date(resultado.fechaCorte),
             }
           );
 
         return enriquecerTrazabilidadConEvidencias(
-          conTrazabilidad as unknown as Parameters<
+          conAuditoriaTemporal as unknown as Parameters<
             typeof enriquecerTrazabilidadConEvidencias
           >[0]
         );
@@ -308,7 +350,7 @@ export const controladorDetalleAspecto = {
         return enriquecerDetalleConEstadoEvidencia(
           resultado,
           usuario,
-          { empresaId, tareaId, anio }
+          { empresaId, tareaId, anio, gestionId }
         );
       }
     );

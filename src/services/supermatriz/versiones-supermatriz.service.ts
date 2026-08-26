@@ -5,6 +5,7 @@ import {
 
 import { prisma } from "../../lib/prisma";
 import { clonarVersionSupermatrizPorEtapas } from "./clonar-version-supermatriz.service";
+import { limpiarVersionClonadaIncompleta } from "./limpiar-version-clonada.service";
 import type {
   DatosClonarVersion,
   DatosVersionSupermatriz,
@@ -36,6 +37,133 @@ const incluirVersionDetalle = {
     },
   },
 } satisfies Prisma.VersionSupermatrizInclude;
+
+function finDiaAnterior(fecha: Date): Date {
+  return new Date(Date.UTC(
+    fecha.getUTCFullYear(),
+    fecha.getUTCMonth(),
+    fecha.getUTCDate() - 1,
+    12,
+    0,
+    0,
+    0
+  ));
+}
+
+function claveLinajeAspecto(aspecto: {
+  codigo: string | null;
+  nombre: string;
+  estandar: {
+    codigo: string | null;
+    nombre: string;
+    categoriaEstandar: {
+      codigo: string | null;
+      nombre: string;
+      cicloPhva: {
+        codigo: string;
+      };
+    };
+  };
+}): string {
+  const categoria = aspecto.estandar.categoriaEstandar;
+
+  return [
+    categoria.cicloPhva.codigo,
+    categoria.codigo ?? "",
+    categoria.nombre,
+    aspecto.estandar.codigo ?? "",
+    aspecto.estandar.nombre,
+    aspecto.codigo ?? "",
+    aspecto.nombre,
+  ].join("::");
+}
+
+async function sincronizarIdentidadesAspectosClonados(
+  versionOrigenId: number,
+  versionNuevaId: number
+): Promise<void> {
+  const seleccion = {
+    id: true,
+    identidadHistorica: true,
+    codigo: true,
+    nombre: true,
+    estandar: {
+      select: {
+        codigo: true,
+        nombre: true,
+        categoriaEstandar: {
+          select: {
+            codigo: true,
+            nombre: true,
+            cicloPhva: {
+              select: {
+                codigo: true,
+              },
+            },
+          },
+        },
+      },
+    },
+  } satisfies Prisma.AspectoSelect;
+
+  const [origen, destino] = await Promise.all([
+    prisma.aspecto.findMany({
+      where: { versionSupermatrizId: versionOrigenId },
+      select: seleccion,
+    }),
+    prisma.aspecto.findMany({
+      where: { versionSupermatrizId: versionNuevaId },
+      select: seleccion,
+    }),
+  ]);
+
+  if (origen.length !== destino.length) {
+    throw new ErrorValidacionSupermatriz(
+      "La versión clonada no contiene la misma cantidad de aspectos que su origen."
+    );
+  }
+
+  const origenPorClave = new Map(
+    origen.map((aspecto) => [
+      claveLinajeAspecto(aspecto),
+      aspecto.identidadHistorica,
+    ])
+  );
+  const destinoPorClave = new Map(
+    destino.map((aspecto) => [
+      claveLinajeAspecto(aspecto),
+      aspecto,
+    ])
+  );
+
+  if (
+    origenPorClave.size !== origen.length ||
+    destinoPorClave.size !== destino.length
+  ) {
+    throw new ErrorValidacionSupermatriz(
+      "La clonación contiene claves de aspecto ambiguas y no es seguro inferir su identidad histórica."
+    );
+  }
+
+  const actualizaciones = destino.map((aspecto) => {
+    const identidadHistorica = origenPorClave.get(
+      claveLinajeAspecto(aspecto)
+    );
+
+    if (!identidadHistorica) {
+      throw new ErrorValidacionSupermatriz(
+        `No fue posible conservar la identidad histórica del aspecto "${aspecto.nombre}" durante la clonación.`
+      );
+    }
+
+    return prisma.aspecto.update({
+      where: { id: aspecto.id },
+      data: { identidadHistorica },
+    });
+  });
+
+  await prisma.$transaction(actualizaciones);
+}
 
 export const servicioVersionesSupermatriz = {
   obtenerTodas: () =>
@@ -237,27 +365,62 @@ export const servicioVersionesSupermatriz = {
       }
 
       const anterior =
-        await tx.versionSupermatriz.findUniqueOrThrow(
-          {
-            where: {
-              id,
-            },
-          }
-        );
+        await tx.versionSupermatriz.findUniqueOrThrow({
+          where: { id },
+        });
 
-      await tx.versionSupermatriz.updateMany({
-        where: {
-          estado:
-            EstadoVersionSupermatriz.VIGENTE,
-          id: {
-            not: id,
+      const vigentesActuales =
+        await tx.versionSupermatriz.findMany({
+          where: {
+            estado: EstadoVersionSupermatriz.VIGENTE,
+            id: { not: id },
           },
-        },
-        data: {
-          estado:
-            EstadoVersionSupermatriz.CERRADA,
-        },
-      });
+          orderBy: [
+            { vigenteDesde: "desc" },
+            { id: "desc" },
+          ],
+        });
+
+      if (vigentesActuales.length > 1) {
+        throw new ErrorValidacionSupermatriz(
+          "Existe más de una versión vigente de la Supermatriz. Corrige esa inconsistencia antes de publicar una nueva versión."
+        );
+      }
+
+      if (vigentesActuales.length === 1) {
+        const vigenteActual = vigentesActuales[0];
+
+        if (anterior.clonadaDeId !== vigenteActual.id) {
+          throw new ErrorValidacionSupermatriz(
+            `La versión sucesora debe crearse clonando la versión vigente "${vigenteActual.nombre}". Esto conserva la identidad histórica de los aspectos.`
+          );
+        }
+
+        if (!anterior.vigenteDesde) {
+          throw new ErrorValidacionSupermatriz(
+            "Indica la fecha desde la cual empezará a aplicar la nueva versión."
+          );
+        }
+
+        if (
+          vigenteActual.vigenteDesde &&
+          anterior.vigenteDesde <= vigenteActual.vigenteDesde
+        ) {
+          throw new ErrorValidacionSupermatriz(
+            "La nueva versión debe iniciar después de la versión actualmente vigente."
+          );
+        }
+
+        await tx.versionSupermatriz.update({
+          where: {
+            id: vigenteActual.id,
+          },
+          data: {
+            estado: EstadoVersionSupermatriz.CERRADA,
+            vigenteHasta: finDiaAnterior(anterior.vigenteDesde),
+          },
+        });
+      }
 
       const publicada =
         await tx.versionSupermatriz.update({
@@ -265,8 +428,8 @@ export const servicioVersionesSupermatriz = {
             id,
           },
           data: {
-            estado:
-              EstadoVersionSupermatriz.VIGENTE,
+            estado: EstadoVersionSupermatriz.VIGENTE,
+            vigenteHasta: null,
           },
         });
 
@@ -277,7 +440,11 @@ export const servicioVersionesSupermatriz = {
             "VersionSupermatriz",
           entidadId: id,
           accion: "PUBLICAR",
-          descripcion: `La versión ${publicada.nombre} fue publicada como vigente.`,
+          descripcion: `La versión ${publicada.nombre} fue publicada como vigente desde ${
+            publicada.vigenteDesde
+              ? publicada.vigenteDesde.toISOString().slice(0, 10)
+              : "el inicio de la operación"
+          }.`,
           datosAntes:
             comoJsonPrisma(anterior),
           datosDespues:
@@ -308,6 +475,15 @@ export const servicioVersionesSupermatriz = {
         EstadoVersionSupermatriz.CERRADA
       ) {
         return anterior;
+      }
+
+      if (
+        anterior.estado ===
+        EstadoVersionSupermatriz.VIGENTE
+      ) {
+        throw new ErrorValidacionSupermatriz(
+          "Una versión vigente solo puede cerrarse al publicar su versión sucesora. Así se conserva la continuidad temporal de la Supermatriz."
+        );
       }
 
       const cerrada =
@@ -351,6 +527,18 @@ export const servicioVersionesSupermatriz = {
         data,
         usuarioId
       );
+
+    try {
+      await sincronizarIdentidadesAspectosClonados(
+        id,
+        nuevaVersionId
+      );
+    } catch (error) {
+      await limpiarVersionClonadaIncompleta(
+        nuevaVersionId
+      );
+      throw error;
+    }
 
     return prisma.versionSupermatriz.findUniqueOrThrow({
       where: {

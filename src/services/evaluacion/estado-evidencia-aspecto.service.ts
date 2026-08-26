@@ -8,6 +8,10 @@ import {
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { asegurarAccesoGestion } from "./acceso-evaluacion.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 export type EstadoEvidenciaAspecto =
   | "NO_REQUERIDA"
@@ -44,6 +48,7 @@ interface ContextoDetalleEvidencia {
   empresaId: string;
   tareaId: number;
   anio: number;
+  gestionId?: string | null;
 }
 
 const seleccionEstadoEvidencia = {
@@ -318,19 +323,42 @@ async function buscarUltimaFinalizadaPeriodo(
     },
     select: {
       id: true,
-      versionSupermatrizId: true,
     },
   });
 
   if (!periodo) return null;
 
+  const gestionSeleccionada = contexto.gestionId
+    ? await prisma.gestionSgsst.findFirst({
+        where: {
+          id: contexto.gestionId,
+          empresaPeriodoId: periodo.id,
+          valida: true,
+        },
+        select: {
+          fechaGestion: true,
+        },
+      })
+    : null;
+  const fechaCorte =
+    gestionSeleccionada?.fechaGestion ??
+    construirCorteAnual(contexto.anio);
+  const versionAplicable =
+    await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+      fechaCorte
+    );
+
   const tarea = await prisma.supermatrizTarea.findFirst({
     where: {
       id: contexto.tareaId,
-      versionSupermatrizId: periodo.versionSupermatrizId,
+      versionSupermatrizId: versionAplicable.id,
     },
     select: {
-      aspectoId: true,
+      aspecto: {
+        select: {
+          identidadHistorica: true,
+        },
+      },
     },
   });
 
@@ -338,9 +366,17 @@ async function buscarUltimaFinalizadaPeriodo(
 
   return prisma.evaluacionAspecto.findFirst({
     where: {
-      aspectoId: tarea.aspectoId,
+      aspecto: {
+        identidadHistorica:
+          tarea.aspecto.identidadHistorica,
+      },
       gestion: {
-        empresaPeriodoId: periodo.id,
+        empresaPeriodo: {
+          empresaId: contexto.empresaId,
+        },
+        fechaGestion: {
+          lte: fechaCorte,
+        },
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
       },

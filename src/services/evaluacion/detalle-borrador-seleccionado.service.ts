@@ -9,6 +9,10 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 const inclusionEvaluacionDetalle = {
   gestion: {
@@ -110,22 +114,32 @@ function nombrePersona(
 
 function filtroAspectoHistorico(
   aspectoId: number,
+  identidadHistorica: string | null,
   codigo: string | null
 ): Prisma.EvaluacionAspectoWhereInput {
-  return codigo
-    ? {
-        aspecto: {
-          codigo,
-        },
-      }
-    : {
-        aspectoId,
-      };
+  if (identidadHistorica) {
+    return {
+      aspecto: {
+        identidadHistorica,
+      },
+    };
+  }
+
+  if (codigo) {
+    return {
+      aspecto: {
+        codigo,
+      },
+    };
+  }
+
+  return {
+    aspectoId,
+  };
 }
 
-async function resolverPeriodoYTarea(
+async function resolverPeriodo(
   empresaId: string,
-  tareaId: number,
   anio: number
 ) {
   const periodo = await prisma.empresaPeriodo.findUnique({
@@ -137,7 +151,6 @@ async function resolverPeriodoYTarea(
     },
     select: {
       id: true,
-      versionSupermatrizId: true,
     },
   });
 
@@ -149,16 +162,29 @@ async function resolverPeriodoYTarea(
     );
   }
 
+  return periodo;
+}
+
+async function resolverTareaParaFecha(
+  tareaId: number,
+  fechaCorte: Date
+) {
+  const versionAplicable =
+    await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+      fechaCorte
+    );
+
   const tarea = await prisma.supermatrizTarea.findFirst({
     where: {
       id: tareaId,
-      versionSupermatrizId: periodo.versionSupermatrizId,
+      versionSupermatrizId: versionAplicable.id,
       estado: EstadoRegistro.ACTIVO,
     },
     select: {
       aspectoId: true,
       aspecto: {
         select: {
+          identidadHistorica: true,
           codigo: true,
         },
       },
@@ -167,16 +193,13 @@ async function resolverPeriodoYTarea(
 
   if (!tarea) {
     throw new ErrorEvaluacion(
-      "La fila seleccionada no pertenece a la versión de este periodo.",
+      "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
       404,
       "FILA_NO_ENCONTRADA"
     );
   }
 
-  return {
-    periodo,
-    tarea,
-  };
+  return tarea;
 }
 
 async function buscarEvaluacionBorrador(
@@ -199,14 +222,23 @@ async function buscarEvaluacionBorrador(
 async function buscarUltimaFinalizada(
   empresaId: string,
   aspectoId: number,
-  codigo: string | null
+  identidadHistorica: string | null,
+  codigo: string | null,
+  fechaCorte: Date
 ): Promise<EvaluacionDetalle | null> {
   return prisma.evaluacionAspecto.findFirst({
     where: {
-      ...filtroAspectoHistorico(aspectoId, codigo),
+      ...filtroAspectoHistorico(
+        aspectoId,
+        identidadHistorica,
+        codigo
+      ),
       gestion: {
         empresaPeriodo: {
           empresaId,
+        },
+        fechaGestion: {
+          lte: fechaCorte,
         },
         valida: true,
         estado: EstadoGestionSgsst.FINALIZADA,
@@ -220,6 +252,9 @@ async function buscarUltimaFinalizada(
       },
       {
         createdAt: "desc",
+      },
+      {
+        id: "desc",
       },
     ],
     include: inclusionEvaluacionDetalle,
@@ -310,15 +345,20 @@ export const servicioDetalleBorradorSeleccionado = {
     usuario: UsuarioSesionEvaluacion,
     gestionId?: string | null
   ) => {
-    const { periodo, tarea } = await resolverPeriodoYTarea(
+    const periodo = await resolverPeriodo(
       empresaId,
-      tareaId,
       anio
     );
     const gestion = await resolverBorradorSeleccionado(
       periodo.id,
       usuario,
       gestionId
+    );
+    const fechaCorte =
+      gestion?.fechaGestion ?? construirCorteAnual(anio);
+    const tarea = await resolverTareaParaFecha(
+      tareaId,
+      fechaCorte
     );
     const [evaluacionBorrador, ultimaFinalizada] =
       await Promise.all([
@@ -329,7 +369,9 @@ export const servicioDetalleBorradorSeleccionado = {
         buscarUltimaFinalizada(
           empresaId,
           tarea.aspectoId,
-          tarea.aspecto.codigo
+          tarea.aspecto.identidadHistorica,
+          tarea.aspecto.codigo,
+          fechaCorte
         ),
       ]);
 
@@ -369,22 +411,10 @@ export const servicioDetalleBorradorSeleccionado = {
               : {}),
             compromiso: {
               empresaId,
-              ...(tarea.aspecto.codigo
-                ? {
-                    OR: [
-                      {
-                        aspectoCodigo: tarea.aspecto.codigo,
-                      },
-                      {
-                        aspecto: {
-                          codigo: tarea.aspecto.codigo,
-                        },
-                      },
-                    ],
-                  }
-                : {
-                    aspectoId: tarea.aspectoId,
-                  }),
+              aspecto: {
+                identidadHistorica:
+                  tarea.aspecto.identidadHistorica,
+              },
               ...(esCliente
                 ? {
                     responsables: {
@@ -488,15 +518,20 @@ export const servicioDetalleBorradorSeleccionado = {
       };
     }
 
-    const { periodo, tarea } = await resolverPeriodoYTarea(
+    const periodo = await resolverPeriodo(
       empresaId,
-      tareaId,
       anio
     );
     const gestion = await resolverBorradorSeleccionado(
       periodo.id,
       usuario,
       gestionId
+    );
+    const fechaCorte =
+      gestion?.fechaGestion ?? construirCorteAnual(anio);
+    const tarea = await resolverTareaParaFecha(
+      tareaId,
+      fechaCorte
     );
 
     const [evaluacionBorrador, historial] =
@@ -509,11 +544,15 @@ export const servicioDetalleBorradorSeleccionado = {
           where: {
             ...filtroAspectoHistorico(
               tarea.aspectoId,
+              tarea.aspecto.identidadHistorica,
               tarea.aspecto.codigo
             ),
             gestion: {
               empresaPeriodo: {
                 empresaId,
+              },
+              fechaGestion: {
+                lte: fechaCorte,
               },
               OR: [
                 {

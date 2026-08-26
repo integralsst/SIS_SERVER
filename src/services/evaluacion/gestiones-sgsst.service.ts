@@ -16,6 +16,7 @@ import {
   ErrorEvaluacion,
 } from "../../utils/evaluacion";
 import { asegurarAccesoPeriodo } from "./acceso-evaluacion.service";
+import { servicioPeriodosEvaluacion } from "./periodos-evaluacion.service";
 import { accionVinculoCorreccionRevision } from "./revisiones/revision-tecnica-vinculo";
 
 async function asegurarSinBorradorCreadoPorUsuario(
@@ -209,6 +210,20 @@ export const servicioGestionesSgsst = {
       "fechaGestion",
       true
     ) as Date;
+
+    if (fechaGestion.getUTCFullYear() !== periodo.anio) {
+      throw new ErrorEvaluacion(
+        `La fecha de la gestión debe pertenecer al periodo ${periodo.anio}.`,
+        409,
+        "FECHA_GESTION_FUERA_PERIODO"
+      );
+    }
+
+    // La estructura aplicable depende de la fecha real de la gestión,
+    // no de una versión anual fijada al abrir el periodo.
+    await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+      fechaGestion
+    );
 
     await asegurarSinBorradorCreadoPorUsuario(
       periodoId,

@@ -8,6 +8,10 @@ import {
   servicioInformesPeriodo,
   type GenerarInformePeriodoInput,
 } from "../../services/evaluacion/informes-periodo.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "../../services/evaluacion/periodos-evaluacion.service";
 import { validarAnio } from "../../utils/evaluacion";
 import {
   obtenerParametroRuta,
@@ -34,13 +38,35 @@ export const controladorInformesPeriodo = {
     res: Response
   ): Promise<void> => {
     try {
+      const anio = obtenerAnio(req);
       const resultado = await servicioInformesPeriodo.listar(
         obtenerParametroRuta(req, "empresaId"),
-        obtenerAnio(req),
+        anio,
         obtenerUsuarioSesion(req)
       );
 
-      res.status(200).json(resultado);
+      if (!resultado.periodo) {
+        res.status(200).json(resultado);
+        return;
+      }
+
+      const fechaCorte = construirCorteAnual(anio);
+      const versionAplicable =
+        await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+          fechaCorte
+        );
+
+      res.status(200).json({
+        ...resultado,
+        fechaCorte: fechaCorte.toISOString(),
+        periodo: {
+          ...resultado.periodo,
+          versionSupermatriz: {
+            id: versionAplicable.id,
+            nombre: versionAplicable.nombre,
+          },
+        },
+      });
     } catch (error) {
       responderErrorEvaluacion(error, res);
     }

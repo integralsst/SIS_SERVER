@@ -1,9 +1,14 @@
 import {
   CodigoGrupoMinisterial,
-  EstadoGestionSgsst,
+  EstadoRegistro,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
+import { servicioEstadoAspectosAlCorte } from "./estado-aspectos-al-corte.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
 export interface ConteoProvisionalesResultado {
@@ -49,6 +54,33 @@ function acumularCausa(
   }
 }
 
+const seleccionEvaluacionProvisional = {
+  id: true,
+  aspectoId: true,
+  estadoCumplimiento: true,
+  calificacionAdministrativa: true,
+  decisionNoAplica: {
+    select: {
+      estado: true,
+      resultadoEfectivo: true,
+    },
+  },
+  revisionTecnica: {
+    select: {
+      estado: true,
+    },
+  },
+  aprobacionGestion: {
+    select: {
+      aprobacionGestion: {
+        select: {
+          estado: true,
+        },
+      },
+    },
+  },
+} as const;
+
 export const servicioEstadoProvisionalResultados = {
   obtener: async (
     empresaId: string,
@@ -78,53 +110,27 @@ export const servicioEstadoProvisionalResultados = {
       };
     }
 
-    const evaluaciones = await prisma.evaluacionAspecto.findMany({
+    const fechaCorte = construirCorteAnual(anio);
+    const version =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+    const tareas = await prisma.supermatrizTarea.findMany({
       where: {
-        gestion: {
-          empresaPeriodoId: periodo.id,
-          estado: EstadoGestionSgsst.FINALIZADA,
-          valida: true,
+        versionSupermatrizId: version.id,
+        estado: EstadoRegistro.ACTIVO,
+        aspecto: {
+          estado: EstadoRegistro.ACTIVO,
+          estandar: {
+            estado: EstadoRegistro.ACTIVO,
+          },
         },
       },
-      orderBy: [
-        {
-          gestion: {
-            fechaGestion: "desc",
-          },
-        },
-        {
-          createdAt: "desc",
-        },
-        {
-          id: "desc",
-        },
-      ],
       select: {
-        aspectoId: true,
-        estadoCumplimiento: true,
-        calificacionAdministrativa: true,
-        decisionNoAplica: {
-          select: {
-            estado: true,
-            resultadoEfectivo: true,
-          },
-        },
-        revisionTecnica: {
-          select: {
-            estado: true,
-          },
-        },
-        aprobacionGestion: {
-          select: {
-            aprobacionGestion: {
-              select: {
-                estado: true,
-              },
-            },
-          },
-        },
         aspecto: {
           select: {
+            id: true,
+            identidadHistorica: true,
             estandar: {
               select: {
                 id: true,
@@ -143,17 +149,19 @@ export const servicioEstadoProvisionalResultados = {
         },
       },
     });
-
-    const ultimas = new Map<
-      number,
-      (typeof evaluaciones)[number]
-    >();
-
-    for (const evaluacion of evaluaciones) {
-      if (!ultimas.has(evaluacion.aspectoId)) {
-        ultimas.set(evaluacion.aspectoId, evaluacion);
-      }
-    }
+    const aspectosActuales = new Map(
+      tareas.map(({ aspecto }) => [aspecto.id, aspecto])
+    );
+    const evaluaciones =
+      await servicioEstadoAspectosAlCorte.obtenerUltimasEvaluaciones(
+        empresaId,
+        [...aspectosActuales.values()].map((aspecto) => ({
+          id: aspecto.id,
+          identidadHistorica: aspecto.identidadHistorica,
+        })),
+        fechaCorte,
+        seleccionEvaluacionProvisional
+      );
 
     const resumenEmpresa = crearConteoVacio();
     const estandares = new Map<
@@ -161,17 +169,20 @@ export const servicioEstadoProvisionalResultados = {
       ConteoProvisionalesResultado
     >();
 
-    for (const evaluacion of ultimas.values()) {
+    for (const [aspectoId, evaluacion] of evaluaciones) {
       if (
         opciones.aspectoIdsPermitidos &&
-        !opciones.aspectoIdsPermitidos.has(evaluacion.aspectoId)
+        !opciones.aspectoIdsPermitidos.has(aspectoId)
       ) {
         continue;
       }
 
+      const aspecto = aspectosActuales.get(aspectoId);
+      if (!aspecto) continue;
+
       const coincideGrupo =
         grupo === "TODOS" ||
-        evaluacion.aspecto.estandar.gruposMinisteriales.some(
+        aspecto.estandar.gruposMinisteriales.some(
           ({ grupoMinisterial }) =>
             grupoMinisterial.codigo === grupo
         );
@@ -181,7 +192,11 @@ export const servicioEstadoProvisionalResultados = {
       }
 
       const resultado =
-        resolverResultadoEfectivoEvaluacion(evaluacion);
+        resolverResultadoEfectivoEvaluacion(
+          evaluacion as Parameters<
+            typeof resolverResultadoEfectivoEvaluacion
+          >[0]
+        );
 
       if (!resultado.provisional) {
         continue;
@@ -189,7 +204,7 @@ export const servicioEstadoProvisionalResultados = {
 
       acumularCausa(resumenEmpresa, resultado.causa);
 
-      const estandarId = evaluacion.aspecto.estandar.id;
+      const estandarId = aspecto.estandar.id;
       const conteoEstandar =
         estandares.get(estandarId) ?? crearConteoVacio();
 

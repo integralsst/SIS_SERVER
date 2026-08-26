@@ -24,23 +24,23 @@ import {
   asegurarAccesoGestion,
   asegurarCapacidadParticipanteGestion,
 } from "./acceso-evaluacion.service";
+import { servicioPeriodosEvaluacion } from "./periodos-evaluacion.service";
 
 async function guardarUnaEvaluacion(
   tx: Prisma.TransactionClient,
   gestion: Awaited<ReturnType<typeof asegurarAccesoGestion>>,
+  versionSupermatrizId: number,
   input: GuardarEvaluacionesLoteInput["evaluaciones"][number],
   usuario: UsuarioSesionEvaluacion
 ) {
   const contexto = await tx.aspecto.findFirst({
     where: {
       id: input.aspectoId,
-      versionSupermatrizId:
-        gestion.empresaPeriodo.versionSupermatrizId,
+      versionSupermatrizId,
       estado: EstadoRegistro.ACTIVO,
       tareas: {
         some: {
-          versionSupermatrizId:
-            gestion.empresaPeriodo.versionSupermatrizId,
+          versionSupermatrizId,
           estado: EstadoRegistro.ACTIVO,
           ...(input.supermatrizTareaId
             ? {
@@ -59,7 +59,9 @@ async function guardarUnaEvaluacion(
 
   if (!contexto) {
     throw new ErrorEvaluacion(
-      `El aspecto ${input.aspectoId} no pertenece a la versión utilizada por el periodo.`
+      `El aspecto ${input.aspectoId} no pertenece a la versión de la Supermatriz aplicable en la fecha de la gestión.`,
+      409,
+      "ASPECTO_FUERA_VERSION_APLICABLE"
     );
   }
 
@@ -304,6 +306,11 @@ export const servicioEvaluacionesAspecto = {
       );
     }
 
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        gestion.fechaGestion
+      );
+
     /*
      * La base de Stack44 es remota. Guardamos en bloques pequeños para
      * evitar una transacción interactiva demasiado larga. El endpoint es
@@ -331,6 +338,7 @@ export const servicioEvaluacionesAspecto = {
               await guardarUnaEvaluacion(
                 tx,
                 gestion,
+                versionAplicable.id,
                 evaluacion,
                 usuario
               )

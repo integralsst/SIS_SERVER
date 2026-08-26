@@ -1,10 +1,15 @@
 import {
   CodigoGrupoMinisterial,
-  EstadoGestionSgsst,
+  EstadoRegistro,
 } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
 import { resolverEstadoEvidenciaAspecto } from "./estado-evidencia-aspecto.service";
+import { servicioEstadoAspectosAlCorte } from "./estado-aspectos-al-corte.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 export interface OpcionesEstadoDocumentalInformes {
   aspectoIdsPermitidos?: ReadonlySet<number>;
@@ -26,6 +31,40 @@ export interface EstadoDocumentalInforme {
   evidenciasPendientes: number;
   aspectosPendientes: AspectoEvidenciaPendienteInforme[];
 }
+
+const seleccionEvaluacionDocumental = {
+  id: true,
+  aspectoId: true,
+  estadoCumplimiento: true,
+  calificacionAdministrativa: true,
+  evidencias: {
+    where: {
+      activo: true,
+    },
+    select: {
+      id: true,
+    },
+    take: 1,
+  },
+  seguimientosCompromiso: {
+    select: {
+      compromiso: {
+        select: {
+          id: true,
+          evidencias: {
+            where: {
+              activa: true,
+            },
+            select: {
+              id: true,
+            },
+            take: 1,
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 export const servicioEstadoDocumentalInformes = {
   obtener: async (
@@ -53,66 +92,30 @@ export const servicioEstadoDocumentalInformes = {
       };
     }
 
-    const evaluaciones = await prisma.evaluacionAspecto.findMany({
+    const fechaCorte = construirCorteAnual(anio);
+    const version =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+    const tareas = await prisma.supermatrizTarea.findMany({
       where: {
+        versionSupermatrizId: version.id,
+        estado: EstadoRegistro.ACTIVO,
         aspecto: {
+          estado: EstadoRegistro.ACTIVO,
           configuracionEvidencia: {
             requiereEvidencia: true,
           },
-        },
-        gestion: {
-          empresaPeriodoId: periodo.id,
-          estado: EstadoGestionSgsst.FINALIZADA,
-          valida: true,
+          estandar: {
+            estado: EstadoRegistro.ACTIVO,
+          },
         },
       },
-      orderBy: [
-        {
-          gestion: {
-            fechaGestion: "desc",
-          },
-        },
-        {
-          createdAt: "desc",
-        },
-        {
-          id: "desc",
-        },
-      ],
       select: {
-        id: true,
-        aspectoId: true,
-        estadoCumplimiento: true,
-        calificacionAdministrativa: true,
-        evidencias: {
-          where: {
-            activo: true,
-          },
-          select: {
-            id: true,
-          },
-          take: 1,
-        },
-        seguimientosCompromiso: {
-          select: {
-            compromiso: {
-              select: {
-                id: true,
-                evidencias: {
-                  where: {
-                    activa: true,
-                  },
-                  select: {
-                    id: true,
-                  },
-                  take: 1,
-                },
-              },
-            },
-          },
-        },
         aspecto: {
           select: {
+            id: true,
+            identidadHistorica: true,
             codigo: true,
             nombre: true,
             estandar: {
@@ -135,31 +138,36 @@ export const servicioEstadoDocumentalInformes = {
         },
       },
     });
-
-    const ultimas = new Map<
-      number,
-      (typeof evaluaciones)[number]
-    >();
-
-    for (const evaluacion of evaluaciones) {
-      if (!ultimas.has(evaluacion.aspectoId)) {
-        ultimas.set(evaluacion.aspectoId, evaluacion);
-      }
-    }
+    const aspectosActuales = new Map(
+      tareas.map(({ aspecto }) => [aspecto.id, aspecto])
+    );
+    const evaluaciones =
+      await servicioEstadoAspectosAlCorte.obtenerUltimasEvaluaciones(
+        empresaId,
+        [...aspectosActuales.values()].map((aspecto) => ({
+          id: aspecto.id,
+          identidadHistorica: aspecto.identidadHistorica,
+        })),
+        fechaCorte,
+        seleccionEvaluacionDocumental
+      );
 
     const aspectosPendientes: AspectoEvidenciaPendienteInforme[] = [];
 
-    for (const evaluacion of ultimas.values()) {
+    for (const [aspectoId, evaluacion] of evaluaciones) {
       if (
         opciones.aspectoIdsPermitidos &&
-        !opciones.aspectoIdsPermitidos.has(evaluacion.aspectoId)
+        !opciones.aspectoIdsPermitidos.has(aspectoId)
       ) {
         continue;
       }
 
+      const aspecto = aspectosActuales.get(aspectoId);
+      if (!aspecto) continue;
+
       const coincideGrupo =
         grupo === "TODOS" ||
-        evaluacion.aspecto.estandar.gruposMinisteriales.some(
+        aspecto.estandar.gruposMinisteriales.some(
           ({ grupoMinisterial }) =>
             grupoMinisterial.codigo === grupo
         );
@@ -168,18 +176,35 @@ export const servicioEstadoDocumentalInformes = {
         continue;
       }
 
+      const evaluacionDocumental = evaluacion as {
+        id: string;
+        estadoCumplimiento: Parameters<
+          typeof resolverEstadoEvidenciaAspecto
+        >[0]["estadoCumplimiento"];
+        calificacionAdministrativa: { toNumber(): number };
+        evidencias: Array<{ id: string }>;
+        seguimientosCompromiso: Array<{
+          compromiso: {
+            id: string;
+            evidencias: Array<{ id: string }>;
+          };
+        }>;
+      };
       const estadoEvidencia = resolverEstadoEvidenciaAspecto({
         requiereEvidencia: true,
-        estadoCumplimiento: evaluacion.estadoCumplimiento,
+        estadoCumplimiento: evaluacionDocumental.estadoCumplimiento,
         calificacionAdministrativa:
-          evaluacion.calificacionAdministrativa.toNumber(),
+          evaluacionDocumental.calificacionAdministrativa.toNumber(),
         gestionFinalizadaValida: true,
-        tieneEvidenciaEvaluacion: evaluacion.evidencias.length > 0,
-        compromisosConSoporte: evaluacion.seguimientosCompromiso
-          .filter(
-            ({ compromiso }) => compromiso.evidencias.length > 0
-          )
-          .map(({ compromiso }) => compromiso.id),
+        tieneEvidenciaEvaluacion:
+          evaluacionDocumental.evidencias.length > 0,
+        compromisosConSoporte:
+          evaluacionDocumental.seguimientosCompromiso
+            .filter(
+              ({ compromiso }) =>
+                compromiso.evidencias.length > 0
+            )
+            .map(({ compromiso }) => compromiso.id),
       });
 
       if (!estadoEvidencia.evidenciaPendiente) {
@@ -187,14 +212,14 @@ export const servicioEstadoDocumentalInformes = {
       }
 
       aspectosPendientes.push({
-        evaluacionId: evaluacion.id,
-        aspectoId: evaluacion.aspectoId,
-        aspectoCodigo: evaluacion.aspecto.codigo,
-        aspectoNombre: evaluacion.aspecto.nombre,
+        evaluacionId: evaluacionDocumental.id,
+        aspectoId,
+        aspectoCodigo: aspecto.codigo,
+        aspectoNombre: aspecto.nombre,
         estandar: {
-          id: evaluacion.aspecto.estandar.id,
-          codigo: evaluacion.aspecto.estandar.codigo,
-          nombre: evaluacion.aspecto.estandar.nombre,
+          id: aspecto.estandar.id,
+          codigo: aspecto.estandar.codigo,
+          nombre: aspecto.estandar.nombre,
         },
       });
     }

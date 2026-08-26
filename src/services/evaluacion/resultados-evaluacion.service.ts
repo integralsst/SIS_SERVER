@@ -2,7 +2,6 @@ import {
   CodigoCategoriaGestion,
   CodigoGrupoMinisterial,
   EstadoCumplimientoAspecto,
-  EstadoGestionSgsst,
   EstadoRegistro,
   Prisma,
 } from "@prisma/client";
@@ -11,6 +10,11 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { servicioEstadoAspectosAlCorte } from "./estado-aspectos-al-corte.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
 export type FiltroGrupoResultados =
@@ -58,6 +62,7 @@ const seleccionTareaResultados = {
   aspecto: {
     select: {
       id: true,
+      identidadHistorica: true,
       codigo: true,
       nombre: true,
       orden: true,
@@ -111,6 +116,11 @@ const seleccionEvaluacionResultados = {
   gestion: {
     select: {
       fechaGestion: true,
+      empresaPeriodo: {
+        select: {
+          anio: true,
+        },
+      },
     },
   },
   decisionNoAplica: {
@@ -380,44 +390,6 @@ async function obtenerEstructura(
   }
 }
 
-async function obtenerUltimasEvaluaciones(
-  periodoId: string
-): Promise<Map<number, EvaluacionResultados>> {
-  const evaluaciones = await prisma.evaluacionAspecto.findMany({
-    where: {
-      gestion: {
-        empresaPeriodoId: periodoId,
-        estado: EstadoGestionSgsst.FINALIZADA,
-        valida: true,
-      },
-    },
-    orderBy: [
-      {
-        gestion: {
-          fechaGestion: "desc",
-        },
-      },
-      {
-        createdAt: "desc",
-      },
-      {
-        id: "desc",
-      },
-    ],
-    select: seleccionEvaluacionResultados,
-  });
-
-  const ultimas = new Map<number, EvaluacionResultados>();
-
-  for (const evaluacion of evaluaciones) {
-    if (!ultimas.has(evaluacion.aspectoId)) {
-      ultimas.set(evaluacion.aspectoId, evaluacion);
-    }
-  }
-
-  return ultimas;
-}
-
 export const servicioResultadosEvaluacion = {
   obtener: async (
     empresaId: string,
@@ -447,13 +419,6 @@ export const servicioResultadosEvaluacion = {
           estado: true,
           fechaApertura: true,
           fechaCierre: true,
-          versionSupermatrizId: true,
-          versionSupermatriz: {
-            select: {
-              id: true,
-              nombre: true,
-            },
-          },
         },
       }),
     ]);
@@ -473,11 +438,33 @@ export const servicioResultadosEvaluacion = {
       };
     }
 
-    const [estructuraResultado, evaluaciones] =
-      await Promise.all([
-        obtenerEstructura(periodo.versionSupermatrizId),
-        obtenerUltimasEvaluaciones(periodo.id),
-      ]);
+    const fechaCorte = construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+    const estructuraResultado = await obtenerEstructura(
+      versionAplicable.id
+    );
+    const aspectosReferencia = Array.from(
+      new Map(
+        estructuraResultado.tareas.map((tarea) => [
+          tarea.aspecto.id,
+          {
+            id: tarea.aspecto.id,
+            identidadHistorica:
+              tarea.aspecto.identidadHistorica,
+          },
+        ])
+      ).values()
+    );
+    const evaluaciones =
+      (await servicioEstadoAspectosAlCorte.obtenerUltimasEvaluaciones(
+        empresaId,
+        aspectosReferencia,
+        fechaCorte,
+        seleccionEvaluacionResultados
+      )) as Map<number, EvaluacionResultados>;
 
     const gruposDisponibles = new Map<
       CodigoGrupoMinisterial,
@@ -744,6 +731,8 @@ export const servicioResultadosEvaluacion = {
       console.info("[rendimiento] resultados-evaluacion", {
         empresaId,
         anio,
+        fechaCorte: fechaCorte.toISOString(),
+        versionSupermatrizId: versionAplicable.id,
         grupo,
         categoriasGestionAplicadas,
         duracionMs,
@@ -757,13 +746,17 @@ export const servicioResultadosEvaluacion = {
 
     return {
       empresa,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: {
         id: periodo.id,
         anio: periodo.anio,
         estado: periodo.estado,
         fechaApertura: periodo.fechaApertura.toISOString(),
         fechaCierre: periodo.fechaCierre?.toISOString() ?? null,
-        versionSupermatriz: periodo.versionSupermatriz,
+        versionSupermatriz: {
+          id: versionAplicable.id,
+          nombre: versionAplicable.nombre,
+        },
       },
       grupo,
       categoriasGestionAplicadas,
