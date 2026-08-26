@@ -15,19 +15,29 @@ import {
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 
+function construirFechaOperativaUtc(
+  anio: number,
+  mes: number,
+  dia: number
+): Date {
+  // Stack44 normaliza las fechas calendario de evaluación a las 12:00 UTC.
+  // Usamos la misma convención para evitar huecos entre versiones contiguas.
+  return new Date(Date.UTC(anio, mes, dia, 12, 0, 0, 0));
+}
+
 export function construirCorteAnual(anio: number): Date {
   const ahora = new Date();
   const anioActual = ahora.getUTCFullYear();
 
-  if (anio < anioActual) {
-    return new Date(Date.UTC(anio, 11, 31, 23, 59, 59, 999));
-  }
-
   if (anio === anioActual) {
-    return ahora;
+    return construirFechaOperativaUtc(
+      anio,
+      ahora.getUTCMonth(),
+      ahora.getUTCDate()
+    );
   }
 
-  return new Date(Date.UTC(anio, 11, 31, 23, 59, 59, 999));
+  return construirFechaOperativaUtc(anio, 11, 31);
 }
 
 function filtroVersionPublicada(): Prisma.VersionSupermatrizWhereInput {
