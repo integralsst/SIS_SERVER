@@ -244,13 +244,26 @@ export const controladorDetalleAspecto = {
       req,
       res,
       "detalle-historial",
-      ({ empresaId, tareaId, anio, usuario }) =>
-        servicioDetalleAspectoSecciones.obtenerHistorial(
+      async ({
+        empresaId,
+        tareaId,
+        anio,
+        gestionId,
+        usuario,
+      }) => {
+        const detalle = await servicioDetalleAspecto.obtener(
           empresaId,
           tareaId,
           anio,
-          usuario
-        )
+          usuario,
+          gestionId
+        );
+
+        return {
+          fechaCorte: detalle.fechaCorte,
+          historial: detalle.historial,
+        };
+      }
     );
   },
 
