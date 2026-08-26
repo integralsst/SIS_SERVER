@@ -16,6 +16,11 @@ import {
   type ResultadoVigenciaEvaluacion,
 } from "../../utils/vigencia-evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { resolverBorradorSeleccionado } from "./borrador-seleccionado.service";
+import {
+  construirCorteAnual,
+  servicioPeriodosEvaluacion,
+} from "./periodos-evaluacion.service";
 
 function serializarFecha(
   value: Date | null | undefined
@@ -52,7 +57,8 @@ export const servicioDetalleAspecto = {
     empresaId: string,
     tareaId: number,
     anio: number,
-    usuario: UsuarioSesionEvaluacion
+    usuario: UsuarioSesionEvaluacion,
+    gestionId?: string | null
   ) => {
     validarAnio(anio);
 
@@ -89,12 +95,25 @@ export const servicioDetalleAspecto = {
       );
     }
 
+    const gestionActiva =
+      await resolverBorradorSeleccionado(
+        periodo.id,
+        usuario,
+        gestionId
+      );
+    const fechaCorte =
+      gestionActiva?.fechaGestion ?? construirCorteAnual(anio);
+    const versionAplicable =
+      await servicioPeriodosEvaluacion.resolverVersionParaFecha(
+        fechaCorte
+      );
+
     const tarea =
       await prisma.supermatrizTarea.findFirst({
         where: {
           id: tareaId,
           versionSupermatrizId:
-            periodo.versionSupermatrizId,
+            versionAplicable.id,
           estado: EstadoRegistro.ACTIVO,
         },
         include: {
@@ -169,30 +188,11 @@ export const servicioDetalleAspecto = {
 
     if (!tarea) {
       throw new ErrorEvaluacion(
-        "La fila seleccionada no pertenece a la versión de este periodo.",
+        "La fila seleccionada no pertenece a la versión aplicable en la fecha consultada.",
         404,
         "FILA_NO_ENCONTRADA"
       );
     }
-
-    const gestionActiva =
-      await prisma.gestionSgsst.findFirst({
-        where: {
-          empresaPeriodoId: periodo.id,
-          usuarioCreadorId: usuario.usuarioId,
-          estado: EstadoGestionSgsst.BORRADOR,
-          valida: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        select: {
-          id: true,
-          fechaGestion: true,
-          tipoActividad: true,
-          estado: true,
-        },
-      });
 
     const evaluacionBorrador = gestionActiva
       ? await prisma.evaluacionAspecto.findUnique({
@@ -290,15 +290,12 @@ export const servicioDetalleAspecto = {
       usuario.rol === RolUsuario.ADMIN_CLIENTE ||
       usuario.rol === RolUsuario.USUARIO_CLIENTE;
 
-    const filtroAspectoHistorico: Prisma.EvaluacionAspectoWhereInput = tarea.aspecto.codigo
-      ? {
-          aspecto: {
-            codigo: tarea.aspecto.codigo,
-          },
-        }
-      : {
-          aspectoId: tarea.aspectoId,
-        };
+    const filtroAspectoHistorico: Prisma.EvaluacionAspectoWhereInput = {
+      aspecto: {
+        identidadHistorica:
+          tarea.aspecto.identidadHistorica,
+      },
+    };
 
     const historial =
       await prisma.evaluacionAspecto.findMany({
@@ -307,6 +304,9 @@ export const servicioDetalleAspecto = {
           gestion: {
             empresaPeriodo: {
               empresaId,
+            },
+            fechaGestion: {
+              lte: fechaCorte,
             },
             ...(esCliente
               ? {
@@ -335,6 +335,9 @@ export const servicioDetalleAspecto = {
           },
           {
             createdAt: "desc",
+          },
+          {
+            id: "desc",
           },
         ],
         take: 100,
@@ -564,12 +567,13 @@ export const servicioDetalleAspecto = {
 
     return {
       empresa,
+      fechaCorte: fechaCorte.toISOString(),
       periodo: {
         id: periodo.id,
         anio: periodo.anio,
         estado: periodo.estado,
         versionSupermatriz:
-          periodo.versionSupermatriz,
+          versionAplicable,
       },
       tarea: {
         id: tarea.id,
@@ -595,6 +599,8 @@ export const servicioDetalleAspecto = {
           ),
         aspecto: {
           id: tarea.aspecto.id,
+          identidadHistorica:
+            tarea.aspecto.identidadHistorica,
           codigo: tarea.aspecto.codigo,
           nombre: tarea.aspecto.nombre,
           descripcion:
