@@ -11,14 +11,12 @@ interface PermisosEvidenciaDetalle {
   puedeGestionarEvidencias: boolean;
   puedeCompletarEvidenciaPendiente?: boolean;
   motivoEvidencias: string | null;
-  [key: string]: unknown;
 }
 
-export interface ResultadoPermisosEvidenciaDetalle {
+interface ResultadoPermisosEvidenciaDetalle {
   evidenciaObjetivo?: ObjetivoEvidenciaDetalle | null;
   evidenciaPendienteObjetivo?: ObjetivoEvidenciaDetalle | null;
   permisos: PermisosEvidenciaDetalle;
-  [key: string]: unknown;
 }
 
 async function usuarioPuedeGestionarEvaluacion(
@@ -50,10 +48,12 @@ async function usuarioPuedeGestionarEvaluacion(
   }
 }
 
-export async function alinearPermisosEvidenciasDetalle(
-  resultado: ResultadoPermisosEvidenciaDetalle,
+export async function alinearPermisosEvidenciasDetalle<
+  T extends ResultadoPermisosEvidenciaDetalle,
+>(
+  resultado: T,
   usuario: UsuarioSesionEvaluacion
-): Promise<ResultadoPermisosEvidenciaDetalle> {
+): Promise<T> {
   const objetivoActual = resultado.evidenciaObjetivo;
   const objetivoPendiente = resultado.evidenciaPendienteObjetivo;
 
