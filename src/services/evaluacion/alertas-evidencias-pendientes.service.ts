@@ -27,6 +27,11 @@ const ROLES_HABILITADOS: RolUsuario[] = [
   RolUsuario.PROFESIONAL,
 ];
 
+const ROLES_PARTICIPANTES = new Set<RolUsuario>([
+  RolUsuario.COORDINADOR,
+  RolUsuario.PROFESIONAL,
+]);
+
 function rutaEvidenciaPendiente(
   empresaId: string,
   anio: number,
@@ -50,6 +55,13 @@ export const servicioAlertasEvidenciasPendientes = {
       return [];
     }
 
+    const restringirPorParticipacion =
+      ROLES_PARTICIPANTES.has(usuario.rol);
+
+    if (restringirPorParticipacion && !usuario.profesionalId) {
+      return [];
+    }
+
     const evaluaciones = await prisma.evaluacionAspecto.findMany({
       where: {
         aspecto: {
@@ -60,8 +72,16 @@ export const servicioAlertasEvidenciasPendientes = {
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
           valida: true,
-          ...(usuario.rol === RolUsuario.PROFESIONAL
-            ? { usuarioCreadorId: usuario.usuarioId }
+          ...(restringirPorParticipacion
+            ? {
+                participantes: {
+                  some: {
+                    profesionalId: usuario.profesionalId as string,
+                    activo: true,
+                    puedeGestionarEvidencias: true,
+                  },
+                },
+              }
             : {}),
           empresaPeriodo: {
             estado: EstadoPeriodoSgsst.ABIERTO,
