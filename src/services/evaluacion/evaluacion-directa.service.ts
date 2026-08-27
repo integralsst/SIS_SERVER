@@ -82,7 +82,7 @@ async function obtenerCategoriasAsignadas(
   }
 
   if (asignacion.categoriasGestion.length === 0) {
-    // Compatibilidad con asignaciones históricas sin categorías.
+    // Compatibilidad con asignaciones históricas sin categorías configuradas.
     return null;
   }
 
@@ -114,6 +114,8 @@ function validarLote(data: GuardarEvaluacionesDirectasInput): void {
 }
 
 async function registrarEvaluacionDirecta(
+  tx: Prisma.TransactionClient,
+  empresaId: string,
   empresaPeriodoId: string,
   versionSupermatrizId: number,
   fechaEvaluacion: Date,
@@ -121,163 +123,228 @@ async function registrarEvaluacionDirecta(
   usuario: UsuarioSesionEvaluacion,
   categoriasAsignadas: Set<number> | null
 ) {
-  return prisma.$transaction(async (tx) => {
-    const tarea = await tx.supermatrizTarea.findFirst({
-      where: {
-        versionSupermatrizId,
-        estado: EstadoRegistro.ACTIVO,
-        aspectoId: input.aspectoId,
-        ...(input.supermatrizTareaId
-          ? { id: input.supermatrizTareaId }
-          : {}),
-      },
-      include: {
-        categoriasGestion: {
-          select: {
-            categoriaGestionId: true,
-          },
-        },
-        aspecto: {
-          include: {
-            configuracion: true,
-            configuracionVigencia: true,
-            configuracionRevision: true,
-          },
+  const tarea = await tx.supermatrizTarea.findFirst({
+    where: {
+      versionSupermatrizId,
+      estado: EstadoRegistro.ACTIVO,
+      aspectoId: input.aspectoId,
+      ...(input.supermatrizTareaId
+        ? { id: input.supermatrizTareaId }
+        : {}),
+    },
+    include: {
+      categoriasGestion: {
+        select: {
+          categoriaGestionId: true,
         },
       },
-    });
+      aspecto: {
+        include: {
+          configuracion: true,
+          configuracionVigencia: true,
+          configuracionRevision: true,
+        },
+      },
+    },
+  });
 
-    if (!tarea || tarea.aspecto.estado !== EstadoRegistro.ACTIVO) {
+  if (!tarea || tarea.aspecto.estado !== EstadoRegistro.ACTIVO) {
+    throw new ErrorEvaluacion(
+      `El aspecto ${input.aspectoId} no pertenece a la versión de la Supermatriz aplicable a la fecha de evaluación.`,
+      409,
+      "ASPECTO_FUERA_VERSION_APLICABLE"
+    );
+  }
+
+  if (categoriasAsignadas) {
+    const compatible = tarea.categoriasGestion.some(
+      ({ categoriaGestionId }) =>
+        categoriasAsignadas.has(categoriaGestionId)
+    );
+
+    if (!compatible) {
       throw new ErrorEvaluacion(
-        `El aspecto ${input.aspectoId} no pertenece a la versión de la Supermatriz aplicable a la fecha de evaluación.`,
-        409,
-        "ASPECTO_FUERA_VERSION_APLICABLE"
-      );
-    }
-
-    if (categoriasAsignadas) {
-      const compatible = tarea.categoriasGestion.some(
-        ({ categoriaGestionId }) =>
-          categoriasAsignadas.has(categoriaGestionId)
-      );
-
-      if (!compatible) {
-        throw new ErrorEvaluacion(
-          `Tu perfil profesional no tiene habilitada la categoría necesaria para evaluar el aspecto "${tarea.aspecto.nombre}".`,
-          403,
-          "PROFESIONAL_CATEGORIA_NO_AUTORIZADA"
-        );
-      }
-    }
-
-    const contexto = tarea.aspecto;
-
-    if (
-      input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA &&
-      usuario.rol !== RolUsuario.PROFESIONAL
-    ) {
-      throw new ErrorEvaluacion(
-        `El No aplica del aspecto "${contexto.nombre}" debe ser propuesto por un profesional.`,
+        `Tu perfil profesional no tiene habilitada la categoría necesaria para evaluar el aspecto "${tarea.aspecto.nombre}".`,
         403,
-        "NO_APLICA_REQUIERE_PROFESIONAL"
+        "PROFESIONAL_CATEGORIA_NO_AUTORIZADA"
       );
     }
+  }
 
-    if (
-      input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA &&
-      contexto.configuracion?.permiteNoAplica === false
-    ) {
-      throw new ErrorEvaluacion(
-        `El aspecto "${contexto.nombre}" no permite marcarse como No aplica.`
-      );
-    }
+  const contexto = tarea.aspecto;
 
-    const justificacionNoAplica =
-      input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
-        ? normalizarJustificacionNoAplica(
-            input.justificacionNoAplica,
-            contexto.nombre
-          )
-        : null;
+  if (
+    input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA &&
+    usuario.rol !== RolUsuario.PROFESIONAL
+  ) {
+    throw new ErrorEvaluacion(
+      `El No aplica del aspecto "${contexto.nombre}" debe ser propuesto por un profesional.`,
+      403,
+      "NO_APLICA_REQUIERE_PROFESIONAL"
+    );
+  }
 
-    const revisionObligatoria =
-      contexto.configuracionRevision?.requiereRevisionTecnica ?? false;
-    const marcadaRevisionTecnica =
-      revisionObligatoria || Boolean(input.marcadaRevisionTecnica);
-    const motivoRevisionTecnica = marcadaRevisionTecnica
-      ? input.motivoRevisionTecnica?.trim() ||
-        contexto.configuracionRevision?.observaciones?.trim() ||
-        (revisionObligatoria
-          ? "Revisión técnica obligatoria configurada en la Supermatriz."
-          : null)
+  if (
+    input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA &&
+    contexto.configuracion?.permiteNoAplica === false
+  ) {
+    throw new ErrorEvaluacion(
+      `El aspecto "${contexto.nombre}" no permite marcarse como No aplica.`
+    );
+  }
+
+  const justificacionNoAplica =
+    input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
+      ? normalizarJustificacionNoAplica(
+          input.justificacionNoAplica,
+          contexto.nombre
+        )
       : null;
 
-    if (marcadaRevisionTecnica && !motivoRevisionTecnica) {
-      throw new ErrorEvaluacion(
-        `Debes explicar por qué el aspecto "${contexto.nombre}" requiere revisión técnica.`
-      );
-    }
+  const revisionObligatoria =
+    contexto.configuracionRevision?.requiereRevisionTecnica ?? false;
+  const marcadaRevisionTecnica =
+    revisionObligatoria || Boolean(input.marcadaRevisionTecnica);
+  const motivoRevisionTecnica = marcadaRevisionTecnica
+    ? input.motivoRevisionTecnica?.trim() ||
+      contexto.configuracionRevision?.observaciones?.trim() ||
+      (revisionObligatoria
+        ? "Revisión técnica obligatoria configurada en la Supermatriz."
+        : null)
+    : null;
 
-    if (
-      motivoRevisionTecnica &&
-      (motivoRevisionTecnica.length < 10 ||
-        motivoRevisionTecnica.length > 2000)
-    ) {
-      throw new ErrorEvaluacion(
-        `El motivo de revisión técnica del aspecto "${contexto.nombre}" debe tener entre 10 y 2000 caracteres.`
-      );
-    }
-
-    const fechaDocumento = convertirFecha(
-      input.fechaDocumento,
-      "fechaDocumento"
+  if (marcadaRevisionTecnica && !motivoRevisionTecnica) {
+    throw new ErrorEvaluacion(
+      `Debes explicar por qué el aspecto "${contexto.nombre}" requiere revisión técnica.`
     );
-    const calificacionAdministrativa =
-      validarCalificacionAdministrativa(
-        input.estadoCumplimiento,
-        input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
-          ? 5
-          : input.calificacionAdministrativa
-      );
-    const fechaVencimientoCalculada =
-      calcularFechaVencimientoEvaluacion(
-        fechaEvaluacion,
-        fechaDocumento,
-        contexto.configuracionVigencia,
-        contexto.configuracion?.esEvergreen ?? false,
-        input.estadoCumplimiento
-      );
+  }
 
-    const gestion = await tx.gestionSgsst.create({
-      data: {
-        empresaPeriodoId,
-        profesionalId: usuario.profesionalId,
-        categoriaGestionId: null,
-        usuarioCreadorId: usuario.usuarioId,
-        fechaGestion: fechaEvaluacion,
-        modalidad: ModalidadGestion.SEGUIMIENTO_PUNTUAL,
-        tipoActividad: TIPO_ACTIVIDAD_EVALUACION_DIRECTA,
-        observacionGeneral: null,
+  if (
+    motivoRevisionTecnica &&
+    (motivoRevisionTecnica.length < 10 ||
+      motivoRevisionTecnica.length > 2000)
+  ) {
+    throw new ErrorEvaluacion(
+      `El motivo de revisión técnica del aspecto "${contexto.nombre}" debe tener entre 10 y 2000 caracteres.`
+    );
+  }
+
+  const fechaDocumento = convertirFecha(
+    input.fechaDocumento,
+    "fechaDocumento"
+  );
+  const calificacionAdministrativa =
+    validarCalificacionAdministrativa(
+      input.estadoCumplimiento,
+      input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
+        ? 5
+        : input.calificacionAdministrativa
+    );
+  const fechaVencimientoCalculada =
+    calcularFechaVencimientoEvaluacion(
+      fechaEvaluacion,
+      fechaDocumento,
+      contexto.configuracionVigencia,
+      contexto.configuracion?.esEvergreen ?? false,
+      input.estadoCumplimiento
+    );
+
+  const evaluacionAnterior = await tx.evaluacionAspecto.findFirst({
+    where: {
+      aspecto: {
+        identidadHistorica: contexto.identidadHistorica,
+      },
+      gestion: {
+        empresaPeriodo: {
+          empresaId,
+        },
         estado: EstadoGestionSgsst.FINALIZADA,
         valida: true,
-        finalizadaEn: new Date(),
+        fechaGestion: {
+          lte: fechaEvaluacion,
+        },
       },
-    });
+    },
+    orderBy: [
+      { gestion: { fechaGestion: "desc" } },
+      { createdAt: "desc" },
+      { id: "desc" },
+    ],
+    select: {
+      id: true,
+      estadoCumplimiento: true,
+      calificacionAdministrativa: true,
+      observacion: true,
+      fechaDocumento: true,
+      createdAt: true,
+      usuarioRegistrador: {
+        select: {
+          id: true,
+          nombre: true,
+          rol: true,
+        },
+      },
+    },
+  });
 
-    const evaluacion = await tx.evaluacionAspecto.create({
+  const gestion = await tx.gestionSgsst.create({
+    data: {
+      empresaPeriodoId,
+      profesionalId: usuario.profesionalId,
+      categoriaGestionId: null,
+      usuarioCreadorId: usuario.usuarioId,
+      fechaGestion: fechaEvaluacion,
+      modalidad: ModalidadGestion.SEGUIMIENTO_PUNTUAL,
+      tipoActividad: TIPO_ACTIVIDAD_EVALUACION_DIRECTA,
+      observacionGeneral: null,
+      estado: EstadoGestionSgsst.FINALIZADA,
+      valida: true,
+      finalizadaEn: new Date(),
+    },
+  });
+
+  const evaluacion = await tx.evaluacionAspecto.create({
+    data: {
+      gestionId: gestion.id,
+      aspectoId: input.aspectoId,
+      supermatrizTareaId: input.supermatrizTareaId ?? tarea.id,
+      usuarioRegistradorId: usuario.usuarioId,
+      estadoCumplimiento: input.estadoCumplimiento,
+      calificacionAdministrativa,
+      observacion: input.observacion?.trim() || null,
+      fechaDocumento,
+      fechaVencimientoCalculada,
+      justificacionNoAplica,
+      marcadaRevisionTecnica,
+      motivoRevisionTecnica,
+    },
+  });
+
+  await tx.historialEvaluacion.create({
+    data: {
+      gestionId: gestion.id,
+      evaluacionId: evaluacion.id,
+      usuarioId: usuario.usuarioId,
+      accion: "CREAR_EVALUACION_DIRECTA",
+      descripcion: evaluacionAnterior
+        ? `Se registró una nueva evaluación directa del aspecto ${contexto.nombre}, conservando la evaluación anterior en el historial.`
+        : `Se registró la primera evaluación directa del aspecto ${contexto.nombre}.`,
+      datosAntes: evaluacionAnterior
+        ? (comoJsonPrismaEvaluacion(evaluacionAnterior) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+      datosDespues:
+        comoJsonPrismaEvaluacion(evaluacion) as Prisma.InputJsonValue,
+    },
+  });
+
+  if (marcadaRevisionTecnica) {
+    const revision = await tx.revisionTecnicaEvaluacion.create({
       data: {
-        gestionId: gestion.id,
-        aspectoId: input.aspectoId,
-        supermatrizTareaId: input.supermatrizTareaId ?? tarea.id,
-        usuarioRegistradorId: usuario.usuarioId,
-        estadoCumplimiento: input.estadoCumplimiento,
-        calificacionAdministrativa,
-        observacion: input.observacion?.trim() || null,
-        fechaDocumento,
-        fechaVencimientoCalculada,
-        justificacionNoAplica,
-        marcadaRevisionTecnica,
-        motivoRevisionTecnica,
+        evaluacionId: evaluacion.id,
+        solicitadaPorUsuarioId: usuario.usuarioId,
+        motivoSolicitud:
+          motivoRevisionTecnica ??
+          "Revisión técnica solicitada desde evaluación directa.",
       },
     });
 
@@ -286,64 +353,41 @@ async function registrarEvaluacionDirecta(
         gestionId: gestion.id,
         evaluacionId: evaluacion.id,
         usuarioId: usuario.usuarioId,
-        accion: "CREAR_EVALUACION_DIRECTA",
-        descripcion: `Se registró una nueva evaluación directa del aspecto ${contexto.nombre}.`,
-        datosDespues: comoJsonPrismaEvaluacion(evaluacion),
+        accion: "SOLICITAR_REVISION_TECNICA",
+        descripcion: `Se solicitó revisión técnica para el aspecto ${contexto.nombre}.`,
+        datosDespues: {
+          revisionTecnicaId: revision.id,
+        } as Prisma.InputJsonValue,
       },
     });
+  }
 
-    if (marcadaRevisionTecnica) {
-      const revision = await tx.revisionTecnicaEvaluacion.create({
-        data: {
-          evaluacionId: evaluacion.id,
-          solicitadaPorUsuarioId: usuario.usuarioId,
-          motivoSolicitud:
-            motivoRevisionTecnica ??
-            "Revisión técnica solicitada desde evaluación directa.",
-        },
-      });
-
-      await tx.historialEvaluacion.create({
-        data: {
-          gestionId: gestion.id,
-          evaluacionId: evaluacion.id,
-          usuarioId: usuario.usuarioId,
-          accion: "SOLICITAR_REVISION_TECNICA",
-          descripcion: `Se solicitó revisión técnica para el aspecto ${contexto.nombre}.`,
-          datosDespues: {
-            revisionTecnicaId: revision.id,
-          } as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    await registrarControlesFinalizacion(
-      tx,
+  await registrarControlesFinalizacion(
+    tx,
+    {
+      id: gestion.id,
+      fechaGestion: gestion.fechaGestion,
+      modalidad: gestion.modalidad,
+      tipoActividad: gestion.tipoActividad,
+    },
+    [
       {
-        id: gestion.id,
-        fechaGestion: gestion.fechaGestion,
-        modalidad: gestion.modalidad,
-        tipoActividad: gestion.tipoActividad,
-      },
-      [
-        {
-          id: evaluacion.id,
-          aspectoId: evaluacion.aspectoId,
-          usuarioRegistradorId: evaluacion.usuarioRegistradorId,
-          estadoCumplimiento: evaluacion.estadoCumplimiento,
-          aspecto: {
-            nombre: contexto.nombre,
-          },
+        id: evaluacion.id,
+        aspectoId: evaluacion.aspectoId,
+        usuarioRegistradorId: evaluacion.usuarioRegistradorId,
+        estadoCumplimiento: evaluacion.estadoCumplimiento,
+        aspecto: {
+          nombre: contexto.nombre,
         },
-      ],
-      usuario
-    );
+      },
+    ],
+    usuario
+  );
 
-    return {
-      ...evaluacion,
-      gestionId: gestion.id,
-    };
-  });
+  return {
+    ...evaluacion,
+    gestionId: gestion.id,
+  };
 }
 
 export const servicioEvaluacionDirecta = {
@@ -391,20 +435,32 @@ export const servicioEvaluacionDirecta = {
       usuario
     );
 
-    const guardadas = [];
+    const guardadas = await prisma.$transaction(
+      async (tx) => {
+        const resultado = [];
 
-    for (const evaluacion of data.evaluaciones) {
-      guardadas.push(
-        await registrarEvaluacionDirecta(
-          periodo.id,
-          versionAplicable.id,
-          fechaEvaluacion,
-          evaluacion,
-          usuario,
-          categoriasAsignadas
-        )
-      );
-    }
+        for (const evaluacion of data.evaluaciones) {
+          resultado.push(
+            await registrarEvaluacionDirecta(
+              tx,
+              empresaId,
+              periodo.id,
+              versionAplicable.id,
+              fechaEvaluacion,
+              evaluacion,
+              usuario,
+              categoriasAsignadas
+            )
+          );
+        }
+
+        return resultado;
+      },
+      {
+        maxWait: 5000,
+        timeout: 30000,
+      }
+    );
 
     return {
       total: guardadas.length,
