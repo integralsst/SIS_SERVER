@@ -9,6 +9,7 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import type { AlertaControlEvaluacion } from "./alertas-control-evaluacion.service";
 import { resolverEstadoEvidenciaAspecto } from "./estado-evidencia-aspecto.service";
+import { TIPO_ACTIVIDAD_EVALUACION_DIRECTA } from "./evaluacion-directa.constants";
 import {
   construirCorteAnual,
   servicioPeriodosEvaluacion,
@@ -27,7 +28,7 @@ const ROLES_HABILITADOS: RolUsuario[] = [
   RolUsuario.PROFESIONAL,
 ];
 
-const ROLES_PARTICIPANTES = new Set<RolUsuario>([
+const ROLES_PROFESIONALES = new Set<RolUsuario>([
   RolUsuario.COORDINADOR,
   RolUsuario.PROFESIONAL,
 ]);
@@ -55,10 +56,10 @@ export const servicioAlertasEvidenciasPendientes = {
       return [];
     }
 
-    const restringirPorParticipacion =
-      ROLES_PARTICIPANTES.has(usuario.rol);
+    const restringirPorProfesional =
+      ROLES_PROFESIONALES.has(usuario.rol);
 
-    if (restringirPorParticipacion && !usuario.profesionalId) {
+    if (restringirPorProfesional && !usuario.profesionalId) {
       return [];
     }
 
@@ -72,15 +73,26 @@ export const servicioAlertasEvidenciasPendientes = {
         gestion: {
           estado: EstadoGestionSgsst.FINALIZADA,
           valida: true,
-          ...(restringirPorParticipacion
+          ...(restringirPorProfesional
             ? {
-                participantes: {
-                  some: {
-                    profesionalId: usuario.profesionalId as string,
-                    activo: true,
-                    puedeGestionarEvidencias: true,
+                OR: [
+                  // Historial legado: conserva los permisos del equipo.
+                  {
+                    participantes: {
+                      some: {
+                        profesionalId: usuario.profesionalId as string,
+                        activo: true,
+                        puedeGestionarEvidencias: true,
+                      },
+                    },
                   },
-                },
+                  // Flujo vigente: la evaluación directa pertenece al perfil
+                  // profesional que la registró y no crea participantes.
+                  {
+                    tipoActividad: TIPO_ACTIVIDAD_EVALUACION_DIRECTA,
+                    profesionalId: usuario.profesionalId as string,
+                  },
+                ],
               }
             : {}),
           empresaPeriodo: {
@@ -238,8 +250,6 @@ export const servicioAlertasEvidenciasPendientes = {
         tareaPorVersionIdentidad.set(claveTarea, tareaId);
       }
 
-      // Si el aspecto ya no existe en la estructura aplicable actual, no se
-      // genera un enlace hacia una fila histórica que el drawer no puede abrir.
       if (!tareaId) {
         continue;
       }
