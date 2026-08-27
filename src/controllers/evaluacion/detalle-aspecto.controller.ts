@@ -12,6 +12,7 @@ import {
   enriquecerDetalleConEstadoEvidencia,
   enriquecerTrazabilidadConEvidencias,
 } from "../../services/evaluacion/estado-evidencia-aspecto.service";
+import { alinearPermisosEvidenciasDetalle } from "../../services/evaluacion/permisos-evidencias-detalle.service";
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
 import { enriquecerTrazabilidadConAuditoriaTemporal } from "../../services/evaluacion/trazabilidad-auditoria-temporal.service";
 import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
@@ -177,11 +178,16 @@ export const controladorDetalleAspecto = {
             usuario,
             gestionId
           );
+        const conEstadoEvidencia =
+          await enriquecerDetalleConEstadoEvidencia(
+            resultado,
+            usuario,
+            { empresaId, tareaId, anio, gestionId }
+          );
 
-        return enriquecerDetalleConEstadoEvidencia(
-          resultado,
-          usuario,
-          { empresaId, tareaId, anio, gestionId }
+        return alinearPermisosEvidenciasDetalle(
+          conEstadoEvidencia,
+          usuario
         );
       }
     );
@@ -346,11 +352,16 @@ export const controladorDetalleAspecto = {
             usuario,
             gestionId
           );
+        const conEstadoEvidencia =
+          await enriquecerDetalleConEstadoEvidencia(
+            resultado,
+            usuario,
+            { empresaId, tareaId, anio, gestionId }
+          );
 
-        return enriquecerDetalleConEstadoEvidencia(
-          resultado,
-          usuario,
-          { empresaId, tareaId, anio, gestionId }
+        return alinearPermisosEvidenciasDetalle(
+          conEstadoEvidencia,
+          usuario
         );
       }
     );
