@@ -3,6 +3,7 @@ import { RolUsuario } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
+import { TIPO_ACTIVIDAD_EVALUACION_DIRECTA } from "./evaluacion-directa.constants";
 
 const ROLES_INTERNOS: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
@@ -214,6 +215,12 @@ export async function asegurarAccesoGestion(
       );
     }
 
+    // Las nuevas evaluaciones directas no usan GestionParticipante. El
+    // permiso proviene de la asignación EmpresaProfesional ya validada arriba.
+    if (gestion.tipoActividad === TIPO_ACTIVIDAD_EVALUACION_DIRECTA) {
+      return gestion;
+    }
+
     const participante =
       await prisma.gestionParticipante.findFirst({
         where: {
@@ -264,6 +271,36 @@ export async function asegurarCapacidadParticipanteGestion(
       403,
       "PROFESIONAL_NO_ASOCIADO"
     );
+  }
+
+  const gestion = await prisma.gestionSgsst.findUnique({
+    where: { id: gestionId },
+    select: {
+      tipoActividad: true,
+      empresaPeriodo: {
+        select: { empresaId: true },
+      },
+    },
+  });
+
+  if (!gestion) {
+    throw new ErrorEvaluacion(
+      "La gestión seleccionada no existe.",
+      404,
+      "GESTION_NO_ENCONTRADA"
+    );
+  }
+
+  if (
+    gestion.tipoActividad === TIPO_ACTIVIDAD_EVALUACION_DIRECTA &&
+    capacidad !== "LIDER"
+  ) {
+    await asegurarAccesoEmpresa(
+      usuario,
+      gestion.empresaPeriodo.empresaId,
+      "ESCRITURA"
+    );
+    return null;
   }
 
   const participante = await prisma.gestionParticipante.findFirst({
