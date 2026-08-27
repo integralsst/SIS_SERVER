@@ -6,6 +6,7 @@ import type {
 import { prisma } from "../../lib/prisma";
 import { asegurarCapacidadParticipanteGestion } from "../../services/evaluacion/acceso-evaluacion.service";
 import { servicioEvidenciasEvaluacion } from "../../services/evaluacion/evidencias-evaluacion.service";
+import { asegurarEvaluacionVigenteParaEvidencia } from "../../services/evaluacion/vigencia-evidencia-evaluacion.service";
 import type {
   ActualizarEvidenciaEvaluacionInput,
   CrearEvidenciaEvaluacionInput,
@@ -78,6 +79,9 @@ export const controladorEvidenciasEvaluacion = {
       await asegurarPermisoPorEvaluacion(
         evaluacionId,
         req
+      );
+      await asegurarEvaluacionVigenteParaEvidencia(
+        evaluacionId
       );
 
       const resultado =
