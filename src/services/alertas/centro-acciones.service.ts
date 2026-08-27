@@ -12,17 +12,10 @@ import {
   type AlertaControlEvaluacion,
 } from "../evaluacion/alertas-control-evaluacion.service";
 import { servicioAlertasEvidenciasPendientes } from "../evaluacion/alertas-evidencias-pendientes.service";
-import {
-  servicioAlertasGestionesAsignadas,
-  type AlertaGestionAsignada,
-} from "../evaluacion/alertas-gestiones-asignadas.service";
 import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/alertas-revisiones-tecnicas.service";
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
-type AlertaCentro =
-  | AlertaControlEvaluacion
-  | AlertaAuditoria
-  | AlertaGestionAsignada;
+type AlertaCentro = AlertaControlEvaluacion | AlertaAuditoria;
 
 interface OpcionesCentroAcciones {
   empresaId?: string;
@@ -61,7 +54,6 @@ async function cargar(
     evidenciasPendientes,
     revisionesTecnicas,
     auditorias,
-    gestionesAsignadas,
   ] = await Promise.all([
     servicioAlertasControlEvaluacion.listar(usuario, {
       empresaId: opciones.empresaId,
@@ -79,10 +71,6 @@ async function cargar(
       empresaId: opciones.empresaId,
       limiteConsulta,
     }),
-    servicioAlertasGestionesAsignadas.listar(usuario, {
-      empresaId: opciones.empresaId,
-      limiteConsulta,
-    }),
   ]);
 
   const alertasControl = [
@@ -93,14 +81,12 @@ async function cargar(
   const alertasAuditorias = auditorias.filter((alerta) =>
     empresasPermitidas.has(alerta.empresa.id)
   );
-  const alertasGestiones = gestionesAsignadas.filter((alerta) =>
-    empresasPermitidas.has(alerta.empresa.id)
-  );
 
+  // Las alertas de "gestión asignada" pertenecen al flujo colaborativo
+  // legado. El modelo vigente trabaja directamente sobre la matriz.
   return ordenar([
     ...alertasControl,
     ...alertasAuditorias,
-    ...alertasGestiones,
   ]);
 }
 
