@@ -15,6 +15,14 @@ import {
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 
+const ZONA_HORARIA_OPERATIVA = "America/Bogota";
+const FORMATO_FECHA_OPERATIVA = new Intl.DateTimeFormat("en-CA", {
+  timeZone: ZONA_HORARIA_OPERATIVA,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function construirFechaOperativaUtc(
   anio: number,
   mes: number,
@@ -25,15 +33,42 @@ function construirFechaOperativaUtc(
   return new Date(Date.UTC(anio, mes, dia, 12, 0, 0, 0));
 }
 
-export function construirCorteAnual(anio: number): Date {
-  const ahora = new Date();
-  const anioActual = ahora.getUTCFullYear();
+function obtenerFechaCalendarioOperativa(ahora = new Date()): {
+  anio: number;
+  mes: number;
+  dia: number;
+} {
+  const partes = FORMATO_FECHA_OPERATIVA.formatToParts(ahora);
+  const valores = new Map(
+    partes
+      .filter((parte) => parte.type !== "literal")
+      .map((parte) => [parte.type, Number(parte.value)])
+  );
+  const anio = valores.get("year");
+  const mes = valores.get("month");
+  const dia = valores.get("day");
 
-  if (anio === anioActual) {
+  if (!anio || !mes || !dia) {
+    throw new Error(
+      `No fue posible resolver la fecha operativa para ${ZONA_HORARIA_OPERATIVA}.`
+    );
+  }
+
+  return {
+    anio,
+    mes: mes - 1,
+    dia,
+  };
+}
+
+export function construirCorteAnual(anio: number): Date {
+  const fechaActual = obtenerFechaCalendarioOperativa();
+
+  if (anio === fechaActual.anio) {
     return construirFechaOperativaUtc(
       anio,
-      ahora.getUTCMonth(),
-      ahora.getUTCDate()
+      fechaActual.mes,
+      fechaActual.dia
     );
   }
 
