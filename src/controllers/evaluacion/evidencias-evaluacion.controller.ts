@@ -5,6 +5,7 @@ import type {
 
 import { prisma } from "../../lib/prisma";
 import { asegurarCapacidadParticipanteGestion } from "../../services/evaluacion/acceso-evaluacion.service";
+import { servicioEvidenciasEvaluacionDirecta } from "../../services/evaluacion/evidencias-evaluacion-directa.service";
 import { servicioEvidenciasEvaluacion } from "../../services/evaluacion/evidencias-evaluacion.service";
 import { asegurarEvaluacionVigenteParaEvidencia } from "../../services/evaluacion/vigencia-evidencia-evaluacion.service";
 import type {
@@ -75,6 +76,7 @@ export const controladorEvidenciasEvaluacion = {
         req,
         "evaluacionId"
       );
+      const usuario = obtenerUsuarioSesion(req);
 
       await asegurarPermisoPorEvaluacion(
         evaluacionId,
@@ -84,12 +86,21 @@ export const controladorEvidenciasEvaluacion = {
         evaluacionId
       );
 
-      const resultado =
-        await servicioEvidenciasEvaluacion.crear(
-          evaluacionId,
-          req.body as CrearEvidenciaEvaluacionInput,
-          obtenerUsuarioSesion(req)
+      const directa =
+        await servicioEvidenciasEvaluacionDirecta.esEvaluacionDirecta(
+          evaluacionId
         );
+      const resultado = directa
+        ? await servicioEvidenciasEvaluacionDirecta.crear(
+            evaluacionId,
+            req.body as CrearEvidenciaEvaluacionInput,
+            usuario
+          )
+        : await servicioEvidenciasEvaluacion.crear(
+            evaluacionId,
+            req.body as CrearEvidenciaEvaluacionInput,
+            usuario
+          );
 
       res.status(201).json(resultado);
     } catch (error) {
@@ -106,18 +117,28 @@ export const controladorEvidenciasEvaluacion = {
         req,
         "evidenciaId"
       );
+      const usuario = obtenerUsuarioSesion(req);
 
       await asegurarPermisoPorEvidencia(
         evidenciaId,
         req
       );
 
-      const resultado =
-        await servicioEvidenciasEvaluacion.actualizar(
-          evidenciaId,
-          req.body as ActualizarEvidenciaEvaluacionInput,
-          obtenerUsuarioSesion(req)
+      const directa =
+        await servicioEvidenciasEvaluacionDirecta.esEvidenciaDirecta(
+          evidenciaId
         );
+      const resultado = directa
+        ? await servicioEvidenciasEvaluacionDirecta.actualizar(
+            evidenciaId,
+            req.body as ActualizarEvidenciaEvaluacionInput,
+            usuario
+          )
+        : await servicioEvidenciasEvaluacion.actualizar(
+            evidenciaId,
+            req.body as ActualizarEvidenciaEvaluacionInput,
+            usuario
+          );
 
       res.status(200).json(resultado);
     } catch (error) {
@@ -134,17 +155,26 @@ export const controladorEvidenciasEvaluacion = {
         req,
         "evidenciaId"
       );
+      const usuario = obtenerUsuarioSesion(req);
 
       await asegurarPermisoPorEvidencia(
         evidenciaId,
         req
       );
 
-      const resultado =
-        await servicioEvidenciasEvaluacion.desactivar(
-          evidenciaId,
-          obtenerUsuarioSesion(req)
+      const directa =
+        await servicioEvidenciasEvaluacionDirecta.esEvidenciaDirecta(
+          evidenciaId
         );
+      const resultado = directa
+        ? await servicioEvidenciasEvaluacionDirecta.desactivar(
+            evidenciaId,
+            usuario
+          )
+        : await servicioEvidenciasEvaluacion.desactivar(
+            evidenciaId,
+            usuario
+          );
 
       res.status(200).json(resultado);
     } catch (error) {
