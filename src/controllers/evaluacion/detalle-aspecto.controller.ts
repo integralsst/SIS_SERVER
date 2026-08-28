@@ -16,6 +16,7 @@ import { alinearPermisosEvidenciasDetalle } from "../../services/evaluacion/perm
 import { enriquecerHistorialConResultadoEfectivo } from "../../services/evaluacion/presentacion-resultado-efectivo.service";
 import { enriquecerTrazabilidadConAuditoriaTemporal } from "../../services/evaluacion/trazabilidad-auditoria-temporal.service";
 import { enriquecerHistorialConTrazabilidad } from "../../services/evaluacion/trazabilidad-aspecto.service";
+import { enriquecerTrazabilidadConSubsanacionesRevision } from "../../services/evaluacion/trazabilidad-revision-subsanada.service";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarAnio } from "../../utils/evaluacion";
 import { finalizarMedicionHttp } from "../../utils/rendimiento";
@@ -319,10 +320,16 @@ export const controladorDetalleAspecto = {
               fechaCorte: new Date(resultado.fechaCorte),
             }
           );
+        const conEvidencias =
+          await enriquecerTrazabilidadConEvidencias(
+            conAuditoriaTemporal as unknown as Parameters<
+              typeof enriquecerTrazabilidadConEvidencias
+            >[0]
+          );
 
-        return enriquecerTrazabilidadConEvidencias(
-          conAuditoriaTemporal as unknown as Parameters<
-            typeof enriquecerTrazabilidadConEvidencias
+        return enriquecerTrazabilidadConSubsanacionesRevision(
+          conEvidencias as unknown as Parameters<
+            typeof enriquecerTrazabilidadConSubsanacionesRevision
           >[0]
         );
       }
