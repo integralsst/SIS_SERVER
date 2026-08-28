@@ -163,6 +163,7 @@ export async function enriquecerTrazabilidadConSubsanacionesRevision<
   for (const revision of revisiones) {
     if (!revision.revisadaEn) continue;
 
+    const revisadaEn = revision.revisadaEn;
     const identidadHistorica =
       revision.evaluacion.aspecto.identidadHistorica;
     const empresaPeriodoId =
@@ -173,7 +174,7 @@ export async function enriquecerTrazabilidadConSubsanacionesRevision<
         evaluacion.id !== revision.evaluacion.id &&
         evaluacion.aspecto.identidadHistorica === identidadHistorica &&
         evaluacion.gestion.empresaPeriodoId === empresaPeriodoId &&
-        evaluacion.createdAt.getTime() > revision.revisadaEn.getTime()
+        evaluacion.createdAt.getTime() > revisadaEn.getTime()
     );
 
     if (!correctiva) continue;
