@@ -100,15 +100,9 @@ function serializarEvidencia(evidencia: {
 async function obtenerEvaluacionHistoricaFinalizada(
   evaluacionId: string
 ) {
-  return prisma.evaluacionAspecto.findFirst({
+  const evaluacion = await prisma.evaluacionAspecto.findUnique({
     where: {
       id: evaluacionId,
-      gestion: {
-        estado: EstadoGestionSgsst.FINALIZADA,
-        NOT: {
-          tipoActividad: TIPO_ACTIVIDAD_EVALUACION_DIRECTA,
-        },
-      },
     },
     include: {
       gestion: {
@@ -123,6 +117,17 @@ async function obtenerEvaluacionHistoricaFinalizada(
       },
     },
   });
+
+  if (
+    !evaluacion ||
+    evaluacion.gestion.estado !== EstadoGestionSgsst.FINALIZADA ||
+    evaluacion.gestion.tipoActividad ===
+      TIPO_ACTIVIDAD_EVALUACION_DIRECTA
+  ) {
+    return null;
+  }
+
+  return evaluacion;
 }
 
 export const servicioEvidenciasEvaluacionHistorica = {
