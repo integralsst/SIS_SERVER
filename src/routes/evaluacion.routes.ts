@@ -2,6 +2,7 @@ import { RolUsuario } from "@prisma/client";
 import { Router } from "express";
 
 import { controladorAprobacionesGestion } from "../controllers/evaluacion/aprobaciones-gestion.controller";
+import { controladorContextoEvaluacionDirecta } from "../controllers/evaluacion/contexto-evaluacion-directa.controller";
 import { controladorContextoEvaluacion } from "../controllers/evaluacion/contexto-evaluacion.controller";
 import { controladorDetalleAspecto } from "../controllers/evaluacion/detalle-aspecto.controller";
 import { controladorFinalizacionGestion } from "../controllers/evaluacion/compromisos/finalizacion-gestion.controller";
@@ -86,6 +87,13 @@ router.get(
   "/empresas/:empresaId/contexto",
   autorizar(...rolesLectura),
   controladorContextoEvaluacion.obtener
+);
+
+// Contexto aislado del flujo nuevo: nunca selecciona borradores legados.
+router.get(
+  "/empresas/:empresaId/contexto-directo",
+  autorizar(...rolesLectura),
+  controladorContextoEvaluacionDirecta.obtener
 );
 
 router.get(
