@@ -35,64 +35,6 @@ export interface GuardarEvaluacionesDirectasInput {
   evaluaciones: EvaluacionAspectoInput[];
 }
 
-async function obtenerCategoriasAsignadas(
-  empresaId: string,
-  usuario: UsuarioSesionEvaluacion
-): Promise<Set<number> | null> {
-  if (
-    usuario.rol !== RolUsuario.PROFESIONAL &&
-    usuario.rol !== RolUsuario.COORDINADOR
-  ) {
-    return null;
-  }
-
-  if (!usuario.profesionalId) {
-    throw new ErrorEvaluacion(
-      "Tu usuario no tiene un perfil profesional asociado.",
-      403,
-      "PROFESIONAL_NO_ASOCIADO"
-    );
-  }
-
-  const asignacion = await prisma.empresaProfesional.findFirst({
-    where: {
-      empresaId,
-      profesionalId: usuario.profesionalId,
-      activo: true,
-      OR: [
-        { fechaFin: null },
-        { fechaFin: { gte: new Date() } },
-      ],
-    },
-    select: {
-      categoriasGestion: {
-        select: {
-          categoriaGestionId: true,
-        },
-      },
-    },
-  });
-
-  if (!asignacion) {
-    throw new ErrorEvaluacion(
-      "No tienes una asignación activa para evaluar esta empresa.",
-      403,
-      "EMPRESA_NO_ASIGNADA"
-    );
-  }
-
-  if (asignacion.categoriasGestion.length === 0) {
-    // Compatibilidad con asignaciones históricas sin categorías configuradas.
-    return null;
-  }
-
-  return new Set(
-    asignacion.categoriasGestion.map(
-      ({ categoriaGestionId }) => categoriaGestionId
-    )
-  );
-}
-
 function validarLote(data: GuardarEvaluacionesDirectasInput): void {
   validarAnio(data.anio);
 
@@ -120,8 +62,7 @@ async function registrarEvaluacionDirecta(
   versionSupermatrizId: number,
   fechaEvaluacion: Date,
   input: EvaluacionAspectoInput,
-  usuario: UsuarioSesionEvaluacion,
-  categoriasAsignadas: Set<number> | null
+  usuario: UsuarioSesionEvaluacion
 ) {
   const tarea = await tx.supermatrizTarea.findFirst({
     where: {
@@ -133,11 +74,6 @@ async function registrarEvaluacionDirecta(
         : {}),
     },
     include: {
-      categoriasGestion: {
-        select: {
-          categoriaGestionId: true,
-        },
-      },
       aspecto: {
         include: {
           configuracion: true,
@@ -154,21 +90,6 @@ async function registrarEvaluacionDirecta(
       409,
       "ASPECTO_FUERA_VERSION_APLICABLE"
     );
-  }
-
-  if (categoriasAsignadas) {
-    const compatible = tarea.categoriasGestion.some(
-      ({ categoriaGestionId }) =>
-        categoriasAsignadas.has(categoriaGestionId)
-    );
-
-    if (!compatible) {
-      throw new ErrorEvaluacion(
-        `Tu perfil profesional no tiene habilitada la categoría necesaria para evaluar el aspecto "${tarea.aspecto.nombre}".`,
-        403,
-        "PROFESIONAL_CATEGORIA_NO_AUTORIZADA"
-      );
-    }
   }
 
   const contexto = tarea.aspecto;
@@ -398,6 +319,9 @@ export const servicioEvaluacionDirecta = {
   ) => {
     validarLote(data);
 
+    // La asignación activa a la empresa es el control operativo suficiente
+    // para PROFESIONAL y COORDINADOR. Las categorías de gestión clasifican
+    // los aspectos de la Supermatriz, pero no restringen quién puede evaluarlos.
     await asegurarAccesoEmpresa(usuario, empresaId, "ESCRITURA");
 
     const periodo = await prisma.empresaPeriodo.findUnique({
@@ -430,10 +354,6 @@ export const servicioEvaluacionDirecta = {
       await servicioPeriodosEvaluacion.resolverVersionParaFecha(
         fechaEvaluacion
       );
-    const categoriasAsignadas = await obtenerCategoriasAsignadas(
-      empresaId,
-      usuario
-    );
 
     const guardadas = await prisma.$transaction(
       async (tx) => {
@@ -448,8 +368,7 @@ export const servicioEvaluacionDirecta = {
               versionAplicable.id,
               fechaEvaluacion,
               evaluacion,
-              usuario,
-              categoriasAsignadas
+              usuario
             )
           );
         }
