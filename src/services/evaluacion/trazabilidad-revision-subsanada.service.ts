@@ -57,35 +57,36 @@ export async function enriquecerTrazabilidadConSubsanacionesRevision<
     return resultado;
   }
 
-  const revisiones = await prisma.revisionTecnica.findMany({
-    where: {
-      id: {
-        in: revisionIds,
+  const revisiones =
+    await prisma.revisionTecnicaEvaluacion.findMany({
+      where: {
+        id: {
+          in: revisionIds,
+        },
+        estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
       },
-      estado: EstadoRevisionTecnica.REQUIERE_AJUSTES,
-    },
-    select: {
-      id: true,
-      revisadaEn: true,
-      evaluacion: {
-        select: {
-          id: true,
-          estadoCumplimiento: true,
-          calificacionAdministrativa: true,
-          aspecto: {
-            select: {
-              identidadHistorica: true,
+      select: {
+        id: true,
+        revisadaEn: true,
+        evaluacion: {
+          select: {
+            id: true,
+            estadoCumplimiento: true,
+            calificacionAdministrativa: true,
+            aspecto: {
+              select: {
+                identidadHistorica: true,
+              },
             },
-          },
-          gestion: {
-            select: {
-              empresaPeriodoId: true,
+            gestion: {
+              select: {
+                empresaPeriodoId: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    });
 
   const identidades = [
     ...new Set(
@@ -172,7 +173,7 @@ export async function enriquecerTrazabilidadConSubsanacionesRevision<
         evaluacion.id !== revision.evaluacion.id &&
         evaluacion.aspecto.identidadHistorica === identidadHistorica &&
         evaluacion.gestion.empresaPeriodoId === empresaPeriodoId &&
-        evaluacion.createdAt.getTime() > revision.revisadaEn!.getTime()
+        evaluacion.createdAt.getTime() > revision.revisadaEn.getTime()
     );
 
     if (!correctiva) continue;
