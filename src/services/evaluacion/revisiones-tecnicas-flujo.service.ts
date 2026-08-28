@@ -14,14 +14,10 @@ export type EstadoFlujoRevisionTecnica =
   | "EN_CORRECCION"
   | "SUBSANADA";
 
-const ROLES_ADMIN_CORRECCION: RolUsuario[] = [
+const ROLES_CORRECCION: RolUsuario[] = [
   RolUsuario.SUPERADMIN,
   RolUsuario.PROPIETARIO,
   RolUsuario.ADMIN,
-];
-
-const ROLES_CORRECCION: RolUsuario[] = [
-  ...ROLES_ADMIN_CORRECCION,
   RolUsuario.COORDINADOR,
   RolUsuario.PROFESIONAL,
 ];
@@ -75,6 +71,7 @@ export const servicioRevisionesTecnicasFlujo = {
         )
       ),
     ];
+
     const aspectosLinaje = await prisma.aspecto.findMany({
       where: {
         id: {
@@ -86,12 +83,14 @@ export const servicioRevisionesTecnicasFlujo = {
         identidadHistorica: true,
       },
     });
+
     const identidadPorAspectoId = new Map(
       aspectosLinaje.map((aspecto) => [
         aspecto.id,
         aspecto.identidadHistorica,
       ])
     );
+
     const identidades = [
       ...new Set(
         aspectosLinaje.map(
@@ -99,15 +98,13 @@ export const servicioRevisionesTecnicasFlujo = {
         )
       ),
     ];
+
     const accionesVinculo = revisionesConAjustes.map(
       (revision) =>
         accionVinculoCorreccionRevision(revision.id)
     );
-    const profesionalActualId =
-      usuario.profesionalId ?? "__SIN_PERFIL_PROFESIONAL__";
-    const empresaId = base.periodo.empresa.id;
 
-    const [evaluacionesPosteriores, vinculosCorreccion] =
+    const [evaluacionesRelacionadas, vinculosHistoricos] =
       await Promise.all([
         prisma.evaluacionAspecto.findMany({
           where: {
@@ -117,9 +114,7 @@ export const servicioRevisionesTecnicasFlujo = {
               },
             },
             gestion: {
-              empresaPeriodo: {
-                empresaId,
-              },
+              empresaPeriodoId: periodoId,
               valida: true,
               estado: {
                 in: [
@@ -158,15 +153,6 @@ export const servicioRevisionesTecnicasFlujo = {
                     nombre: true,
                   },
                 },
-                participantes: {
-                  where: {
-                    profesionalId: profesionalActualId,
-                    activo: true,
-                  },
-                  select: {
-                    puedeEvaluar: true,
-                  },
-                },
               },
             },
           },
@@ -177,9 +163,7 @@ export const servicioRevisionesTecnicasFlujo = {
               in: accionesVinculo,
             },
             gestion: {
-              empresaPeriodo: {
-                empresaId,
-              },
+              empresaPeriodoId: periodoId,
               valida: true,
               estado: {
                 in: [
@@ -208,15 +192,6 @@ export const servicioRevisionesTecnicasFlujo = {
                     nombre: true,
                   },
                 },
-                participantes: {
-                  where: {
-                    profesionalId: profesionalActualId,
-                    activo: true,
-                  },
-                  select: {
-                    puedeEvaluar: true,
-                  },
-                },
               },
             },
           },
@@ -224,9 +199,6 @@ export const servicioRevisionesTecnicasFlujo = {
       ]);
 
     const puedeCorregirRol = ROLES_CORRECCION.includes(
-      usuario.rol
-    );
-    const esAdminCorreccion = ROLES_ADMIN_CORRECCION.includes(
       usuario.rol
     );
 
@@ -262,9 +234,65 @@ export const servicioRevisionesTecnicasFlujo = {
         };
       }
 
+      const fechaResolucion = revision.revisadaEn
+        ? new Date(revision.revisadaEn)
+        : new Date(revision.updatedAt);
+
+      // Flujo vigente: una nueva evaluación directa oficial y posterior al
+      // concepto técnico subsana la revisión. No se requiere BORRADOR,
+      // equipo ni GestionParticipante para registrar la corrección.
+      const evaluacionDirectaPosterior =
+        evaluacionesRelacionadas.find(
+          (evaluacion) =>
+            evaluacion.gestion.estado ===
+              EstadoGestionSgsst.FINALIZADA &&
+            evaluacion.aspecto.identidadHistorica ===
+              identidadHistorica &&
+            evaluacion.id !== revision.evaluacion.id &&
+            evaluacion.createdAt.getTime() >
+              fechaResolucion.getTime()
+        ) ?? null;
+
+      if (evaluacionDirectaPosterior) {
+        return {
+          ...revision,
+          estadoFlujo: "SUBSANADA" as const,
+          requiereAccion: false,
+          puedeCorregir: false,
+          gestionCorreccion: {
+            id: evaluacionDirectaPosterior.gestion.id,
+            estado: evaluacionDirectaPosterior.gestion.estado,
+            fechaGestion:
+              evaluacionDirectaPosterior.gestion.fechaGestion.toISOString(),
+            tipoActividad:
+              evaluacionDirectaPosterior.gestion.tipoActividad,
+            profesional: evaluacionDirectaPosterior.gestion.profesional
+              ? `${evaluacionDirectaPosterior.gestion.profesional.nombres} ${evaluacionDirectaPosterior.gestion.profesional.apellidos}`.trim()
+              : evaluacionDirectaPosterior.gestion.usuarioCreador.nombre,
+          },
+          evaluacionCorrectiva: {
+            id: evaluacionDirectaPosterior.id,
+            estadoCumplimiento:
+              evaluacionDirectaPosterior.estadoCumplimiento,
+            calificacionAdministrativa:
+              evaluacionDirectaPosterior.calificacionAdministrativa.toNumber(),
+            observacion:
+              evaluacionDirectaPosterior.observacion,
+            fechaDocumento: serializarFecha(
+              evaluacionDirectaPosterior.fechaDocumento
+            ),
+            creadaEn:
+              evaluacionDirectaPosterior.createdAt.toISOString(),
+          },
+        };
+      }
+
+      // Compatibilidad histórica: solo un vínculo explícito creado por el
+      // flujo anterior puede mantener una corrección en BORRADOR. Los
+      // borradores no relacionados ya no afectan el estado de la revisión.
       const accionVinculo =
         accionVinculoCorreccionRevision(revision.id);
-      const vinculosRevision = vinculosCorreccion.filter(
+      const vinculosRevision = vinculosHistoricos.filter(
         (vinculo) => vinculo.accion === accionVinculo
       );
       const vinculoFinalizado = vinculosRevision.find(
@@ -272,15 +300,10 @@ export const servicioRevisionesTecnicasFlujo = {
           vinculo.gestion.estado ===
           EstadoGestionSgsst.FINALIZADA
       );
-      const vinculoBorrador = vinculosRevision.find(
-        (vinculo) =>
-          vinculo.gestion.estado ===
-          EstadoGestionSgsst.BORRADOR
-      );
 
       if (vinculoFinalizado) {
         const evaluacionCorrectiva =
-          evaluacionesPosteriores.find(
+          evaluacionesRelacionadas.find(
             (evaluacion) =>
               evaluacion.gestionId ===
                 vinculoFinalizado.gestion.id &&
@@ -323,27 +346,27 @@ export const servicioRevisionesTecnicasFlujo = {
         };
       }
 
+      const vinculoBorrador = vinculosRevision.find(
+        (vinculo) =>
+          vinculo.gestion.estado ===
+          EstadoGestionSgsst.BORRADOR
+      );
+
       if (vinculoBorrador) {
         const evaluacionCorrectiva =
-          evaluacionesPosteriores.find(
+          evaluacionesRelacionadas.find(
             (evaluacion) =>
               evaluacion.gestionId ===
                 vinculoBorrador.gestion.id &&
               evaluacion.aspecto.identidadHistorica ===
                 identidadHistorica
           ) ?? null;
-        const puedeOperarBorrador =
-          esAdminCorreccion ||
-          vinculoBorrador.gestion.participantes.some(
-            (participante) => participante.puedeEvaluar
-          );
 
         return {
           ...revision,
           estadoFlujo: "EN_CORRECCION" as const,
           requiereAccion: true,
-          puedeCorregir:
-            puedeCorregirRol && puedeOperarBorrador,
+          puedeCorregir: puedeCorregirRol,
           gestionCorreccion: {
             id: vinculoBorrador.gestion.id,
             estado: vinculoBorrador.gestion.estado,
@@ -371,103 +394,6 @@ export const servicioRevisionesTecnicasFlujo = {
                   evaluacionCorrectiva.createdAt.toISOString(),
               }
             : null,
-        };
-      }
-
-      // Compatibilidad con correcciones históricas creadas antes de que
-      // existiera el vínculo explícito revisión -> gestión correctiva.
-      const fechaResolucion = revision.revisadaEn
-        ? new Date(revision.revisadaEn)
-        : new Date(revision.updatedAt);
-
-      const candidatas = evaluacionesPosteriores.filter(
-        (evaluacion) =>
-          evaluacion.aspecto.identidadHistorica ===
-            identidadHistorica &&
-          evaluacion.id !== revision.evaluacion.id &&
-          evaluacion.createdAt.getTime() >
-            fechaResolucion.getTime()
-      );
-
-      const finalizada = candidatas.find(
-        (evaluacion) =>
-          evaluacion.gestion.estado ===
-          EstadoGestionSgsst.FINALIZADA
-      );
-
-      const borrador = candidatas.find(
-        (evaluacion) =>
-          evaluacion.gestion.estado ===
-          EstadoGestionSgsst.BORRADOR
-      );
-
-      if (finalizada) {
-        return {
-          ...revision,
-          estadoFlujo: "SUBSANADA" as const,
-          requiereAccion: false,
-          puedeCorregir: false,
-          gestionCorreccion: {
-            id: finalizada.gestion.id,
-            estado: finalizada.gestion.estado,
-            fechaGestion:
-              finalizada.gestion.fechaGestion.toISOString(),
-            tipoActividad:
-              finalizada.gestion.tipoActividad,
-            profesional: finalizada.gestion.profesional
-              ? `${finalizada.gestion.profesional.nombres} ${finalizada.gestion.profesional.apellidos}`.trim()
-              : finalizada.gestion.usuarioCreador.nombre,
-          },
-          evaluacionCorrectiva: {
-            id: finalizada.id,
-            estadoCumplimiento:
-              finalizada.estadoCumplimiento,
-            calificacionAdministrativa:
-              finalizada.calificacionAdministrativa.toNumber(),
-            observacion: finalizada.observacion,
-            fechaDocumento: serializarFecha(
-              finalizada.fechaDocumento
-            ),
-            creadaEn: finalizada.createdAt.toISOString(),
-          },
-        };
-      }
-
-      if (borrador) {
-        const puedeOperarBorrador =
-          esAdminCorreccion ||
-          borrador.gestion.participantes.some(
-            (participante) => participante.puedeEvaluar
-          );
-
-        return {
-          ...revision,
-          estadoFlujo: "EN_CORRECCION" as const,
-          requiereAccion: true,
-          puedeCorregir:
-            puedeCorregirRol && puedeOperarBorrador,
-          gestionCorreccion: {
-            id: borrador.gestion.id,
-            estado: borrador.gestion.estado,
-            fechaGestion:
-              borrador.gestion.fechaGestion.toISOString(),
-            tipoActividad: borrador.gestion.tipoActividad,
-            profesional: borrador.gestion.profesional
-              ? `${borrador.gestion.profesional.nombres} ${borrador.gestion.profesional.apellidos}`.trim()
-              : borrador.gestion.usuarioCreador.nombre,
-          },
-          evaluacionCorrectiva: {
-            id: borrador.id,
-            estadoCumplimiento:
-              borrador.estadoCumplimiento,
-            calificacionAdministrativa:
-              borrador.calificacionAdministrativa.toNumber(),
-            observacion: borrador.observacion,
-            fechaDocumento: serializarFecha(
-              borrador.fechaDocumento
-            ),
-            creadaEn: borrador.createdAt.toISOString(),
-          },
         };
       }
 
