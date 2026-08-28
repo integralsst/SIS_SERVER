@@ -2,6 +2,9 @@ import { Router } from "express";
 import { RolUsuario } from "@prisma/client";
 
 import {
+  controladorCategoriasProfesionalEmpresa,
+} from "../controllers/professional-categories.controller";
+import {
   controladorProfesional,
 } from "../controllers/professional.controller";
 
@@ -69,6 +72,20 @@ router.post(
   autenticar,
   autorizar(...rolesInternos),
   controladorProfesional.asignarEmpresa
+);
+
+router.get(
+  "/:id/empresas/:empresaId/categorias",
+  autenticar,
+  autorizar(...rolesInternos),
+  controladorCategoriasProfesionalEmpresa.obtener
+);
+
+router.put(
+  "/:id/empresas/:empresaId/categorias",
+  autenticar,
+  autorizar(...rolesInternos),
+  controladorCategoriasProfesionalEmpresa.actualizar
 );
 
 router.delete(
