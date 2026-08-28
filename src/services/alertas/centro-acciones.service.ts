@@ -11,7 +11,6 @@ import {
   servicioAlertasControlEvaluacion,
   type AlertaControlEvaluacion,
 } from "../evaluacion/alertas-control-evaluacion.service";
-import { servicioAlertasEvidenciasPendientes } from "../evaluacion/alertas-evidencias-pendientes.service";
 import { servicioAlertasRevisionesTecnicas } from "../evaluacion/revisiones/alertas-revisiones-tecnicas.service";
 
 type NivelAlerta = "ALTA" | "MEDIA" | "BAJA";
@@ -51,15 +50,10 @@ async function cargar(
 
   const [
     controlesEvaluacion,
-    evidenciasPendientes,
     revisionesTecnicas,
     auditorias,
   ] = await Promise.all([
     servicioAlertasControlEvaluacion.listar(usuario, {
-      empresaId: opciones.empresaId,
-      limiteConsulta,
-    }),
-    servicioAlertasEvidenciasPendientes.listar(usuario, {
       empresaId: opciones.empresaId,
       limiteConsulta,
     }),
@@ -75,15 +69,15 @@ async function cargar(
 
   const alertasControl = [
     ...controlesEvaluacion,
-    ...evidenciasPendientes,
     ...revisionesTecnicas,
   ].filter((alerta) => empresasPermitidas.has(alerta.empresa.id));
   const alertasAuditorias = auditorias.filter((alerta) =>
     empresasPermitidas.has(alerta.empresa.id)
   );
 
-  // Las alertas de "gestión asignada" pertenecen al flujo colaborativo
-  // legado. El modelo vigente trabaja directamente sobre la matriz.
+  // Las evidencias pendientes permanecen visibles en la matriz como estado
+  // documental, pero no forman parte del sistema de alertas. Las alertas de
+  // "gestión asignada" también pertenecen al flujo colaborativo legado.
   return ordenar([
     ...alertasControl,
     ...alertasAuditorias,
