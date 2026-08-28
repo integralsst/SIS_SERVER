@@ -432,7 +432,7 @@ export const servicioRevisionesTecnicas = {
       !revision.evaluacion.gestion.valida
     ) {
       throw new ErrorEvaluacion(
-        "Solo se pueden resolver revisiones de gestiones finalizadas y válidas.",
+        "Solo se pueden resolver revisiones de evaluaciones oficiales y válidas.",
         409,
         "GESTION_REVISION_NO_VALIDA"
       );
@@ -497,7 +497,7 @@ export const servicioRevisionesTecnicas = {
         mensaje:
           resolucion.estado === EstadoRevisionTecnica.APROBADA
             ? "La revisión técnica fue aprobada."
-            : "La revisión técnica quedó con ajustes requeridos. La evaluación finalizada no fue modificada; la corrección debe registrarse en una nueva gestión.",
+            : "La revisión técnica quedó con ajustes requeridos. La evaluación original no fue modificada; registra una nueva evaluación directa del aspecto para subsanar la revisión.",
       };
     });
   },
