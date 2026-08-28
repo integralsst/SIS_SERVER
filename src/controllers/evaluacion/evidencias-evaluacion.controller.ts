@@ -1,11 +1,16 @@
+import { EstadoGestionSgsst } from "@prisma/client";
 import type {
   Request,
   Response,
 } from "express";
 
 import { prisma } from "../../lib/prisma";
-import { asegurarCapacidadParticipanteGestion } from "../../services/evaluacion/acceso-evaluacion.service";
+import {
+  asegurarAccesoEmpresa,
+  asegurarCapacidadParticipanteGestion,
+} from "../../services/evaluacion/acceso-evaluacion.service";
 import { servicioEvidenciasEvaluacionDirecta } from "../../services/evaluacion/evidencias-evaluacion-directa.service";
+import { servicioEvidenciasEvaluacionHistorica } from "../../services/evaluacion/evidencias-evaluacion-historica.service";
 import { servicioEvidenciasEvaluacion } from "../../services/evaluacion/evidencias-evaluacion.service";
 import { asegurarEvaluacionVigenteParaEvidencia } from "../../services/evaluacion/vigencia-evidencia-evaluacion.service";
 import type {
@@ -28,16 +33,42 @@ async function asegurarPermisoPorEvaluacion(
     },
     select: {
       gestionId: true,
+      gestion: {
+        select: {
+          estado: true,
+          empresaPeriodo: {
+            select: {
+              empresaId: true,
+            },
+          },
+        },
+      },
     },
   });
 
-  if (evaluacion) {
-    await asegurarCapacidadParticipanteGestion(
-      obtenerUsuarioSesion(req),
-      evaluacion.gestionId,
-      "EVIDENCIAS"
-    );
+  if (!evaluacion) {
+    return;
   }
+
+  const usuario = obtenerUsuarioSesion(req);
+
+  if (
+    evaluacion.gestion.estado ===
+    EstadoGestionSgsst.FINALIZADA
+  ) {
+    await asegurarAccesoEmpresa(
+      usuario,
+      evaluacion.gestion.empresaPeriodo.empresaId,
+      "ESCRITURA"
+    );
+    return;
+  }
+
+  await asegurarCapacidadParticipanteGestion(
+    usuario,
+    evaluacion.gestionId,
+    "EVIDENCIAS"
+  );
 }
 
 async function asegurarPermisoPorEvidencia(
@@ -52,18 +83,44 @@ async function asegurarPermisoPorEvidencia(
       evaluacion: {
         select: {
           gestionId: true,
+          gestion: {
+            select: {
+              estado: true,
+              empresaPeriodo: {
+                select: {
+                  empresaId: true,
+                },
+              },
+            },
+          },
         },
       },
     },
   });
 
-  if (evidencia) {
-    await asegurarCapacidadParticipanteGestion(
-      obtenerUsuarioSesion(req),
-      evidencia.evaluacion.gestionId,
-      "EVIDENCIAS"
-    );
+  if (!evidencia) {
+    return;
   }
+
+  const usuario = obtenerUsuarioSesion(req);
+
+  if (
+    evidencia.evaluacion.gestion.estado ===
+    EstadoGestionSgsst.FINALIZADA
+  ) {
+    await asegurarAccesoEmpresa(
+      usuario,
+      evidencia.evaluacion.gestion.empresaPeriodo.empresaId,
+      "ESCRITURA"
+    );
+    return;
+  }
+
+  await asegurarCapacidadParticipanteGestion(
+    usuario,
+    evidencia.evaluacion.gestionId,
+    "EVIDENCIAS"
+  );
 }
 
 export const controladorEvidenciasEvaluacion = {
@@ -90,17 +147,28 @@ export const controladorEvidenciasEvaluacion = {
         await servicioEvidenciasEvaluacionDirecta.esEvaluacionDirecta(
           evaluacionId
         );
+      const historicaFinalizada =
+        !directa &&
+        (await servicioEvidenciasEvaluacionHistorica.esEvaluacionHistoricaFinalizada(
+          evaluacionId
+        ));
       const resultado = directa
         ? await servicioEvidenciasEvaluacionDirecta.crear(
             evaluacionId,
             req.body as CrearEvidenciaEvaluacionInput,
             usuario
           )
-        : await servicioEvidenciasEvaluacion.crear(
-            evaluacionId,
-            req.body as CrearEvidenciaEvaluacionInput,
-            usuario
-          );
+        : historicaFinalizada
+          ? await servicioEvidenciasEvaluacionHistorica.crear(
+              evaluacionId,
+              req.body as CrearEvidenciaEvaluacionInput,
+              usuario
+            )
+          : await servicioEvidenciasEvaluacion.crear(
+              evaluacionId,
+              req.body as CrearEvidenciaEvaluacionInput,
+              usuario
+            );
 
       res.status(201).json(resultado);
     } catch (error) {
