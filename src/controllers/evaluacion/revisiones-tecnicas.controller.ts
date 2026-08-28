@@ -3,6 +3,7 @@ import type {
   Response,
 } from "express";
 
+import { enriquecerRevisionesConFechaRegistroEvaluacion } from "../../services/evaluacion/presentacion-fecha-registro-revision.service";
 import { servicioRevisionesTecnicasFlujo } from "../../services/evaluacion/revisiones-tecnicas-flujo.service";
 import { servicioRevisionesTecnicas } from "../../services/evaluacion/revisiones-tecnicas.service";
 import type { ResolverRevisionTecnicaInput } from "../../types/evaluacion.types";
@@ -23,10 +24,14 @@ export const controladorRevisionesTecnicas = {
         "periodoId"
       );
 
-      const resultado =
+      const resultadoBase =
         await servicioRevisionesTecnicasFlujo.listarPeriodo(
           periodoId,
           obtenerUsuarioSesion(req)
+        );
+      const resultado =
+        await enriquecerRevisionesConFechaRegistroEvaluacion(
+          resultadoBase
         );
 
       res.status(200).json(resultado);
