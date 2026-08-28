@@ -15,6 +15,7 @@ import {
 } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
 import { servicioEstadoDocumentalInformes } from "./estado-documental-informes.service";
+import { TIPO_ACTIVIDAD_EVALUACION_DIRECTA } from "./evaluacion-directa.constants";
 import { servicioEstadoProvisionalResultados } from "./estado-provisional-resultados.service";
 import {
   FILTROS_GRUPO_RESULTADOS,
@@ -210,6 +211,7 @@ async function obtenerEstadisticasFuente(
   const [
     gestiones,
     evaluaciones,
+    evaluacionesDirectas,
     evidenciasEvaluacion,
     evidenciasCompromiso,
     historicas,
@@ -232,6 +234,14 @@ async function obtenerEstadisticasFuente(
       },
       _max: {
         updatedAt: true,
+      },
+    }),
+    prisma.evaluacionAspecto.count({
+      where: {
+        gestion: {
+          ...whereGestion,
+          tipoActividad: TIPO_ACTIVIDAD_EVALUACION_DIRECTA,
+        },
       },
     }),
     prisma.evidenciaEvaluacion.aggregate({
@@ -277,6 +287,8 @@ async function obtenerEstadisticasFuente(
   return {
     totalGestionesFuente: gestiones._count._all,
     totalEvaluacionesRegistradas: evaluaciones._count._all,
+    totalEvaluacionesDirectas: evaluacionesDirectas,
+    usaEvaluacionDirecta: evaluacionesDirectas > 0,
     registrosHistoricosPosteriores: historicas,
     ultimaActualizacionFuente,
   };
@@ -564,7 +576,7 @@ export const servicioInformesPeriodo = {
     );
     const resumen = resultadoConProvisionales.resumenEmpresa;
     const snapshot = comoJsonPrismaEvaluacion({
-      schemaVersion: 3,
+      schemaVersion: 4,
       tipo: "INFORME_PERIODO_SGSST",
       fechaCorte: fechaCorte.toISOString(),
       filtros: {
@@ -573,6 +585,11 @@ export const servicioInformesPeriodo = {
       },
       fuente: {
         ...fuente,
+        modelo: fuente.usaEvaluacionDirecta
+          ? "EVALUACIONES_POR_ASPECTO"
+          : "GESTIONES_LEGADAS",
+        totalRegistrosEvaluacion:
+          fuente.totalEvaluacionesRegistradas,
         ultimaActualizacionFuente:
           fuente.ultimaActualizacionFuente?.toISOString() ?? null,
       },
