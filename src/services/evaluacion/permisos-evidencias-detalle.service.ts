@@ -122,18 +122,17 @@ export async function alinearPermisosEvidenciasDetalle<
       ))
   );
 
-  const puedeCompletarEvidenciaPendiente =
-    Boolean(
-      resultado.permisos.puedeCompletarEvidenciaPendiente &&
-        objetivoPendiente
-    ) &&
-    Boolean(
-      objetivoPendiente &&
-        (await usuarioPuedeGestionarEvaluacion(
-          objetivoPendiente.evaluacionId,
-          usuario
-        ))
-    );
+  // En el flujo simplificado, una evaluación finalizada en 5 puede quedar
+  // con evidencia documental pendiente. La habilitación para completar ese
+  // soporte depende del acceso vigente de escritura a la empresa, no de la
+  // antigua participación en la gestión que originó la evaluación.
+  const puedeCompletarEvidenciaPendiente = Boolean(
+    objetivoPendiente &&
+      (await usuarioPuedeGestionarEvaluacion(
+        objetivoPendiente.evaluacionId,
+        usuario
+      ))
+  );
 
   let motivoEvidencias = resultado.permisos.motivoEvidencias;
 
