@@ -2,9 +2,11 @@ import { RolUsuario } from "@prisma/client";
 import { Router } from "express";
 
 import { controladorAprobacionesGestion } from "../controllers/evaluacion/aprobaciones-gestion.controller";
+import { controladorContextoEvaluacionDirecta } from "../controllers/evaluacion/contexto-evaluacion-directa.controller";
 import { controladorContextoEvaluacion } from "../controllers/evaluacion/contexto-evaluacion.controller";
 import { controladorDetalleAspecto } from "../controllers/evaluacion/detalle-aspecto.controller";
 import { controladorFinalizacionGestion } from "../controllers/evaluacion/compromisos/finalizacion-gestion.controller";
+import { controladorEvaluacionDirecta } from "../controllers/evaluacion/evaluacion-directa.controller";
 import { controladorEvidenciasEvaluacion } from "../controllers/evaluacion/evidencias-evaluacion.controller";
 import { controladorEvaluacionesAspecto } from "../controllers/evaluacion/evaluaciones-aspecto.controller";
 import { controladorGestionesSgsst } from "../controllers/evaluacion/gestiones-sgsst.controller";
@@ -85,6 +87,13 @@ router.get(
   "/empresas/:empresaId/contexto",
   autorizar(...rolesLectura),
   controladorContextoEvaluacion.obtener
+);
+
+// Contexto aislado del flujo nuevo: nunca selecciona borradores legados.
+router.get(
+  "/empresas/:empresaId/contexto-directo",
+  autorizar(...rolesLectura),
+  controladorContextoEvaluacionDirecta.obtener
 );
 
 router.get(
@@ -173,7 +182,7 @@ router.get(
 );
 
 // ======================================================
-// PERIODOS Y GESTIONES
+// PERIODOS Y GESTIONES LEGADAS
 // ======================================================
 
 router.post(
@@ -246,6 +255,14 @@ router.post(
 // EVALUACIONES
 // ======================================================
 
+// Flujo vigente: cada guardado crea evaluaciones históricas independientes.
+router.post(
+  "/empresas/:empresaId/evaluaciones-directas",
+  autorizar(...rolesEvaluacion),
+  controladorEvaluacionDirecta.guardarLote
+);
+
+// Endpoints de borrador conservados temporalmente para compatibilidad.
 router.put(
   "/gestiones/:gestionId/evaluaciones",
   autorizar(...rolesEvaluacion),

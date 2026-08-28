@@ -1,0 +1,5 @@
+export const TIPO_ACTIVIDAD_EVALUACION_DIRECTA =
+  "Evaluación directa";
+
+export const GESTION_ID_MODO_EVALUACION_DIRECTA =
+  "__EVALUACION_DIRECTA_SIN_BORRADOR__";

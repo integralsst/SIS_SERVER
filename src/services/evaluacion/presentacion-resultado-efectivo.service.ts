@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "../../lib/prisma";
 import { resolverResultadoEfectivoEvaluacion } from "./resultado-efectivo-evaluacion.service";
 
@@ -28,7 +30,63 @@ type ResultadoEfectivoHistorial = {
     estado: string;
     observacionDecision: string | null;
   } | null;
+  registradoPor: {
+    id: string;
+    nombre: string;
+    rol: string;
+  } | null;
+  evaluacionAnterior: {
+    estadoCumplimiento: string | null;
+    calificacionAdministrativa: number | null;
+    observacion: string | null;
+    registradaPor: {
+      id: string;
+      nombre: string;
+      rol: string | null;
+    } | null;
+  } | null;
 };
+
+function asRecord(
+  value: Prisma.JsonValue | null | undefined
+): Record<string, Prisma.JsonValue> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : null;
+}
+
+function asString(value: Prisma.JsonValue | undefined): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function asNumber(value: Prisma.JsonValue | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : null;
+}
+
+function extraerEvaluacionAnterior(
+  value: Prisma.JsonValue | null | undefined
+): ResultadoEfectivoHistorial["evaluacionAnterior"] {
+  const anterior = asRecord(value);
+  if (!anterior) return null;
+
+  const usuario = asRecord(anterior.usuarioRegistrador);
+
+  return {
+    estadoCumplimiento: asString(anterior.estadoCumplimiento),
+    calificacionAdministrativa:
+      asNumber(anterior.calificacionAdministrativa),
+    observacion: asString(anterior.observacion),
+    registradaPor: usuario
+      ? {
+          id: asString(usuario.id) ?? "",
+          nombre: asString(usuario.nombre) ?? "Usuario anterior",
+          rol: asString(usuario.rol),
+        }
+      : null,
+  };
+}
 
 export async function enriquecerHistorialConResultadoEfectivo<
   R extends HistorialPaginadoPresentable,
@@ -56,6 +114,25 @@ export async function enriquecerHistorialConResultadoEfectivo<
       id: true,
       estadoCumplimiento: true,
       calificacionAdministrativa: true,
+      usuarioRegistrador: {
+        select: {
+          id: true,
+          nombre: true,
+          rol: true,
+        },
+      },
+      historial: {
+        where: {
+          accion: "CREAR_EVALUACION_DIRECTA",
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 1,
+        select: {
+          datosAntes: true,
+        },
+      },
       decisionNoAplica: {
         select: {
           estado: true,
@@ -99,6 +176,8 @@ export async function enriquecerHistorialConResultadoEfectivo<
           causaResultadoEfectivo: "REGISTRADA",
           decisionNoAplica: null,
           aprobacionGestion: null,
+          registradoPor: null,
+          evaluacionAnterior: null,
         };
       }
 
@@ -134,6 +213,10 @@ export async function enriquecerHistorialConResultadoEfectivo<
                     .observacionDecision,
               }
             : null,
+        registradoPor: evaluacion.usuarioRegistrador,
+        evaluacionAnterior: extraerEvaluacionAnterior(
+          evaluacion.historial[0]?.datosAntes
+        ),
       };
     }) as Array<
       ItemHistorial<R> & ResultadoEfectivoHistorial
