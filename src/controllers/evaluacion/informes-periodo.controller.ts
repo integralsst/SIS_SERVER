@@ -32,6 +32,36 @@ function obtenerAnio(req: Request): number {
   return anio;
 }
 
+function esRegistro(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function usaFuenteEvaluacionesPorAspecto(snapshot: unknown): boolean {
+  if (!esRegistro(snapshot) || !esRegistro(snapshot.fuente)) {
+    return false;
+  }
+
+  return snapshot.fuente.modelo === "EVALUACIONES_POR_ASPECTO";
+}
+
+function adaptarFuentePdfDirecta(buffer: Buffer): Buffer {
+  const original = buffer.toString("latin1");
+  const adaptado = original.replace(
+    /Fuente: ([0-9]+) gestiones y/g,
+    "Fuente: $1 registros y"
+  );
+
+  // "gestiones" y "registros" tienen la misma longitud. Mantener el número
+  // exacto de bytes conserva válidos los offsets/xref del PDF histórico.
+  if (adaptado.length !== original.length) {
+    throw new Error(
+      "No fue posible adaptar de forma segura la presentación de la fuente del PDF."
+    );
+  }
+
+  return Buffer.from(adaptado, "latin1");
+}
+
 export const controladorInformesPeriodo = {
   listar: async (
     req: Request,
@@ -112,11 +142,17 @@ export const controladorInformesPeriodo = {
     res: Response
   ): Promise<void> => {
     try {
-      const { buffer, filename } =
-        await servicioPdfInformePeriodo.generar(
-          obtenerParametroRuta(req, "informeId"),
-          obtenerUsuarioSesion(req)
-        );
+      const informeId = obtenerParametroRuta(req, "informeId");
+      const usuario = obtenerUsuarioSesion(req);
+      const [{ buffer, filename }, detalle] = await Promise.all([
+        servicioPdfInformePeriodo.generar(informeId, usuario),
+        servicioInformesPeriodo.obtenerDetalle(informeId, usuario),
+      ]);
+      const bufferPresentacion = usaFuenteEvaluacionesPorAspecto(
+        detalle.snapshot
+      )
+        ? adaptarFuentePdfDirecta(buffer)
+        : buffer;
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -124,9 +160,9 @@ export const controladorInformesPeriodo = {
         `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
       );
       res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
-      res.setHeader("Content-Length", String(buffer.length));
+      res.setHeader("Content-Length", String(bufferPresentacion.length));
       res.setHeader("Cache-Control", "private, no-store");
-      res.status(200).send(buffer);
+      res.status(200).send(bufferPresentacion);
     } catch (error) {
       responderErrorEvaluacion(error, res);
     }
