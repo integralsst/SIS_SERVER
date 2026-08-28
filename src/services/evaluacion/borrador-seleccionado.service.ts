@@ -8,6 +8,7 @@ import { prisma } from "../../lib/prisma";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { ErrorEvaluacion } from "../../utils/evaluacion";
 import { asegurarAccesoEmpresa } from "./acceso-evaluacion.service";
+import { GESTION_ID_MODO_EVALUACION_DIRECTA } from "./evaluacion-directa.constants";
 
 const ROLES_ADMINISTRACION = new Set<RolUsuario>([
   RolUsuario.SUPERADMIN,
@@ -103,6 +104,12 @@ export async function resolverBorradorSeleccionado(
     periodo.empresaId,
     "LECTURA"
   );
+
+  // El drawer del flujo directo usa un marcador explícito para consultar
+  // únicamente el estado oficial. Nunca debe heredar un borrador legado.
+  if (gestionId === GESTION_ID_MODO_EVALUACION_DIRECTA) {
+    return null;
+  }
 
   if (!gestionId) {
     return buscarBorradorDisponible(periodoId, usuario);
