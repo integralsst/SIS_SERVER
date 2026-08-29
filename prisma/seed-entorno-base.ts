@@ -32,7 +32,7 @@ const EMPRESA_BASE = {
 
 const CUENTAS_BASE = {
   superusuario: {
-    nombre: "Superusuario Stack44",
+    nombre: "Jesus Zappa",
     correo: "integralsst@stack4four.com",
     contrasena: "Cardenas1970",
     rol: RolUsuario.SUPERADMIN,
