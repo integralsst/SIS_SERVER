@@ -32,7 +32,7 @@ const EMPRESA_BASE = {
 
 const CUENTAS_BASE = {
   superusuario: {
-    nombre: "Superusuario Stack44",
+    nombre: "Jesus Zappa",
     correo: "integralsst@stack4four.com",
     contrasena: "Cardenas1970",
     rol: RolUsuario.SUPERADMIN,
@@ -343,8 +343,7 @@ async function main(): Promise<void> {
     {
       rol: "PROFESIONAL",
       correo: CUENTAS_BASE.profesional.correo,
-      contrasena:
-        CUENTAS_BASE.profesional.contrasena,
+      contrasena: CUENTAS_BASE.profesional.contrasena,
     },
     {
       rol: "ADMIN_CLIENTE",
