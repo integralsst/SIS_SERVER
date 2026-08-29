@@ -343,7 +343,8 @@ async function main(): Promise<void> {
     {
       rol: "PROFESIONAL",
       correo: CUENTAS_BASE.profesional.correo,
-      contrasena: CUENTAS_BASE.profesional.contrasena,
+      contrasena:
+        CUENTAS_BASE.profesional.contrasena,
     },
     {
       rol: "ADMIN_CLIENTE",
