@@ -8,6 +8,7 @@ import {
 import { controladorCatalogosSupermatriz } from "../controllers/supermatriz/catalogos-supermatriz.controller";
 import { controladorConstruccionSupermatriz } from "../controllers/supermatriz/construccion-supermatriz.controller";
 import { controladorHistorialSupermatriz } from "../controllers/supermatriz/historial-supermatriz.controller";
+import { controladorLogicaEvaluacionAspecto } from "../controllers/supermatriz/logica-evaluacion-aspecto.controller";
 import { controladorTareasSupermatriz } from "../controllers/supermatriz/tareas-supermatriz.controller";
 import { controladorVersionesSupermatriz } from "../controllers/supermatriz/versiones-supermatriz.controller";
 import {
@@ -171,6 +172,12 @@ router.put(
   "/aspectos/:id",
   autorizar(...rolesEdicion),
   controladorCatalogosSupermatriz.actualizarAspecto
+);
+
+router.put(
+  "/aspectos/:id/logica-evaluacion",
+  autorizar(...rolesEdicion),
+  controladorLogicaEvaluacionAspecto.actualizar
 );
 
 router.delete(
