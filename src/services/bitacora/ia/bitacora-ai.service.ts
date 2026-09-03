@@ -29,11 +29,103 @@ export interface AnalizarRegistroBitacoraIaInput {
   aspectos: ContextoAspectoBitacora[];
 }
 
+const MESES_ES: Record<string, number> = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
+};
+
 function agregarInformacionFaltante(
   actual: string[],
   mensaje: string
 ): string[] {
   return [...new Set([...actual, mensaje])];
+}
+
+function construirFechaIso(
+  anio: number,
+  mes: number,
+  dia: number
+): string | null {
+  if (
+    !Number.isInteger(anio) ||
+    !Number.isInteger(mes) ||
+    !Number.isInteger(dia) ||
+    anio < 1900 ||
+    anio > 2200 ||
+    mes < 1 ||
+    mes > 12 ||
+    dia < 1 ||
+    dia > 31
+  ) {
+    return null;
+  }
+
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  if (
+    fecha.getUTCFullYear() !== anio ||
+    fecha.getUTCMonth() !== mes - 1 ||
+    fecha.getUTCDate() !== dia
+  ) {
+    return null;
+  }
+
+  return `${String(anio).padStart(4, "0")}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+function extraerFechasCalendarioExplicitas(contenido: string): Set<string> {
+  const fechas = new Set<string>();
+  const normalizado = contenido
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const agregar = (anio: number, mes: number, dia: number) => {
+    const iso = construirFechaIso(anio, mes, dia);
+    if (iso) fechas.add(iso);
+  };
+
+  for (const coincidencia of normalizado.matchAll(
+    /(?:^|\D)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/g
+  )) {
+    agregar(
+      Number(coincidencia[1]),
+      Number(coincidencia[2]),
+      Number(coincidencia[3])
+    );
+  }
+
+  for (const coincidencia of normalizado.matchAll(
+    /(?:^|\D)(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})(?!\d)/g
+  )) {
+    agregar(
+      Number(coincidencia[3]),
+      Number(coincidencia[2]),
+      Number(coincidencia[1])
+    );
+  }
+
+  for (const coincidencia of normalizado.matchAll(
+    /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/g
+  )) {
+    agregar(
+      Number(coincidencia[3]),
+      MESES_ES[coincidencia[2]],
+      Number(coincidencia[1])
+    );
+  }
+
+  return fechas;
 }
 
 function normalizarAccionSinEvaluacion(
@@ -49,6 +141,7 @@ function normalizarAccionSinEvaluacion(
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
     evidenciasUrls: [],
+    fechaDocumento: null,
   };
 }
 
@@ -131,6 +224,7 @@ function aplicarGuardrailPropuestaCompleta(
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
     evidenciasUrls: [],
+    fechaDocumento: null,
     justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
     reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V2_1",
     informacionFaltante: agregarInformacionFaltante(
@@ -138,6 +232,63 @@ function aplicarGuardrailPropuestaCompleta(
       "La interpretación requiere revisión humana porque no fue posible determinar de forma completa el estado y la calificación administrativa."
     ),
     requiereRevisionTecnica: true,
+  };
+}
+
+function validarFechaDocumentoPropuesta(
+  input: AnalizarRegistroBitacoraIaInput,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (propuesta.accion !== "PROPONER_EVALUACION") {
+    return {
+      ...propuesta,
+      fechaDocumento: null,
+    };
+  }
+
+  const fechaDocumento = propuesta.fechaDocumento?.trim() || null;
+  if (!fechaDocumento) {
+    return {
+      ...propuesta,
+      fechaDocumento: null,
+    };
+  }
+
+  const formatoIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fechaDocumento);
+  const fechaValida = formatoIso
+    ? construirFechaIso(
+        Number(formatoIso[1]),
+        Number(formatoIso[2]),
+        Number(formatoIso[3])
+      )
+    : null;
+  const fechasExplicitas = extraerFechasCalendarioExplicitas(
+    input.contenidoOriginal
+  );
+
+  if (fechaValida === fechaDocumento && fechasExplicitas.has(fechaDocumento)) {
+    return {
+      ...propuesta,
+      fechaDocumento,
+    };
+  }
+
+  console.warn("[BITACORA-IA-GUARDRAIL] fecha-documental-descartada", {
+    aspectoId: propuesta.aspectoId,
+    fechaDocumentoPropuesta: fechaDocumento,
+    motivo: fechaValida
+      ? "FECHA_NO_EXPLICITA_EN_BITACORA"
+      : "FECHA_DOCUMENTO_INVALIDA",
+    fechasExplicitasDetectadas: [...fechasExplicitas],
+  });
+
+  return {
+    ...propuesta,
+    fechaDocumento: null,
+    informacionFaltante: agregarInformacionFaltante(
+      propuesta.informacionFaltante,
+      "La fecha documental exacta no quedó sustentada por una fecha calendario completa y explícita en la Bitácora; la vigencia se mantendrá pendiente de fecha documental cuando la configuración del aspecto la requiera."
+    ),
   };
 }
 
@@ -179,10 +330,14 @@ function normalizarPropuestaModelo(
     candidato,
     conUrlsValidadas
   );
-
-  return aplicarGuardrailPropuestaCompleta(
+  const conPropuestaCompleta = aplicarGuardrailPropuestaCompleta(
     candidato,
     conSoporteValidado
+  );
+
+  return validarFechaDocumentoPropuesta(
+    input,
+    conPropuestaCompleta
   );
 }
 
