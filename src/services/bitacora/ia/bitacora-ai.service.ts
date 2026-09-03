@@ -25,6 +25,7 @@ export interface AnalizarRegistroBitacoraIaInput {
   registroBitacoraId: string;
   fechaEfectiva: string;
   contenidoOriginal: string;
+  urlsDisponibles?: string[];
   aspectos: ContextoAspectoBitacora[];
 }
 
@@ -47,6 +48,7 @@ function normalizarAccionSinEvaluacion(
     ...propuesta,
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
+    evidenciasUrls: [],
   };
 }
 
@@ -85,6 +87,7 @@ function aplicarGuardrailSoporteDirecto(
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
     evidenciaBitacora: null,
+    evidenciasUrls: [],
     fechaDocumento: null,
     justificacionTecnica:
       "Stack44 bloqueó la propuesta de evaluación porque el registro no aporta evidencia directa suficiente sobre este aspecto. La ausencia de mención no constituye incumplimiento.",
@@ -127,6 +130,7 @@ function aplicarGuardrailPropuestaCompleta(
     accion: "REQUIERE_REVISION_HUMANA",
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
+    evidenciasUrls: [],
     justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
     reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V2_1",
     informacionFaltante: agregarInformacionFaltante(
@@ -137,15 +141,43 @@ function aplicarGuardrailPropuestaCompleta(
   };
 }
 
+function validarUrlsPropuesta(
+  input: AnalizarRegistroBitacoraIaInput,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  const disponibles = new Set(input.urlsDisponibles ?? []);
+  const recibidas = Array.isArray(propuesta.evidenciasUrls)
+    ? propuesta.evidenciasUrls
+    : [];
+  const normalizadas = [...new Set(recibidas.map((url) => url.trim()).filter(Boolean))];
+
+  for (const url of normalizadas) {
+    if (!disponibles.has(url)) {
+      throw new ErrorOpenRouter(
+        `La IA intentó asociar una URL que no pertenece al registro de bitácora: ${url}.`,
+        502,
+        "BITACORA_IA_URL_NO_AUTORIZADA"
+      );
+    }
+  }
+
+  return {
+    ...propuesta,
+    evidenciasUrls:
+      propuesta.accion === "PROPONER_EVALUACION" ? normalizadas : [],
+  };
+}
+
 function normalizarPropuestaModelo(
   input: AnalizarRegistroBitacoraIaInput,
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
+  const conUrlsValidadas = validarUrlsPropuesta(input, propuesta);
   const conSoporteValidado = aplicarGuardrailSoporteDirecto(
     input,
     candidato,
-    propuesta
+    conUrlsValidadas
   );
 
   return aplicarGuardrailPropuestaCompleta(
@@ -254,6 +286,7 @@ export async function analizarRegistroBitacoraConIa(
       id: input.registroBitacoraId,
       fechaEfectiva: input.fechaEfectiva,
       contenidoOriginal: input.contenidoOriginal,
+      enlacesDetectados: input.urlsDisponibles ?? [],
     },
     aspectosCandidatos: input.aspectos,
   };
