@@ -892,7 +892,7 @@ model AspectoRequisitoNormativo {
   createdAt            DateTime @default(now()) @db.DateTime(3)
 
   aspecto            Aspecto            @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  requisitoNormativo RequisitoNormativo @relation(fields: [requisitoNormativoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  requisitoNormativo RequisitoNormativo @relation(fields: [requisitoNormativoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([aspectoId, requisitoNormativoId])
   @@index([requisitoNormativoId])
@@ -974,7 +974,7 @@ model GestionSgsst {
   tipoActividad      String             @db.VarChar(191)
   observacionGeneral String?            @db.Text
   estado             EstadoGestionSgsst @default(BORRADOR)
-  valida              Boolean            @default(true)
+  valida             Boolean            @default(true)
   finalizadaEn       DateTime?          @db.DateTime(3)
   invalidadaEn       DateTime?          @db.DateTime(3)
   motivoInvalidacion String?            @db.Text
