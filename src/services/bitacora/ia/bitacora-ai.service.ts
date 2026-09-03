@@ -7,6 +7,10 @@ import {
   PROMPT_SISTEMA_BITACORA,
   VERSION_PROMPT_BITACORA,
 } from "../bitacora-ai.prompt";
+import {
+  calcularSoporteDirectoBitacora,
+  tieneSoporteDirectoBitacora,
+} from "../recuperacion/relevancia-textual.service";
 import { SCHEMA_RESPUESTA_BITACORA } from "./bitacora-ai.schema";
 import {
   ErrorOpenRouter,
@@ -22,6 +26,63 @@ export interface AnalizarRegistroBitacoraIaInput {
   fechaEfectiva: string;
   contenidoOriginal: string;
   aspectos: ContextoAspectoBitacora[];
+}
+
+function agregarInformacionFaltante(
+  actual: string[],
+  mensaje: string
+): string[] {
+  return [...new Set([...actual, mensaje])];
+}
+
+function aplicarGuardrailSoporteDirecto(
+  input: AnalizarRegistroBitacoraIaInput,
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (propuesta.accion !== "PROPONER_EVALUACION") {
+    return {
+      ...propuesta,
+      calificacionAdministrativaPropuesta: null,
+    };
+  }
+
+  const soporteDirecto = calcularSoporteDirectoBitacora({
+    contenidoBitacora: input.contenidoOriginal,
+    codigo: candidato.codigo,
+    nombre: candidato.nombre,
+    palabrasClave: candidato.palabrasClave,
+  });
+
+  if (tieneSoporteDirectoBitacora(soporteDirecto)) {
+    return propuesta;
+  }
+
+  console.warn("[BITACORA-IA-GUARDRAIL] propuesta-degradada", {
+    aspectoId: candidato.aspectoId,
+    accionOriginal: propuesta.accion,
+    puntajeSoporteDirecto: soporteDirecto.puntaje,
+    conflictoEntidad: soporteDirecto.conflictoEntidad,
+    senalesDirectas: soporteDirecto.senales,
+  });
+
+  return {
+    ...propuesta,
+    accion: "SIN_CAMBIO",
+    estadoPropuesto: candidato.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    evidenciaBitacora: null,
+    fechaDocumento: null,
+    justificacionTecnica:
+      "Stack44 bloqueó la propuesta de evaluación porque el registro no aporta evidencia directa suficiente sobre este aspecto. La ausencia de mención no constituye incumplimiento.",
+    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2",
+    informacionFaltante: agregarInformacionFaltante(
+      propuesta.informacionFaltante,
+      "No existe evidencia directa suficiente sobre este aspecto en el registro analizado."
+    ),
+    requiereEvidenciaDocumental: false,
+    requiereRevisionTecnica: false,
+  };
 }
 
 function validarPropuestasModelo(
@@ -40,6 +101,7 @@ function validarPropuestasModelo(
     input.aspectos.map((aspecto) => [aspecto.aspectoId, aspecto])
   );
   const idsVistos = new Set<number>();
+  const validadas: PropuestaAspectoBitacora[] = [];
 
   for (const propuesta of propuestas) {
     const candidato = candidatos.get(propuesta.aspectoId);
@@ -87,6 +149,18 @@ function validarPropuestasModelo(
     }
 
     if (
+      propuesta.accion === "PROPONER_EVALUACION" &&
+      (propuesta.estadoPropuesto === null ||
+        propuesta.calificacionAdministrativaPropuesta === null)
+    ) {
+      throw new ErrorOpenRouter(
+        `La IA propuso evaluar el aspecto ${propuesta.aspectoId} sin estado o calificación administrativa.`,
+        502,
+        "BITACORA_IA_PROPUESTA_INCOMPLETA"
+      );
+    }
+
+    if (
       typeof propuesta.confianza !== "number" ||
       propuesta.confianza < 0 ||
       propuesta.confianza > 1
@@ -97,9 +171,13 @@ function validarPropuestasModelo(
         "BITACORA_IA_CONFIANZA_INVALIDA"
       );
     }
+
+    validadas.push(
+      aplicarGuardrailSoporteDirecto(input, candidato, propuesta)
+    );
   }
 
-  return propuestas;
+  return validadas;
 }
 
 export async function analizarRegistroBitacoraConIa(

@@ -1,27 +1,14 @@
 import { EstadoRegistro } from "@prisma/client";
 
 import { prisma } from "../../../lib/prisma";
+import {
+  calcularSoporteDirectoBitacora,
+  extraerTerminosBitacora,
+  normalizarTextoBitacora,
+} from "./relevancia-textual.service";
 
-const LIMITE_CANDIDATOS_DEFAULT = 12;
+const LIMITE_CANDIDATOS_DEFAULT = 10;
 const LIMITE_CANDIDATOS_MAXIMO = 20;
-
-function normalizarTexto(valor: string): string {
-  return valor
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9ñ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extraerTerminos(valor: string): Set<string> {
-  return new Set(
-    normalizarTexto(valor)
-      .split(" ")
-      .filter((termino) => termino.length >= 3)
-  );
-}
 
 function calcularCoincidencias(
   textoRegistro: string,
@@ -35,7 +22,7 @@ function calcularCoincidencias(
       continue;
     }
 
-    const normalizado = normalizarTexto(valor);
+    const normalizado = normalizarTextoBitacora(valor);
 
     if (!normalizado) {
       continue;
@@ -45,7 +32,7 @@ function calcularCoincidencias(
       puntaje += 8;
     }
 
-    for (const termino of extraerTerminos(normalizado)) {
+    for (const termino of extraerTerminosBitacora(normalizado)) {
       if (terminoRegistro.has(termino)) {
         puntaje += 1;
       }
@@ -65,6 +52,9 @@ export interface CandidatoAspectoBitacora {
   palabrasClave: string[];
   requisitosNormativos: string[];
   puntajeRecuperacion: number;
+  puntajeSoporteDirecto: number;
+  senalesDirectas: string[];
+  conflictoEntidad: boolean;
 }
 
 export async function buscarCandidatosAspectoBitacora(params: {
@@ -76,8 +66,8 @@ export async function buscarCandidatosAspectoBitacora(params: {
     Math.max(params.limite ?? LIMITE_CANDIDATOS_DEFAULT, 1),
     LIMITE_CANDIDATOS_MAXIMO
   );
-  const textoRegistro = normalizarTexto(params.contenidoBitacora);
-  const terminosRegistro = extraerTerminos(params.contenidoBitacora);
+  const textoRegistro = normalizarTextoBitacora(params.contenidoBitacora);
+  const terminosRegistro = extraerTerminosBitacora(params.contenidoBitacora);
 
   if (!textoRegistro || terminosRegistro.size === 0) {
     return [];
@@ -155,7 +145,7 @@ export async function buscarCandidatosAspectoBitacora(params: {
       );
 
       const codigoNormalizado = aspecto.codigo
-        ? normalizarTexto(aspecto.codigo)
+        ? normalizarTextoBitacora(aspecto.codigo)
         : "";
 
       if (
@@ -163,6 +153,19 @@ export async function buscarCandidatosAspectoBitacora(params: {
         textoRegistro.includes(codigoNormalizado)
       ) {
         puntajeRecuperacion += 25;
+      }
+
+      const soporteDirecto = calcularSoporteDirectoBitacora({
+        contenidoBitacora: params.contenidoBitacora,
+        codigo: aspecto.codigo,
+        nombre: aspecto.nombre,
+        palabrasClave,
+      });
+
+      if (soporteDirecto.conflictoEntidad) {
+        puntajeRecuperacion = Math.max(0, puntajeRecuperacion - 12);
+      } else {
+        puntajeRecuperacion += Math.min(soporteDirecto.puntaje, 20);
       }
 
       return {
@@ -176,10 +179,17 @@ export async function buscarCandidatosAspectoBitacora(params: {
         palabrasClave,
         requisitosNormativos,
         puntajeRecuperacion,
+        puntajeSoporteDirecto: soporteDirecto.puntaje,
+        senalesDirectas: soporteDirecto.senales,
+        conflictoEntidad: soporteDirecto.conflictoEntidad,
       } satisfies CandidatoAspectoBitacora;
     })
     .filter((aspecto) => aspecto.puntajeRecuperacion > 0)
     .sort((a, b) => {
+      if (b.puntajeSoporteDirecto !== a.puntajeSoporteDirecto) {
+        return b.puntajeSoporteDirecto - a.puntajeSoporteDirecto;
+      }
+
       if (b.puntajeRecuperacion !== a.puntajeRecuperacion) {
         return b.puntajeRecuperacion - a.puntajeRecuperacion;
       }
