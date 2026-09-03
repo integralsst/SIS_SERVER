@@ -26,6 +26,18 @@ router.post(
 );
 
 router.get(
+  "/empresas/:empresaId/historial.pdf",
+  autorizar(...rolesBitacoraInterna),
+  controladorAnalisisBitacora.descargarPdf
+);
+
+router.get(
+  "/empresas/:empresaId/historial",
+  autorizar(...rolesBitacoraInterna),
+  controladorAnalisisBitacora.historial
+);
+
+router.get(
   "/empresas/:empresaId/registros",
   autorizar(...rolesBitacoraInterna),
   controladorAnalisisBitacora.listar

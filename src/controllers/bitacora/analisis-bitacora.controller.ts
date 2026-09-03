@@ -1,10 +1,10 @@
 import type { Request, Response } from "express";
 
 import { aplicarBitacoraCompleta } from "../../services/bitacora/bitacora-aplicacion.service";
-import {
-  guardarYAnalizarBitacora,
-  listarBitacorasEmpresa,
-} from "../../services/bitacora/bitacora-registros.service";
+import { generarPdfHistorialBitacora } from "../../services/bitacora/bitacora-historial-pdf.service";
+import { listarHistorialBitacoraUnificado } from "../../services/bitacora/bitacora-historial-unificado.service";
+import { guardarYAnalizarBitacoraOperativa } from "../../services/bitacora/bitacora-operativa.service";
+import { listarBitacorasEmpresa } from "../../services/bitacora/bitacora-registros.service";
 import { analizarBitacoraShadow } from "../../services/bitacora/bitacora-shadow.service";
 import type {
   AplicarRegistroBitacoraInput,
@@ -42,7 +42,7 @@ export const controladorAnalisisBitacora = {
   ): Promise<void> => {
     try {
       const empresaId = obtenerParametroBitacora(req, "empresaId");
-      const resultado = await guardarYAnalizarBitacora(
+      const resultado = await guardarYAnalizarBitacoraOperativa(
         empresaId,
         req.body as CrearRegistroBitacoraInput,
         obtenerUsuarioSesionBitacora(req)
@@ -66,6 +66,48 @@ export const controladorAnalisisBitacora = {
       );
 
       res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorBitacora(error, res);
+    }
+  },
+
+  historial: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const empresaId = obtenerParametroBitacora(req, "empresaId");
+      const resultado = await listarHistorialBitacoraUnificado(
+        empresaId,
+        obtenerUsuarioSesionBitacora(req)
+      );
+
+      res.status(200).json(resultado);
+    } catch (error) {
+      responderErrorBitacora(error, res);
+    }
+  },
+
+  descargarPdf: async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    try {
+      const empresaId = obtenerParametroBitacora(req, "empresaId");
+      const { buffer, filename } = await generarPdfHistorialBitacora(
+        empresaId,
+        obtenerUsuarioSesionBitacora(req)
+      );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      );
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+      res.setHeader("Content-Length", String(buffer.length));
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(200).send(buffer);
     } catch (error) {
       responderErrorBitacora(error, res);
     }
