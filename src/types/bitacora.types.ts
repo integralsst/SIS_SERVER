@@ -25,6 +25,10 @@ export interface CrearRegistroBitacoraInput {
   tipoActividad?: string | null;
 }
 
+export interface AplicarRegistroBitacoraInput {
+  excluirAspectoIds?: number[];
+}
+
 export interface AutorBitacora {
   usuarioId: string;
   profesionalId: string | null;
@@ -71,6 +75,7 @@ export interface PropuestaAspectoBitacora {
   estadoPropuesto: EstadoCumplimientoAspecto | null;
   calificacionAdministrativaPropuesta: 0 | 3 | 5 | null;
   evidenciaBitacora: string | null;
+  evidenciasUrls: string[];
   fechaEfectiva: string;
   fechaDocumento: string | null;
   justificacionTecnica: string;
