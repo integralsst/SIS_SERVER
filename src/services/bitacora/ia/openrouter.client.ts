@@ -122,6 +122,14 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
     );
   }
 
+  console.info("[OPENROUTER-BITACORA] solicitud", {
+    modelo: config.model,
+    proveedorPermitido: config.providerOnly ?? "routing-zdr",
+    timeoutMs: config.timeoutMs,
+    schemaName: input.schemaName,
+    siteUrlConfigurado: Boolean(config.siteUrl),
+  });
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
@@ -175,6 +183,18 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
           ? payload.error.message
           : `OpenRouter respondió HTTP ${response.status}.`;
 
+      console.error("[OPENROUTER-BITACORA] respuesta-error", {
+        status: response.status,
+        requestId,
+        modelo: config.model,
+        proveedor: typeof payload?.provider === "string" ? payload.provider : null,
+        codigoProveedor:
+          typeof payload?.error?.code === "string" ||
+          typeof payload?.error?.code === "number"
+            ? payload.error.code
+            : null,
+      });
+
       throw new ErrorOpenRouter(
         detalle,
         response.status >= 400 && response.status < 600
@@ -200,7 +220,7 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
       );
     }
 
-    return {
+    const resultado = {
       modelo:
         typeof payload?.model === "string" ? payload.model : config.model,
       proveedor:
@@ -221,19 +241,38 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
             ? payload.usage.total_tokens
             : null,
       },
-    };
+    } satisfies RespuestaJsonEstructuradoOpenRouter<T>;
+
+    console.info("[OPENROUTER-BITACORA] respuesta-ok", {
+      requestId: resultado.requestId,
+      modelo: resultado.modelo,
+      proveedor: resultado.proveedor,
+      uso: resultado.uso,
+    });
+
+    return resultado;
   } catch (error) {
     if (error instanceof ErrorOpenRouter) {
       throw error;
     }
 
     if (error instanceof Error && error.name === "AbortError") {
+      console.error("[OPENROUTER-BITACORA] timeout", {
+        modelo: config.model,
+        timeoutMs: config.timeoutMs,
+      });
+
       throw new ErrorOpenRouter(
         "La solicitud a OpenRouter superó el tiempo máximo permitido.",
         504,
         "OPENROUTER_TIMEOUT"
       );
     }
+
+    console.error("[OPENROUTER-BITACORA] conexion-error", {
+      modelo: config.model,
+      error: error instanceof Error ? error.message : "error-desconocido",
+    });
 
     throw new ErrorOpenRouter(
       error instanceof Error
