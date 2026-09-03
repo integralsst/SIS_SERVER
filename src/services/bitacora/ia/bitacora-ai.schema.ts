@@ -52,7 +52,15 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           },
           fechaEfectiva: { type: "string" },
           fechaDocumento: {
-            anyOf: [{ type: "string" }, { type: "null" }],
+            anyOf: [
+              {
+                type: "string",
+                pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                description:
+                  "Fecha calendario completa y explícita del documento soporte, en formato YYYY-MM-DD. Nunca usar fecha efectiva, vencimiento o mes/año incompleto como sustituto.",
+              },
+              { type: "null" },
+            ],
           },
           justificacionTecnica: { type: "string" },
           reglaAplicada: {
