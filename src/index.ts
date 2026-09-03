@@ -21,6 +21,7 @@ import rutasEvaluacion from "./routes/evaluacion.routes";
 import rutasCompromisos from "./routes/compromisos.routes";
 import rutasAcciones from "./routes/acciones.routes";
 import rutasAuditorias from "./routes/auditorias.routes";
+import rutasBitacora from "./routes/bitacora.routes";
 
 const app = express();
 
@@ -126,6 +127,7 @@ app.get("/", (_req: Request, res: Response) => {
       compromisos: "/api/compromisos",
       acciones: "/api/acciones",
       auditorias: "/api/auditorias",
+      bitacora: "/api/bitacora",
     },
   });
 });
@@ -160,6 +162,7 @@ app.use("/api/evaluacion", rutasEvaluacion);
 app.use("/api/compromisos", rutasCompromisos);
 app.use("/api/acciones", rutasAcciones);
 app.use("/api/auditorias", rutasAuditorias);
+app.use("/api/bitacora", rutasBitacora);
 
 // ======================================================
 // ALIAS TEMPORALES PARA EL FRONTEND ACTUAL
@@ -249,5 +252,8 @@ app.listen(PUERTO, "0.0.0.0", () => {
   );
   console.log(
     "Módulo Auditorías disponible en /api/auditorias"
+  );
+  console.log(
+    "Módulo Bitácora disponible en /api/bitacora"
   );
 });
