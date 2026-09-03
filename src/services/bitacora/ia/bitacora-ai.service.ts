@@ -35,16 +35,28 @@ function agregarInformacionFaltante(
   return [...new Set([...actual, mensaje])];
 }
 
+function normalizarAccionSinEvaluacion(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (propuesta.accion === "PROPONER_EVALUACION") {
+    return propuesta;
+  }
+
+  return {
+    ...propuesta,
+    estadoPropuesto: candidato.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+  };
+}
+
 function aplicarGuardrailSoporteDirecto(
   input: AnalizarRegistroBitacoraIaInput,
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
   if (propuesta.accion !== "PROPONER_EVALUACION") {
-    return {
-      ...propuesta,
-      calificacionAdministrativaPropuesta: null,
-    };
+    return normalizarAccionSinEvaluacion(candidato, propuesta);
   }
 
   const soporteDirecto = calcularSoporteDirectoBitacora({
@@ -60,6 +72,7 @@ function aplicarGuardrailSoporteDirecto(
 
   console.warn("[BITACORA-IA-GUARDRAIL] propuesta-degradada", {
     aspectoId: candidato.aspectoId,
+    motivo: "SIN_SOPORTE_DIRECTO",
     accionOriginal: propuesta.accion,
     puntajeSoporteDirecto: soporteDirecto.puntaje,
     conflictoEntidad: soporteDirecto.conflictoEntidad,
@@ -75,7 +88,7 @@ function aplicarGuardrailSoporteDirecto(
     fechaDocumento: null,
     justificacionTecnica:
       "Stack44 bloqueó la propuesta de evaluación porque el registro no aporta evidencia directa suficiente sobre este aspecto. La ausencia de mención no constituye incumplimiento.",
-    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2",
+    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2_1",
     informacionFaltante: agregarInformacionFaltante(
       propuesta.informacionFaltante,
       "No existe evidencia directa suficiente sobre este aspecto en el registro analizado."
@@ -83,6 +96,62 @@ function aplicarGuardrailSoporteDirecto(
     requiereEvidenciaDocumental: false,
     requiereRevisionTecnica: false,
   };
+}
+
+function aplicarGuardrailPropuestaCompleta(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (propuesta.accion !== "PROPONER_EVALUACION") {
+    return normalizarAccionSinEvaluacion(candidato, propuesta);
+  }
+
+  if (
+    propuesta.estadoPropuesto !== null &&
+    propuesta.calificacionAdministrativaPropuesta !== null
+  ) {
+    return propuesta;
+  }
+
+  console.warn("[BITACORA-IA-GUARDRAIL] propuesta-degradada", {
+    aspectoId: candidato.aspectoId,
+    motivo: "PROPUESTA_INCOMPLETA",
+    accionOriginal: propuesta.accion,
+    tieneEstadoPropuesto: propuesta.estadoPropuesto !== null,
+    tieneCalificacion:
+      propuesta.calificacionAdministrativaPropuesta !== null,
+  });
+
+  return {
+    ...propuesta,
+    accion: "REQUIERE_REVISION_HUMANA",
+    estadoPropuesto: candidato.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
+    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V2_1",
+    informacionFaltante: agregarInformacionFaltante(
+      propuesta.informacionFaltante,
+      "La interpretación requiere revisión humana porque no fue posible determinar de forma completa el estado y la calificación administrativa."
+    ),
+    requiereRevisionTecnica: true,
+  };
+}
+
+function normalizarPropuestaModelo(
+  input: AnalizarRegistroBitacoraIaInput,
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  const conSoporteValidado = aplicarGuardrailSoporteDirecto(
+    input,
+    candidato,
+    propuesta
+  );
+
+  return aplicarGuardrailPropuestaCompleta(
+    candidato,
+    conSoporteValidado
+  );
 }
 
 function validarPropuestasModelo(
@@ -149,18 +218,6 @@ function validarPropuestasModelo(
     }
 
     if (
-      propuesta.accion === "PROPONER_EVALUACION" &&
-      (propuesta.estadoPropuesto === null ||
-        propuesta.calificacionAdministrativaPropuesta === null)
-    ) {
-      throw new ErrorOpenRouter(
-        `La IA propuso evaluar el aspecto ${propuesta.aspectoId} sin estado o calificación administrativa.`,
-        502,
-        "BITACORA_IA_PROPUESTA_INCOMPLETA"
-      );
-    }
-
-    if (
       typeof propuesta.confianza !== "number" ||
       propuesta.confianza < 0 ||
       propuesta.confianza > 1
@@ -173,7 +230,7 @@ function validarPropuestasModelo(
     }
 
     validadas.push(
-      aplicarGuardrailSoporteDirecto(input, candidato, propuesta)
+      normalizarPropuestaModelo(input, candidato, propuesta)
     );
   }
 
