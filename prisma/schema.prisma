@@ -675,7 +675,7 @@ model SupermatrizTareaCategoriaGestion {
 model EmpresaProfesionalCategoriaGestion {
   empresaProfesionalId String
   categoriaGestionId   Int
-  createdAt             DateTime @default(now()) @db.DateTime(3)
+  createdAt            DateTime @default(now()) @db.DateTime(3)
 
   empresaProfesional EmpresaProfesional @relation(fields: [empresaProfesionalId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   categoriaGestion   CategoriaGestion   @relation(fields: [categoriaGestionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -696,9 +696,9 @@ model GrupoMinisterial {
   nombre                 String                  @db.VarChar(100)
   porcentajeEvaluable   Decimal                 @db.Decimal(5, 2)
   porcentajeComplemento Decimal                 @db.Decimal(5, 2)
-  estado                 EstadoRegistro         @default(ACTIVO)
-  createdAt              DateTime               @default(now()) @db.DateTime(3)
-  updatedAt              DateTime               @updatedAt @db.DateTime(3)
+  estado                 EstadoRegistro          @default(ACTIVO)
+  createdAt              DateTime                @default(now()) @db.DateTime(3)
+  updatedAt              DateTime                @updatedAt @db.DateTime(3)
 
   estandares EstandarGrupoMinisterial[]
 
@@ -823,8 +823,8 @@ model ReglaAprobacionGestion {
   vigenteDesde       DateTime?         @db.Date
   vigenteHasta       DateTime?         @db.Date
   estado             EstadoRegistro    @default(ACTIVO)
-  createdAt          DateTime           @default(now()) @db.DateTime(3)
-  updatedAt          DateTime           @updatedAt @db.DateTime(3)
+  createdAt          DateTime          @default(now()) @db.DateTime(3)
+  updatedAt          DateTime          @updatedAt @db.DateTime(3)
 
   aspecto Aspecto? @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -892,7 +892,7 @@ model AspectoRequisitoNormativo {
   createdAt            DateTime @default(now()) @db.DateTime(3)
 
   aspecto            Aspecto            @relation(fields: [aspectoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  requisitoNormativo RequisitoNormativo @relation(fields: [requisitoNormativoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  requisitoNormativo RequisitoNormativo @relation(fields: [requisitoNormativoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@id([aspectoId, requisitoNormativoId])
   @@index([requisitoNormativoId])
@@ -974,7 +974,7 @@ model GestionSgsst {
   tipoActividad      String             @db.VarChar(191)
   observacionGeneral String?            @db.Text
   estado             EstadoGestionSgsst @default(BORRADOR)
-  valida             Boolean            @default(true)
+  valida              Boolean            @default(true)
   finalizadaEn       DateTime?          @db.DateTime(3)
   invalidadaEn       DateTime?          @db.DateTime(3)
   motivoInvalidacion String?            @db.Text
@@ -1532,7 +1532,7 @@ model AprobacionAmpliacionCompromiso {
   decididaEn    DateTime                          @default(now()) @db.DateTime(3)
 
   solicitud   SolicitudAmpliacionCompromiso @relation(fields: [solicitudId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  decididaPor Usuario                       @relation("AmpliacionAmpliacionDecididaPor", fields: [decididaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  decididaPor Usuario                       @relation("AmpliacionCompromisoDecididaPor", fields: [decididaPorId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([solicitudId, tipoAprobador])
   @@index([decididaPorId])
