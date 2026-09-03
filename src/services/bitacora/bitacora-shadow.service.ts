@@ -44,6 +44,15 @@ export async function analizarBitacoraShadow(
   usuario: UsuarioSesionEvaluacion
 ): Promise<ResultadoShadowBitacora> {
   const validado = validarCrearRegistroBitacora(input);
+
+  console.info("[BITACORA-SHADOW] inicio", {
+    empresaId,
+    usuarioId: usuario.usuarioId,
+    rol: usuario.rol,
+    fechaEfectiva: input.fechaEfectiva,
+    longitudContenido: validado.contenido.length,
+  });
+
   const empresa = await asegurarAccesoBitacoraEmpresa(usuario, empresaId);
   const version = await servicioPeriodosEvaluacion.resolverVersionParaFecha(
     validado.fechaEfectiva
@@ -52,6 +61,13 @@ export async function analizarBitacoraShadow(
   const candidatos = await buscarCandidatosAspectoBitacora({
     versionSupermatrizId: version.id,
     contenidoBitacora: validado.contenido,
+  });
+
+  console.info("[BITACORA-SHADOW] recuperacion", {
+    empresaId,
+    versionSupermatrizId: version.id,
+    totalCandidatos: candidatos.length,
+    aspectoIds: candidatos.map((candidato) => candidato.aspectoId),
   });
 
   const contextoAspectos = await cargarContextoAspectosBitacora({
@@ -69,6 +85,21 @@ export async function analizarBitacoraShadow(
     fechaEfectiva,
     contenidoOriginal: validado.contenido,
     aspectos: contextoAspectos,
+  });
+
+  console.info("[BITACORA-SHADOW] completado", {
+    empresaId,
+    idTemporal,
+    modelo: analisis.modelo,
+    versionPrompt: analisis.versionPrompt,
+    totalPropuestas: analisis.propuestas.length,
+    propuestas: analisis.propuestas.map((propuesta) => ({
+      aspectoId: propuesta.aspectoId,
+      accion: propuesta.accion,
+      calificacion: propuesta.calificacionAdministrativaPropuesta,
+      confianza: propuesta.confianza,
+    })),
+    escrituraRealizada: false,
   });
 
   return {
