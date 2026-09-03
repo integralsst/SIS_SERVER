@@ -31,22 +31,32 @@ const VERSION_ID = (() => {
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-function normalizarReferenciaComoSeed(codigo: string, nombre: string): {
+function normalizarReferenciaPersistida(codigo: string, nombre: string): {
   codigo: string;
   nombre: string;
 } {
-  const valor = `${codigo}. ${nombre}`.trim();
-  const coincidencia = valor.match(/^([0-9]+)\s*[\.\-:]?\s*(.+)$/s);
+  const codigoLimpio = codigo.trim();
+  const nombreLimpio = nombre.trim();
 
-  if (!coincidencia) {
-    throw new Error(
-      `No fue posible normalizar la referencia de lógica "${valor}" con las mismas reglas del seed de Supermatriz.`
-    );
+  // El seed histórico extrae únicamente la parte numérica del código fuente.
+  // Cuando aparecen códigos alfanuméricos consecutivos (por ejemplo 1181 y
+  // 1181A), el segundo se persiste con un sufijo generado para evitar el
+  // duplicado: 1181-A. La letra original queda además al inicio del nombre.
+  const alfanumerico = codigoLimpio.match(/^([0-9]+)([A-Za-z]+)$/);
+
+  if (alfanumerico) {
+    const base = alfanumerico[1];
+    const sufijo = alfanumerico[2].toUpperCase();
+
+    return {
+      codigo: `${base}-${sufijo}`,
+      nombre: `${sufijo}. ${nombreLimpio}`,
+    };
   }
 
   return {
-    codigo: coincidencia[1].trim(),
-    nombre: coincidencia[2].trim(),
+    codigo: codigoLimpio,
+    nombre: nombreLimpio,
   };
 }
 
@@ -97,7 +107,7 @@ async function main(): Promise<void> {
   let noEncontradas = 0;
 
   for (const fuente of LOGICAS_EVALUACION_ASPECTOS) {
-    const referenciaPersistida = normalizarReferenciaComoSeed(
+    const referenciaPersistida = normalizarReferenciaPersistida(
       fuente.codigo,
       fuente.nombre
     );
