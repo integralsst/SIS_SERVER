@@ -108,6 +108,111 @@ function construirUrlsPorAspecto(
   );
 }
 
+function limitarTexto(texto: string, maximo: number): string {
+  const limpio = texto.trim().replace(/\s+/g, " ");
+  if (limpio.length <= maximo) {
+    return limpio;
+  }
+
+  return `${limpio.slice(0, Math.max(0, maximo - 1)).trimEnd()}…`;
+}
+
+function fechaLegible(fechaIso: string): string {
+  const [anio, mes, dia] = fechaIso.slice(0, 10).split("-");
+  if (!anio || !mes || !dia) {
+    return fechaIso;
+  }
+
+  return `${dia}/${mes}/${anio}`;
+}
+
+function construirMetadataEvidencia(
+  snapshot: SnapshotBitacoraIa,
+  registroId: string,
+  propuesta: PropuestaAspectoBitacora
+): { nombre: string; descripcion: string } {
+  const candidato = snapshot.recuperacion.aspectosCandidatos.find(
+    (item) => item.aspectoId === propuesta.aspectoId
+  );
+  const codigo = candidato?.codigo?.trim() || String(propuesta.aspectoId);
+  const nombreAspecto =
+    candidato?.nombre?.trim() || `Aspecto ${propuesta.aspectoId}`;
+  const confianza = Number.isFinite(propuesta.confianza)
+    ? `${Math.round(propuesta.confianza * 100)}%`
+    : null;
+  const evidenciaInterpretada = propuesta.evidenciaBitacora?.trim() || null;
+
+  const nombre = limitarTexto(
+    `Evidencia · ${codigo} · ${nombreAspecto}`,
+    191
+  );
+  const descripcion = [
+    `Origen: Bitácora del ${fechaLegible(snapshot.fechaEfectiva)}.`,
+    `Aspecto: ${codigo} · ${nombreAspecto}.`,
+    evidenciaInterpretada
+      ? `Evidencia identificada: ${evidenciaInterpretada}`
+      : null,
+    `Vinculada mediante análisis IA aprobado${
+      confianza ? ` · Confianza ${confianza}` : ""
+    }.`,
+    `Registro de Bitácora: ${registroId}.`,
+  ]
+    .filter((valor): valor is string => Boolean(valor))
+    .join("\n");
+
+  return {
+    nombre,
+    descripcion,
+  };
+}
+
+async function enriquecerEvidenciasDesdeBitacora(params: {
+  snapshot: SnapshotBitacoraIa;
+  registroId: string;
+  propuestas: PropuestaAspectoBitacora[];
+  evaluaciones: Array<{
+    id: string;
+    aspectoId: number;
+  }>;
+}): Promise<void> {
+  const { snapshot, registroId, propuestas, evaluaciones } = params;
+
+  for (const propuesta of propuestas) {
+    const evaluacion = evaluaciones.find(
+      (item) => item.aspectoId === propuesta.aspectoId
+    );
+    if (!evaluacion) {
+      continue;
+    }
+
+    const urls = [
+      ...new Set(
+        propuesta.evidenciasUrls.map((url) => url.trim()).filter(Boolean)
+      ),
+    ];
+    if (urls.length === 0) {
+      continue;
+    }
+
+    const metadata = construirMetadataEvidencia(
+      snapshot,
+      registroId,
+      propuesta
+    );
+
+    for (const url of urls) {
+      await prisma.evidenciaEvaluacion.updateMany({
+        where: {
+          evaluacionId: evaluacion.id,
+          url,
+          activo: true,
+        },
+        data: metadata,
+      });
+    }
+  }
+}
+
 export async function aplicarBitacoraCompleta(
   empresaId: string,
   registroId: string,
@@ -147,6 +252,20 @@ export async function aplicarBitacoraCompleta(
     registro.aprobacion.estado === EstadoAprobacionGestion.APROBADA &&
     snapshot.aplicacion
   ) {
+    const excluidosPrevios = new Set(snapshot.aplicacion.aspectoIdsExcluidos);
+    const propuestasAplicadas = snapshot.analisis.propuestas.filter(
+      (propuesta) =>
+        propuesta.accion === "PROPONER_EVALUACION" &&
+        !excluidosPrevios.has(propuesta.aspectoId)
+    );
+
+    await enriquecerEvidenciasDesdeBitacora({
+      snapshot,
+      registroId,
+      propuestas: propuestasAplicadas,
+      evaluaciones: snapshot.aplicacion.evaluaciones,
+    });
+
     return {
       registroId,
       estado: "APLICADA" as const,
@@ -201,6 +320,13 @@ export async function aplicarBitacoraCompleta(
     },
     usuario
   );
+
+  await enriquecerEvidenciasDesdeBitacora({
+    snapshot,
+    registroId,
+    propuestas: seleccionadas,
+    evaluaciones: resultado.evaluaciones,
+  });
 
   const totalEvidenciasVinculadas = seleccionadas.reduce(
     (total, propuesta) => total + new Set(propuesta.evidenciasUrls).size,
