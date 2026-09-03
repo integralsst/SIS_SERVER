@@ -3,6 +3,8 @@ import type {
   Response,
 } from "express";
 
+import { servicioLogicaEvaluacionAspecto } from "../../services/supermatriz/logica-evaluacion-aspecto.service";
+import { limpiarVersionClonadaIncompleta } from "../../services/supermatriz/limpiar-version-clonada.service";
 import { servicioVersionesSupermatriz } from "../../services/supermatriz/versiones-supermatriz.service";
 import {
   ErrorValidacionSupermatriz,
@@ -178,21 +180,42 @@ export const controladorVersionesSupermatriz = {
     req: Request,
     res: Response
   ): Promise<void> => {
+    let nuevaVersionId: number | null = null;
+
     try {
       const actor =
         obtenerActor(req, res);
       if (!actor) return;
 
-      res.status(201).json(
+      const versionOrigenId = Number(req.params.id);
+      const nuevaVersion =
         await servicioVersionesSupermatriz.clonar(
-          Number(req.params.id),
+          versionOrigenId,
           construirDatosVersion(
             req.body
           ),
           actor
-        )
+        );
+
+      nuevaVersionId = nuevaVersion.id;
+
+      await servicioLogicaEvaluacionAspecto.sincronizarClonacion(
+        versionOrigenId,
+        nuevaVersion.id
+      );
+
+      res.status(201).json(
+        (await servicioVersionesSupermatriz.obtenerPorId(
+          nuevaVersion.id
+        )) ?? nuevaVersion
       );
     } catch (error) {
+      if (nuevaVersionId) {
+        await limpiarVersionClonadaIncompleta(
+          nuevaVersionId
+        );
+      }
+
       responderErrorSupermatriz(
         res,
         error,
