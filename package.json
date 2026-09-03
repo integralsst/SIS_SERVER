@@ -11,16 +11,15 @@
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "seed": "prisma db seed",
+    "seed": "npm run seed:reconstruccion",
     "reset:supermatriz": "ts-node --project tsconfig.seed.json prisma/reset-supermatriz.ts",
-    "seed:supermatriz": "ts-node --project tsconfig.seed.json prisma/seed-supermatriz.ts",
+    "seed:supermatriz": "ts-node --project tsconfig.seed.json prisma/seed-supermatriz.ts && ts-node --project tsconfig.seed.json prisma/backfill-logica-evaluacion-aspectos.ts",
     "reset:total": "ts-node --project tsconfig.seed.json prisma/reset-total.ts",
     "seed:entorno-base": "ts-node --project tsconfig.seed.json prisma/seed-entorno-base.ts",
-    "seed:demo": "ts-node --project tsconfig.seed.json prisma/seed.ts",
+    "seed:reconstruccion": "npm run seed:supermatriz && npm run seed:entorno-base",
     "seed:superadmin": "ts-node --project tsconfig.seed.json prisma/seed-superadmin.ts",
-    "seed:aprobacion-demo": "ts-node --project tsconfig.seed.json prisma/seed-aprobacion-demo.ts",
-    "seed:alertas": "ts-node --project tsconfig.seed.json prisma/seed-alertas.ts",
-    "backfill:gestion-participantes": "ts-node --project tsconfig.seed.json prisma/backfill-gestion-participantes.ts"
+    "backfill:gestion-participantes": "ts-node --project tsconfig.seed.json prisma/backfill-gestion-participantes.ts",
+    "backfill:logica-evaluacion": "ts-node --project tsconfig.seed.json prisma/backfill-logica-evaluacion-aspectos.ts"
   },
   "keywords": [],
   "author": "",
@@ -49,6 +48,6 @@
     "typescript": "^5.9.3"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "npm run seed:reconstruccion"
   }
 }

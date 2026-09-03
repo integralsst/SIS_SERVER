@@ -5,9 +5,11 @@ import {
 
 import { prisma } from "../../../lib/prisma";
 import type { ContextoAspectoBitacora } from "../../../types/bitacora.types";
+import { CRITERIO_GENERAL_EVALUACION_BITACORA } from "../criterios-evaluacion.constants";
 import type { CandidatoAspectoBitacora } from "./candidatos-aspecto.service";
 
 function construirLogicaDisponible(aspecto: {
+  logicaEvaluacion: string | null;
   planAccionEspecifico: { descripcion: string } | null;
   configuracion: {
     permiteNoAplica: boolean;
@@ -26,8 +28,18 @@ function construirLogicaDisponible(aspecto: {
     requiereRevisionTecnica: boolean;
     observaciones: string | null;
   } | null;
-}): string | null {
-  const reglas: string[] = [];
+}): string {
+  const reglas: string[] = [CRITERIO_GENERAL_EVALUACION_BITACORA];
+
+  if (aspecto.logicaEvaluacion?.trim()) {
+    reglas.push(
+      `LÓGICA ESPECÍFICA OFICIAL DEL ASPECTO:\n${aspecto.logicaEvaluacion.trim()}`
+    );
+  } else {
+    reglas.push(
+      "LÓGICA ESPECÍFICA: no se encuentra diligenciada para este aspecto en la versión de la Supermatriz. Aplica el criterio general 0/3/5 exclusivamente sobre evidencia directa del mismo aspecto y utiliza INFORMACION_INSUFICIENTE solo cuando esa evidencia no permita concluir con seguridad."
+    );
+  }
 
   if (aspecto.planAccionEspecifico?.descripcion?.trim()) {
     reglas.push(
@@ -75,7 +87,7 @@ function construirLogicaDisponible(aspecto: {
     }
   }
 
-  return reglas.length > 0 ? reglas.join("\n") : null;
+  return reglas.join("\n\n");
 }
 
 export async function cargarContextoAspectosBitacora(params: {
@@ -102,6 +114,7 @@ export async function cargarContextoAspectosBitacora(params: {
       codigo: true,
       nombre: true,
       descripcion: true,
+      logicaEvaluacion: true,
       planAccionEspecifico: {
         select: { descripcion: true },
       },

@@ -526,6 +526,7 @@ model Aspecto {
   codigo                          String?        @db.VarChar(50)
   nombre                          String         @db.VarChar(191)
   descripcion                     String?        @db.Text
+  logicaEvaluacion                String?        @db.Text
   orden                           Int
   calificacionMinisterialEsperada Decimal?       @db.Decimal(5, 2)
   estado                          EstadoRegistro @default(ACTIVO)

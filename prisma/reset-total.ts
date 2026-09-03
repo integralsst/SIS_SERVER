@@ -41,7 +41,10 @@ async function main(): Promise<void> {
     "✅ Toda la información de la aplicación fue eliminada."
   );
   console.log(
-    "✅ La base quedó lista para ejecutar seed:supermatriz y seed:demo."
+    "✅ La base quedó lista para ejecutar npm run seed:reconstruccion."
+  );
+  console.log(
+    "ℹ️ seed:reconstruccion carga la Supermatriz completa, sus lógicas de evaluación y el entorno base SIS."
   );
 }
 
@@ -61,4 +64,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
