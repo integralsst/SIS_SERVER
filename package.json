@@ -13,14 +13,15 @@
     "prisma:push": "prisma db push",
     "seed": "prisma db seed",
     "reset:supermatriz": "ts-node --project tsconfig.seed.json prisma/reset-supermatriz.ts",
-    "seed:supermatriz": "ts-node --project tsconfig.seed.json prisma/seed-supermatriz.ts",
+    "seed:supermatriz": "ts-node --project tsconfig.seed.json prisma/seed-supermatriz.ts && ts-node --project tsconfig.seed.json prisma/backfill-logica-evaluacion-aspectos.ts",
     "reset:total": "ts-node --project tsconfig.seed.json prisma/reset-total.ts",
     "seed:entorno-base": "ts-node --project tsconfig.seed.json prisma/seed-entorno-base.ts",
     "seed:demo": "ts-node --project tsconfig.seed.json prisma/seed.ts",
     "seed:superadmin": "ts-node --project tsconfig.seed.json prisma/seed-superadmin.ts",
     "seed:aprobacion-demo": "ts-node --project tsconfig.seed.json prisma/seed-aprobacion-demo.ts",
     "seed:alertas": "ts-node --project tsconfig.seed.json prisma/seed-alertas.ts",
-    "backfill:gestion-participantes": "ts-node --project tsconfig.seed.json prisma/backfill-gestion-participantes.ts"
+    "backfill:gestion-participantes": "ts-node --project tsconfig.seed.json prisma/backfill-gestion-participantes.ts",
+    "backfill:logica-evaluacion": "ts-node --project tsconfig.seed.json prisma/backfill-logica-evaluacion-aspectos.ts"
   },
   "keywords": [],
   "author": "",
@@ -39,7 +40,7 @@
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
-    "@types/cors": "^2.8.19",
+    "@types/cors": "^2.4.6",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.5",
