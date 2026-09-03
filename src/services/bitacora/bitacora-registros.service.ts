@@ -135,10 +135,7 @@ export async function guardarYAnalizarBitacora(
   const anio = validado.fechaEfectiva.getUTCFullYear();
   const periodo = await servicioPeriodosEvaluacion.abrir(
     empresaId,
-    {
-      anio,
-      versionSupermatrizId: version.id,
-    },
+    { anio },
     usuario
   );
 
@@ -374,6 +371,7 @@ export async function listarBitacorasEmpresa(
       estadoProcesamiento: snapshot?.estadoProcesamiento ?? "ERROR",
       resumen: snapshot ? crearResumen(snapshot.analisis.propuestas) : null,
       aplicada: registro.aprobacion?.estado === EstadoAprobacionGestion.APROBADA,
+      aplicacion: snapshot?.aplicacion ?? null,
     };
   });
 }
