@@ -46,6 +46,10 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           evidenciaBitacora: {
             anyOf: [{ type: "string" }, { type: "null" }],
           },
+          evidenciasUrls: {
+            type: "array",
+            items: { type: "string" },
+          },
           fechaEfectiva: { type: "string" },
           fechaDocumento: {
             anyOf: [{ type: "string" }, { type: "null" }],
@@ -74,6 +78,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           "estadoPropuesto",
           "calificacionAdministrativaPropuesta",
           "evidenciaBitacora",
+          "evidenciasUrls",
           "fechaEfectiva",
           "fechaDocumento",
           "justificacionTecnica",

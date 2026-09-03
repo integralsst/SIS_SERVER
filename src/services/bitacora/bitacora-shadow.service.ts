@@ -4,6 +4,7 @@ import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import type { CrearRegistroBitacoraInput } from "../../types/bitacora.types";
 import { validarCrearRegistroBitacora } from "../../validators/bitacora/bitacora.validator";
 import { servicioPeriodosEvaluacion } from "../evaluacion/periodos-evaluacion.service";
+import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
 import { analizarRegistroBitacoraConIa } from "./ia/bitacora-ai.service";
 import { buscarCandidatosAspectoBitacora } from "./recuperacion/candidatos-aspecto.service";
@@ -79,11 +80,13 @@ export async function analizarBitacoraShadow(
 
   const idTemporal = `shadow-${randomUUID()}`;
   const fechaEfectiva = input.fechaEfectiva.trim();
+  const urlsDisponibles = extraerUrlsBitacora(validado.contenido);
 
   const analisis = await analizarRegistroBitacoraConIa({
     registroBitacoraId: idTemporal,
     fechaEfectiva,
     contenidoOriginal: validado.contenido,
+    urlsDisponibles,
     aspectos: contextoAspectos,
   });
 
@@ -98,6 +101,7 @@ export async function analizarBitacoraShadow(
       accion: propuesta.accion,
       calificacion: propuesta.calificacionAdministrativaPropuesta,
       confianza: propuesta.confianza,
+      evidenciasUrls: propuesta.evidenciasUrls.length,
     })),
     escrituraRealizada: false,
   });

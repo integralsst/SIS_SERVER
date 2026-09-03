@@ -1,5 +1,8 @@
 export const TIPO_ACTIVIDAD_EVALUACION_DIRECTA =
   "Evaluación directa";
 
+export const TIPO_ACTIVIDAD_EVALUACION_DESDE_BITACORA =
+  "Evaluación desde Bitácora IA";
+
 export const GESTION_ID_MODO_EVALUACION_DIRECTA =
   "__EVALUACION_DIRECTA_SIN_BORRADOR__";

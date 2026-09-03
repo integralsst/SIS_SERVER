@@ -25,4 +25,22 @@ router.post(
   controladorAnalisisBitacora.shadow
 );
 
+router.get(
+  "/empresas/:empresaId/registros",
+  autorizar(...rolesBitacoraInterna),
+  controladorAnalisisBitacora.listar
+);
+
+router.post(
+  "/empresas/:empresaId/registros",
+  autorizar(...rolesBitacoraInterna),
+  controladorAnalisisBitacora.guardarAnalizar
+);
+
+router.post(
+  "/empresas/:empresaId/registros/:registroId/aplicar",
+  autorizar(...rolesBitacoraInterna),
+  controladorAnalisisBitacora.aplicarTodo
+);
+
 export default router;
