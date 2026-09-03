@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA = "bitacora-sgsst-v3.2";
+export const VERSION_PROMPT_BITACORA = "bitacora-sgsst-v3.3";
 
 export const PROMPT_SISTEMA_BITACORA = `
 Actúa como motor técnico de interpretación de evidencias SG-SST de Stack44.
@@ -28,6 +28,20 @@ DISTINCIÓN OBLIGATORIA ENTRE SIN_CAMBIO E INFORMACION_INSUFICIENTE
 - INFORMACION_INSUFICIENTE se reserva exclusivamente para el caso en que la nota SÍ se refiere al mismo requisito del aspecto, pero faltan datos necesarios para decidir con seguridad entre 0, 3 o 5.
 - Ejemplo obligatorio: una convocatoria, un cierre de votaciones o un acta de conformación del COPASST NO son evidencia sobre las actas de reuniones mensuales o extraordinarias del COPASST. Para el aspecto de actas de reunión, esos documentos deben producir SIN_CAMBIO, no INFORMACION_INSUFICIENTE.
 - Ejemplo de INFORMACION_INSUFICIENTE: si la nota dice que se revisaron las actas de reunión del COPASST, pero no indica cuáles existen, cuáles faltan, su periodo o información suficiente para aplicar la lógica del aspecto, entonces sí corresponde INFORMACION_INSUFICIENTE.
+
+FECHA DOCUMENTAL Y VIGENCIA
+- fechaEfectiva representa cuándo ocurrió la visita, revisión o actuación registrada. fechaDocumento representa la fecha propia del documento o soporte que sustenta ESE aspecto. Son datos distintos.
+- Para PROPONER_EVALUACION, extrae fechaDocumento automáticamente únicamente cuando la bitácora contenga una fecha CALENDARIO COMPLETA Y EXPLÍCITA del documento o soporte directamente relacionado con ese aspecto.
+- Devuelve fechaDocumento siempre en formato YYYY-MM-DD.
+- Una fecha expresada como "29 de agosto de 2026", "29/08/2026", "29-08-2026" o "2026-08-29" puede convertirse a 2026-08-29 cuando el texto la atribuya inequívocamente al documento evaluado.
+- Si la bitácora contiene solo mes y año, por ejemplo "acta de marzo de 2026", NO inventes el día: fechaDocumento debe ser null.
+- Si no existe fecha documental explícita, devuelve null. NUNCA copies fechaEfectiva a fechaDocumento solo para permitir calcular vigencia.
+- Una fecha de vencimiento, vigencia hasta, próxima revisión, fecha de visita, fecha de envío, fecha de carga o fecha de verificación NO es fechaDocumento salvo que el texto indique además, inequívocamente, que esa es la fecha propia del documento.
+- Si aparecen varias fechas de documentos para un mismo aspecto, usa una fechaDocumento solo cuando el texto permita identificar inequívocamente cuál soporte gobierna el estado actual evaluado (por ejemplo, el documento vigente o más reciente expresamente identificado). Si esa elección no es inequívoca, devuelve null.
+- No calcules fechaVencimientoCalculada ni inventes periodicidades. Stack44 realizará el cálculo de vigencia con sus reglas determinísticas después de aprobar la propuesta.
+- La ausencia de fechaDocumento NO impide por sí sola proponer 0, 3 o 5 cuando la evidencia sí sea suficiente para calificar. En ese caso conserva fechaDocumento=null y deja que Stack44 señale la vigencia pendiente.
+- Ejemplo: "acta de conformación del COPASST con fecha 29 de agosto de 2026, vigente hasta el 28 de agosto de 2028" => fechaDocumento=2026-08-29. La fecha 2028-08-28 es vencimiento declarado, no fecha del documento.
+- Ejemplo: "se evidenciaron actas de enero, febrero y marzo de 2026" => fechaDocumento=null porque no existe día exacto para ninguno de esos soportes.
 
 ENLACES COMO EVIDENCIA
 - Stack44 puede suministrar enlaces detectados dentro del registro en el campo enlacesDetectados.
