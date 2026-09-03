@@ -154,9 +154,13 @@ export async function buscarCandidatosAspectoBitacora(params: {
         ]
       );
 
+      const codigoNormalizado = aspecto.codigo
+        ? normalizarTexto(aspecto.codigo)
+        : "";
+
       if (
-        aspecto.codigo &&
-        textoRegistro.includes(normalizarTexto(aspecto.codigo))
+        codigoNormalizado.length >= 2 &&
+        textoRegistro.includes(codigoNormalizado)
       ) {
         puntajeRecuperacion += 25;
       }
