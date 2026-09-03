@@ -39,6 +39,34 @@ const MESES_ES: Record<string, number> = {
   diciembre: 12,
 };
 
+/**
+ * Términos que ayudan a recuperar candidatos, pero que por sí solos no
+ * demuestran que una nota trate exactamente del mismo requisito.
+ *
+ * Esta lista se usa únicamente en la capa de enriquecimiento de SIN_CAMBIO
+ * (visibilidad + asociación segura de URL/fecha). No modifica el guardrail
+ * que autoriza las evaluaciones 0/3/5 existentes.
+ */
+const SENALES_CONTEXTUALES_NO_INEQUIVOCAS = new Set([
+  "acta",
+  "actas",
+  "comite",
+  "copasst",
+  "vigia",
+  "ocupacional",
+  "documento",
+  "documentos",
+  "evidencia",
+  "evidencias",
+  "soporte",
+  "soportes",
+  "empresa",
+  "seguridad",
+  "salud",
+  "trabajo",
+  "sgsst",
+]);
+
 function aJsonPrisma(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -181,6 +209,32 @@ function urlsCanonicas(urls: string[]): string[] {
   return [...normalizadas];
 }
 
+function tieneSoporteInequivocoParaEnriquecimiento(
+  soporte: ReturnType<typeof calcularSoporteDirectoBitacora>
+): boolean {
+  if (!tieneSoporteDirectoBitacora(soporte)) {
+    return false;
+  }
+
+  if (
+    soporte.senales.some(
+      (senal) =>
+        senal.startsWith("codigo:") ||
+        senal.startsWith("frase:")
+    )
+  ) {
+    return true;
+  }
+
+  const senalesEspecificas = soporte.senales.filter(
+    (senal) => !SENALES_CONTEXTUALES_NO_INEQUIVOCAS.has(senal)
+  );
+
+  // Para un SIN_CAMBIO no basta compartir una entidad o un tipo documental.
+  // Exigimos dos señales específicas independientes del mismo requisito.
+  return new Set(senalesEspecificas).size >= 2;
+}
+
 function construirResumen(
   propuestas: PropuestaAspectoBitacora[],
   reconocidosIds: Set<number>
@@ -244,7 +298,12 @@ function enriquecerPropuestas(params: {
       palabrasClave: candidato.palabrasClave,
     });
 
-    if (tieneSoporteDirectoBitacora(soporte)) {
+    const reconocido =
+      propuesta.accion === "PROPONER_EVALUACION"
+        ? tieneSoporteDirectoBitacora(soporte)
+        : tieneSoporteInequivocoParaEnriquecimiento(soporte);
+
+    if (reconocido) {
       reconocidosIds.add(propuesta.aspectoId);
     }
   }
