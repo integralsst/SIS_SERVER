@@ -78,7 +78,11 @@ async function asegurarEvidenciasDesdeBitacora(
   usuarioId: string,
   origen: OrigenBitacoraEvaluacion
 ): Promise<number> {
-  const urls = [...new Set(origen.evidenciasUrls.map((url) => url.trim()).filter(Boolean))];
+  const urls = [
+    ...new Set(
+      origen.evidenciasUrls.map((url) => url.trim()).filter(Boolean)
+    ),
+  ];
   let creadas = 0;
 
   for (const url of urls) {
@@ -127,7 +131,7 @@ async function registrarEvaluacionDirecta(
     ? `BITACORA:${origenBitacora.registroId}:ASPECTO:${input.aspectoId}`
     : null;
 
-  if (marcadorBitacora) {
+  if (marcadorBitacora && origenBitacora) {
     const existente = await tx.evaluacionAspecto.findFirst({
       where: {
         aspectoId: input.aspectoId,
@@ -252,21 +256,19 @@ async function registrarEvaluacionDirecta(
     input.fechaDocumento,
     "fechaDocumento"
   );
-  const calificacionAdministrativa =
-    validarCalificacionAdministrativa(
-      input.estadoCumplimiento,
-      input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
-        ? 5
-        : input.calificacionAdministrativa
-    );
-  const fechaVencimientoCalculada =
-    calcularFechaVencimientoEvaluacion(
-      fechaEvaluacion,
-      fechaDocumento,
-      contexto.configuracionVigencia,
-      contexto.configuracion?.esEvergreen ?? false,
-      input.estadoCumplimiento
-    );
+  const calificacionAdministrativa = validarCalificacionAdministrativa(
+    input.estadoCumplimiento,
+    input.estadoCumplimiento === EstadoCumplimientoAspecto.NO_APLICA
+      ? 5
+      : input.calificacionAdministrativa
+  );
+  const fechaVencimientoCalculada = calcularFechaVencimientoEvaluacion(
+    fechaEvaluacion,
+    fechaDocumento,
+    contexto.configuracionVigencia,
+    contexto.configuracion?.esEvergreen ?? false,
+    input.estadoCumplimiento
+  );
 
   const evaluacionAnterior = await tx.evaluacionAspecto.findFirst({
     where: {
@@ -540,7 +542,9 @@ export const servicioEvaluacionDirecta = {
     );
 
     if (!fechaEvaluacion) {
-      throw new ErrorEvaluacion("La fecha efectiva de Bitácora es obligatoria.");
+      throw new ErrorEvaluacion(
+        "La fecha efectiva de Bitácora es obligatoria."
+      );
     }
 
     const anio = fechaEvaluacion.getUTCFullYear();
@@ -557,7 +561,9 @@ export const servicioEvaluacionDirecta = {
 
         for (const evaluacion of data.evaluaciones) {
           const evidenciasUrls =
-            data.evidenciasUrlsPorAspecto?.[String(evaluacion.aspectoId)] ?? [];
+            data.evidenciasUrlsPorAspecto?.[
+              String(evaluacion.aspectoId)
+            ] ?? [];
 
           resultado.push(
             await registrarEvaluacionDirecta(
