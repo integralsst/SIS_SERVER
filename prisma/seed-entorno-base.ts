@@ -46,13 +46,13 @@ const CUENTAS_BASE = {
   profesional: {
     nombre: "Santiago Zappa",
     correo: "santiago@stack4four.com",
-    contrasena: "Cardenas 1970",
+    contrasena: "Cardenas1970",
     rol: RolUsuario.PROFESIONAL,
   },
   adminCliente: {
     nombre: "Jesus Zappa",
     correo: "jesus@stack4four.com",
-    contrasena: "Cardenas 1970",
+    contrasena: "Cardenas1970",
     rol: RolUsuario.ADMIN_CLIENTE,
   },
 } as const;
