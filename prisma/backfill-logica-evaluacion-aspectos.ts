@@ -31,6 +31,25 @@ const VERSION_ID = (() => {
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
+function normalizarReferenciaComoSeed(codigo: string, nombre: string): {
+  codigo: string;
+  nombre: string;
+} {
+  const valor = `${codigo}. ${nombre}`.trim();
+  const coincidencia = valor.match(/^([0-9]+)\s*[\.\-:]?\s*(.+)$/s);
+
+  if (!coincidencia) {
+    throw new Error(
+      `No fue posible normalizar la referencia de lógica "${valor}" con las mismas reglas del seed de Supermatriz.`
+    );
+  }
+
+  return {
+    codigo: coincidencia[1].trim(),
+    nombre: coincidencia[2].trim(),
+  };
+}
+
 async function resolverVersion() {
   if (VERSION_ID) {
     const version = await prisma.versionSupermatriz.findUnique({
@@ -78,10 +97,16 @@ async function main(): Promise<void> {
   let noEncontradas = 0;
 
   for (const fuente of LOGICAS_EVALUACION_ASPECTOS) {
+    const referenciaPersistida = normalizarReferenciaComoSeed(
+      fuente.codigo,
+      fuente.nombre
+    );
+
     const candidatos = await prisma.aspecto.findMany({
       where: {
         versionSupermatrizId: version.id,
-        codigo: fuente.codigo,
+        codigo: referenciaPersistida.codigo,
+        nombre: referenciaPersistida.nombre,
       },
       select: {
         id: true,
@@ -94,14 +119,14 @@ async function main(): Promise<void> {
     if (candidatos.length === 0) {
       noEncontradas += 1;
       console.warn(
-        `   ⚠ ${fuente.codigo}: no se encontró aspecto en la versión.`
+        `   ⚠ ${fuente.codigo}: no se encontró aspecto como ${referenciaPersistida.codigo} · ${referenciaPersistida.nombre}.`
       );
       continue;
     }
 
     if (candidatos.length > 1) {
       throw new Error(
-        `El código ${fuente.codigo} coincide con ${candidatos.length} aspectos en la versión ${version.id}; se detiene para no actualizar ambiguamente.`
+        `La referencia ${fuente.codigo} coincide con ${candidatos.length} aspectos en la versión ${version.id}; se detiene para no actualizar ambiguamente.`
       );
     }
 
