@@ -28,6 +28,21 @@ export interface AnalizarRegistroBitacoraIaInput {
   aspectos: ContextoAspectoBitacora[];
 }
 
+const MARCADOR_PASO_2 = "PASO 2 · COBERTURA DEL REQUISITO";
+
+const PROMPT_SISTEMA_BITACORA_RECONCILIADO = (() => {
+  if (!PROMPT_SISTEMA_BITACORA.includes(MARCADOR_PASO_2)) {
+    throw new Error(
+      "El prompt base de Bitácora no contiene el marcador esperado para insertar la reconciliación antes de cobertura."
+    );
+  }
+
+  return PROMPT_SISTEMA_BITACORA.replace(
+    MARCADOR_PASO_2,
+    `${PROMPT_RECONCILIACION_GLOBAL}\n\n${MARCADOR_PASO_2}`
+  );
+})();
+
 const MESES_ES: Record<string, number> = {
   enero: 1,
   febrero: 2,
@@ -257,7 +272,7 @@ function aplicarGuardrailPropuestaCompleta(
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
     justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
-    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V3_6",
+    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V3_7",
     informacionFaltante: agregarInformacionFaltante(
       propuesta.informacionFaltante,
       "La interpretación requiere revisión humana porque no fue posible determinar de forma completa el estado y la calificación administrativa."
@@ -584,14 +599,14 @@ export async function analizarRegistroBitacoraConIa(
     mensajes: [
       {
         role: "system",
-        content: `${PROMPT_SISTEMA_BITACORA}\n\n${PROMPT_RECONCILIACION_GLOBAL}`,
+        content: PROMPT_SISTEMA_BITACORA_RECONCILIADO,
       },
       {
         role: "user",
         content: JSON.stringify(contextoUsuario),
       },
     ],
-    schemaName: "stack44_bitacora_analisis_v36",
+    schemaName: "stack44_bitacora_analisis_v37",
     schema: SCHEMA_RESPUESTA_BITACORA,
   });
 
