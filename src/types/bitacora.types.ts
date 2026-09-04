@@ -20,6 +20,8 @@ export type AccionAnalisisBitacora =
 
 export type RelacionSemanticaBitacora = "DIRECTA" | "CONTEXTUAL";
 
+export type AlcanceEvaluacionBitacora = "EVALUADO" | "EXCLUIDO";
+
 export type CoberturaRequisitoBitacora =
   | "COMPLETA"
   | "PARCIAL"
@@ -79,6 +81,7 @@ export interface ContextoAspectoBitacora {
 export interface PropuestaAspectoBitacora {
   aspectoId: number;
   identidadHistorica: string;
+  alcanceEvaluacion: AlcanceEvaluacionBitacora;
   relacionSemantica: RelacionSemanticaBitacora;
   coberturaRequisito: CoberturaRequisitoBitacora;
   elementosEvaluados: string[];
