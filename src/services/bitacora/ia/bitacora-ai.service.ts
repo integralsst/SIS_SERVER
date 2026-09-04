@@ -110,6 +110,7 @@ function validarUnidadesVerificacion(
 
   const contenidoNormalizado = normalizarTextoAnclaje(input.contenidoOriginal);
   const mapa = new Map<string, UnidadVerificacionBitacora>();
+  const idsVistos = new Set<string>();
 
   for (const unidad of unidades) {
     if (
@@ -128,13 +129,14 @@ function validarUnidadesVerificacion(
       );
     }
 
-    if (mapa.has(unidad.id)) {
+    if (idsVistos.has(unidad.id)) {
       throw new ErrorOpenRouter(
         `La IA repitió la unidad de verificación ${unidad.id}.`,
         502,
         "BITACORA_IA_UNIDAD_DUPLICADA"
       );
     }
+    idsVistos.add(unidad.id);
 
     const objetoTecnico = unidad.objetoTecnico.trim();
     const fragmentoBitacora = unidad.fragmentoBitacora.trim();
@@ -150,11 +152,13 @@ function validarUnidadesVerificacion(
 
     const fragmentoNormalizado = normalizarTextoAnclaje(fragmentoBitacora);
     if (!contenidoNormalizado.includes(fragmentoNormalizado)) {
-      throw new ErrorOpenRouter(
-        `La unidad de verificación ${unidad.id} no está anclada literalmente al registro de Bitácora.`,
-        502,
-        "BITACORA_IA_UNIDAD_NO_ANCLADA"
-      );
+      console.warn("[BITACORA-IA-GUARDRAIL] unidad-no-anclada-descartada", {
+        unidadId: unidad.id,
+        tipo: unidad.tipo,
+        objetoTecnico,
+        motivo: "FRAGMENTO_NO_ANCLADO_LITERALMENTE",
+      });
+      continue;
     }
 
     const tipo = contieneExclusionExplicita(fragmentoBitacora)
@@ -176,6 +180,15 @@ function validarUnidadesVerificacion(
       objetoTecnico,
       fragmentoBitacora,
       resultadoObservado,
+    });
+  }
+
+  if (mapa.size !== unidades.length) {
+    console.warn("[BITACORA-IA-GUARDRAIL] unidades-validacion-resumen", {
+      recibidas: unidades.length,
+      validas: mapa.size,
+      descartadas: unidades.length - mapa.size,
+      motivo: "UV_NO_ANCLADA_NO_ABORTA_ANALISIS",
     });
   }
 
@@ -219,11 +232,7 @@ function validarReferenciasUnidades(
 
     const unidad = unidades.get(id);
     if (!unidad) {
-      throw new ErrorOpenRouter(
-        `La IA vinculó el aspecto ${propuesta.aspectoId} a una unidad inexistente: ${id}.`,
-        502,
-        "BITACORA_IA_UNIDAD_PROPUESTA_NO_EXISTE"
-      );
+      continue;
     }
 
     referenciadas.push(unidad);
@@ -524,6 +533,35 @@ function aplicarGuardrailUnidades(
   unidades: Map<string, UnidadVerificacionBitacora>
 ): PropuestaAspectoBitacora {
   const referenciadas = validarReferenciasUnidades(propuesta, unidades);
+  const idsValidas = referenciadas.map((unidad) => unidad.id);
+  const idsValidasSet = new Set(idsValidas);
+  const idsDescartadas = propuesta.unidadVerificacionIds.filter(
+    (unidadId) => !idsValidasSet.has(unidadId)
+  );
+  let propuestaAnclada: PropuestaAspectoBitacora = {
+    ...propuesta,
+    unidadVerificacionIds: idsValidas,
+  };
+
+  if (idsDescartadas.length > 0) {
+    const guardrail = "GUARDRAIL_UV_REFERENCIA_DESCARTADA_V1";
+    console.warn("[BITACORA-IA-GUARDRAIL] referencias-unidad-descartadas", {
+      aspectoId: candidato.aspectoId,
+      unidadVerificacionIdsDescartadas: idsDescartadas,
+      unidadVerificacionIdsConservadas: idsValidas,
+      motivo: "UNIDAD_NO_VALIDADA_O_NO_EXISTENTE",
+    });
+    propuestaAnclada = {
+      ...propuestaAnclada,
+      reglaAplicada: agregarReglaGuardrail(
+        propuestaAnclada.reglaAplicada,
+        guardrail
+      ),
+      justificacionTecnica:
+        `${propuestaAnclada.justificacionTecnica} Stack44 descartó referencias a unidades de verificación que no conservaron un anclaje literal válido y mantuvo únicamente las unidades verificadas.`.trim(),
+    };
+  }
+
   const contieneExclusion = referenciadas.some(
     (unidad) => unidad.tipo === "EXCLUSION"
   );
@@ -532,30 +570,42 @@ function aplicarGuardrailUnidades(
   );
 
   if (contieneExclusion) {
-    if (propuesta.alcanceEvaluacion !== "EXCLUIDO") {
+    if (propuestaAnclada.alcanceEvaluacion !== "EXCLUIDO") {
       console.warn("[BITACORA-IA-GUARDRAIL] alcance-forzado-por-unidad", {
         aspectoId: candidato.aspectoId,
         motivo: "UNIDAD_EXCLUSION_REFERENCIADA",
-        unidadVerificacionIds: propuesta.unidadVerificacionIds,
+        unidadVerificacionIds: propuestaAnclada.unidadVerificacionIds,
       });
     }
 
     return normalizarContextual(candidato, {
-      ...propuesta,
+      ...propuestaAnclada,
       alcanceEvaluacion: "EXCLUIDO",
     });
   }
 
-  if (propuesta.relacionSemantica === "DIRECTA" && !contieneEvaluacion) {
+  if (
+    propuestaAnclada.relacionSemantica === "DIRECTA" &&
+    !contieneEvaluacion
+  ) {
     console.warn("[BITACORA-IA-GUARDRAIL] directa-sin-unidad-evaluacion", {
       aspectoId: candidato.aspectoId,
-      motivo: "SIN_ANCLA_EVALUACION",
+      motivo: "SIN_ANCLA_EVALUACION_VALIDADA",
+      unidadVerificacionIdsDescartadas: idsDescartadas,
     });
 
-    return normalizarContextual(candidato, propuesta);
+    return normalizarContextual(candidato, {
+      ...propuestaAnclada,
+      reglaAplicada: agregarReglaGuardrail(
+        propuestaAnclada.reglaAplicada,
+        "GUARDRAIL_UV_SIN_ANCLA_VALIDA_V1"
+      ),
+      justificacionTecnica:
+        `${propuestaAnclada.justificacionTecnica} Stack44 no permitió conservar la relación DIRECTA porque, después de validar el anclaje literal, no quedó una unidad EVALUACIÓN válida que sustentara este aspecto.`.trim(),
+    });
   }
 
-  return propuesta;
+  return propuestaAnclada;
 }
 
 function aplicarGuardrailAlcance(
@@ -986,6 +1036,9 @@ function aplicarUnidadesGlobalAAspectosDirectos(
         tieneEvaluacion,
         tieneExclusion,
         unidadVerificacionIds: propuesta.unidadVerificacionIds,
+        motivo: !tieneEvaluacion
+          ? "SIN_UNIDAD_EVALUACION_VALIDADA"
+          : "UNIDAD_EXCLUSION_VALIDADA",
       });
       continue;
     }
