@@ -1,6 +1,8 @@
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODELO_DEFAULT = "openai/gpt-5.4-mini";
-const TIMEOUT_DEFAULT_MS = 45_000;
+const TIMEOUT_DEFAULT_MS = 90_000;
+const TIMEOUT_MIN_MS = 60_000;
+const TIMEOUT_MAX_MS = 120_000;
 
 export class ErrorOpenRouter extends Error {
   constructor(
@@ -49,29 +51,54 @@ function leerBooleanoEntorno(nombre: string, valorDefault = false): boolean {
 function obtenerTimeoutMs(): number {
   const valor = Number(process.env.OPENROUTER_TIMEOUT_MS ?? TIMEOUT_DEFAULT_MS);
 
-  if (!Number.isFinite(valor) || valor < 1_000 || valor > 120_000) {
+  if (
+    !Number.isFinite(valor) ||
+    valor < TIMEOUT_MIN_MS ||
+    valor > TIMEOUT_MAX_MS
+  ) {
     return TIMEOUT_DEFAULT_MS;
   }
 
   return Math.trunc(valor);
 }
 
-function obtenerProviderOnly(): string[] | undefined {
-  const valor = process.env.OPENROUTER_PROVIDER_ONLY?.trim();
+function obtenerListaEntorno(nombre: string): string[] | undefined {
+  const valor = process.env[nombre]?.trim();
 
   if (!valor) {
     return undefined;
   }
 
-  const proveedores = valor
+  const elementos = valor
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
 
-  return proveedores.length > 0 ? proveedores : undefined;
+  return elementos.length > 0 ? elementos : undefined;
+}
+
+function obtenerConfiguracionProveedores() {
+  const ordenExplicito = obtenerListaEntorno("OPENROUTER_PROVIDER_ORDER");
+  const soloLegacy = obtenerListaEntorno("OPENROUTER_PROVIDER_ONLY");
+  const soloEstricto = leerBooleanoEntorno(
+    "OPENROUTER_PROVIDER_STRICT_ONLY",
+    false
+  );
+  const orden = ordenExplicito ?? soloLegacy;
+  const solo = soloEstricto ? soloLegacy ?? ordenExplicito : undefined;
+
+  return {
+    orden,
+    solo,
+    soloEstricto,
+    legacyOnlyComoOrden:
+      !ordenExplicito && Boolean(soloLegacy) && !soloEstricto,
+  };
 }
 
 export function obtenerConfiguracionOpenRouter() {
+  const proveedores = obtenerConfiguracionProveedores();
+
   return {
     enabled: leerBooleanoEntorno("OPENROUTER_ENABLED", false),
     apiKey: process.env.OPENROUTER_API_KEY?.trim() || null,
@@ -80,7 +107,10 @@ export function obtenerConfiguracionOpenRouter() {
     siteUrl: process.env.OPENROUTER_SITE_URL?.trim() || null,
     appName:
       process.env.OPENROUTER_APP_NAME?.trim() || "Stack44 SG-SST",
-    providerOnly: obtenerProviderOnly(),
+    providerOrder: proveedores.orden,
+    providerOnly: proveedores.solo,
+    providerStrictOnly: proveedores.soloEstricto,
+    legacyProviderOnlyAsOrder: proveedores.legacyOnlyComoOrden,
   };
 }
 
@@ -89,16 +119,12 @@ export function estaOpenRouterDisponible(): boolean {
   return config.enabled && Boolean(config.apiKey);
 }
 
-function validarRespuestaContenido(valor: unknown): string {
-  if (typeof valor !== "string" || !valor.trim()) {
-    throw new ErrorOpenRouter(
-      "OpenRouter respondió sin contenido utilizable.",
-      502,
-      "OPENROUTER_RESPUESTA_VACIA"
-    );
-  }
+function longitudTexto(valor: unknown): number | null {
+  return typeof valor === "string" ? valor.length : null;
+}
 
-  return valor.trim();
+function numeroSeguro(valor: unknown): number | null {
+  return typeof valor === "number" && Number.isFinite(valor) ? valor : null;
 }
 
 export async function solicitarJsonEstructuradoOpenRouter<T>(
@@ -122,16 +148,27 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
     );
   }
 
+  const promptChars = input.mensajes.reduce(
+    (total, mensaje) => total + mensaje.content.length,
+    0
+  );
+
   console.info("[OPENROUTER-BITACORA] solicitud", {
     modelo: config.model,
-    proveedorPermitido: config.providerOnly ?? "routing-zdr",
+    providerOrder: config.providerOrder ?? "routing-zdr",
+    providerOnly: config.providerOnly ?? null,
+    providerStrictOnly: config.providerStrictOnly,
+    legacyProviderOnlyAsOrder: config.legacyProviderOnlyAsOrder,
     timeoutMs: config.timeoutMs,
     schemaName: input.schemaName,
+    cantidadMensajes: input.mensajes.length,
+    promptChars,
     siteUrlConfigurado: Boolean(config.siteUrl),
   });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const inicio = Date.now();
 
   try {
     const headers: Record<string, string> = {
@@ -167,6 +204,9 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
           zdr: true,
           require_parameters: true,
           allow_fallbacks: true,
+          ...(config.providerOrder
+            ? { order: config.providerOrder }
+            : {}),
           ...(config.providerOnly
             ? { only: config.providerOnly }
             : {}),
@@ -174,8 +214,11 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
       }),
     });
 
-    const requestId = response.headers.get("x-request-id");
     const payload = (await response.json().catch(() => null)) as any;
+    const requestId =
+      response.headers.get("x-request-id") ??
+      (typeof payload?.id === "string" ? payload.id : null);
+    const latencyMs = Date.now() - inicio;
 
     if (!response.ok) {
       const detalle =
@@ -188,6 +231,7 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
       console.error("[OPENROUTER-BITACORA] respuesta-error", {
         status: response.status,
         requestId,
+        latencyMs,
         modelo: config.model,
         schemaName: input.schemaName,
         proveedor: typeof payload?.provider === "string" ? payload.provider : null,
@@ -208,15 +252,71 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
       );
     }
 
-    const contenido = validarRespuestaContenido(
-      payload?.choices?.[0]?.message?.content
-    );
+    const choice = payload?.choices?.[0];
+    const message = choice?.message;
+    const contenidoCrudo = message?.content;
 
+    if (typeof contenidoCrudo !== "string" || !contenidoCrudo.trim()) {
+      console.error("[OPENROUTER-BITACORA] respuesta-vacia", {
+        requestId,
+        latencyMs,
+        modelo:
+          typeof payload?.model === "string" ? payload.model : config.model,
+        proveedor:
+          typeof payload?.provider === "string" ? payload.provider : null,
+        finishReason:
+          typeof choice?.finish_reason === "string"
+            ? choice.finish_reason
+            : null,
+        nativeFinishReason:
+          typeof choice?.native_finish_reason === "string"
+            ? choice.native_finish_reason
+            : null,
+        contentLength: longitudTexto(contenidoCrudo),
+        reasoningLength: longitudTexto(message?.reasoning),
+        refusalLength: longitudTexto(message?.refusal),
+        toolCallsCount: Array.isArray(message?.tool_calls)
+          ? message.tool_calls.length
+          : 0,
+        promptTokens: numeroSeguro(payload?.usage?.prompt_tokens),
+        completionTokens: numeroSeguro(payload?.usage?.completion_tokens),
+        reasoningTokens: numeroSeguro(
+          payload?.usage?.completion_tokens_details?.reasoning_tokens
+        ),
+        totalTokens: numeroSeguro(payload?.usage?.total_tokens),
+      });
+
+      throw new ErrorOpenRouter(
+        "OpenRouter respondió sin contenido utilizable.",
+        502,
+        "OPENROUTER_RESPUESTA_VACIA"
+      );
+    }
+
+    const contenido = contenidoCrudo.trim();
     let datos: T;
 
     try {
       datos = JSON.parse(contenido) as T;
     } catch {
+      console.error("[OPENROUTER-BITACORA] json-invalido", {
+        requestId,
+        latencyMs,
+        modelo:
+          typeof payload?.model === "string" ? payload.model : config.model,
+        proveedor:
+          typeof payload?.provider === "string" ? payload.provider : null,
+        finishReason:
+          typeof choice?.finish_reason === "string"
+            ? choice.finish_reason
+            : null,
+        nativeFinishReason:
+          typeof choice?.native_finish_reason === "string"
+            ? choice.native_finish_reason
+            : null,
+        contentLength: contenido.length,
+      });
+
       throw new ErrorOpenRouter(
         "OpenRouter devolvió contenido que no es JSON válido.",
         502,
@@ -249,8 +349,17 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
 
     console.info("[OPENROUTER-BITACORA] respuesta-ok", {
       requestId: resultado.requestId,
+      latencyMs,
       modelo: resultado.modelo,
       proveedor: resultado.proveedor,
+      finishReason:
+        typeof choice?.finish_reason === "string"
+          ? choice.finish_reason
+          : null,
+      nativeFinishReason:
+        typeof choice?.native_finish_reason === "string"
+          ? choice.native_finish_reason
+          : null,
       uso: resultado.uso,
     });
 
@@ -264,6 +373,7 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
       console.error("[OPENROUTER-BITACORA] timeout", {
         modelo: config.model,
         timeoutMs: config.timeoutMs,
+        latencyMs: Date.now() - inicio,
       });
 
       throw new ErrorOpenRouter(
@@ -275,6 +385,7 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
 
     console.error("[OPENROUTER-BITACORA] conexion-error", {
       modelo: config.model,
+      latencyMs: Date.now() - inicio,
       error: error instanceof Error ? error.message : "error-desconocido",
     });
 
