@@ -199,6 +199,10 @@ export async function cargarContextoAspectosBitacora(params: {
           calificacionAdministrativa: true,
           observacion: true,
           fechaDocumento: true,
+          evidencias: {
+            where: { activo: true },
+            select: { url: true },
+          },
         },
       });
 
@@ -236,6 +240,13 @@ export async function cargarContextoAspectosBitacora(params: {
         observacionActual: evaluacionActual?.observacion ?? null,
         fechaDocumentoActual:
           evaluacionActual?.fechaDocumento?.toISOString().slice(0, 10) ?? null,
+        evidenciasUrlsActuales: [
+          ...new Set(
+            (evaluacionActual?.evidencias ?? [])
+              .map((evidencia) => evidencia.url.trim())
+              .filter(Boolean)
+          ),
+        ],
         requiereEvidencia:
           aspecto.configuracionEvidencia?.requiereEvidencia ?? false,
         descripcionEvidencia:
