@@ -9,6 +9,7 @@ import { prisma } from "../../lib/prisma";
 import type {
   CrearRegistroBitacoraInput,
   PropuestaAspectoBitacora,
+  ResultadoAnalisisBitacora,
   UnidadVerificacionBitacora,
 } from "../../types/bitacora.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
@@ -20,6 +21,7 @@ import {
 } from "./bitacora.constants";
 import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
+import { sanitizarContenidoBitacoraParaIa } from "./ia/bitacora-ai-sanitizacion.service";
 import { analizarRegistroBitacoraConIa } from "./ia/bitacora-ai.service";
 import {
   buscarCandidatosAspectoBitacora,
@@ -115,6 +117,87 @@ function crearResumen(propuestas: PropuestaAspectoBitacora[]) {
     evaluaciones,
     requierenRevision,
     evidenciasUrls,
+  };
+}
+
+function aplicarGuardrailUrlsEvidencia(
+  analisis: ResultadoAnalisisBitacora,
+  urlsAutorizadas: string[]
+): ResultadoAnalisisBitacora {
+  const unidades = new Map(
+    (analisis.unidadesVerificacion ?? []).map((unidad) => [unidad.id, unidad])
+  );
+  const urlsDisponibles = new Set(urlsAutorizadas);
+
+  const propuestas = analisis.propuestas.map((propuesta) => {
+    if (propuesta.relacionSemantica !== "DIRECTA") {
+      return {
+        ...propuesta,
+        evidenciasUrls: [],
+      };
+    }
+
+    const unidadesPropuesta = new Set(propuesta.unidadVerificacionIds ?? []);
+    const permitidas = new Set<string>();
+
+    for (const clasificacion of propuesta.clasificacionUrls ?? []) {
+      if (
+        !clasificacion ||
+        typeof clasificacion.url !== "string" ||
+        !Array.isArray(clasificacion.unidadVerificacionIds) ||
+        clasificacion.tipo !== "EVIDENCIA_DIRECTA"
+      ) {
+        continue;
+      }
+
+      const url = clasificacion.url.trim();
+      if (!url || !urlsDisponibles.has(url)) {
+        continue;
+      }
+
+      const ancladaMismaUnidad = clasificacion.unidadVerificacionIds.some(
+        (unidadId) => {
+          if (!unidadesPropuesta.has(unidadId)) {
+            return false;
+          }
+
+          const unidad = unidades.get(unidadId);
+          if (!unidad || unidad.tipo !== "EVALUACION") {
+            return false;
+          }
+
+          return extraerUrlsBitacora(unidad.fragmentoBitacora).includes(url);
+        }
+      );
+
+      if (ancladaMismaUnidad) {
+        permitidas.add(url);
+      }
+    }
+
+    const evidenciasUrls = propuesta.evidenciasUrls.filter((url) =>
+      permitidas.has(url)
+    );
+
+    if (evidenciasUrls.length !== propuesta.evidenciasUrls.length) {
+      console.warn("[BITACORA-IA-GUARDRAIL] urls-evidencia-descartadas", {
+        aspectoId: propuesta.aspectoId,
+        recibidas: propuesta.evidenciasUrls.length,
+        conservadas: evidenciasUrls.length,
+        motivo: "URL_NO_EVIDENCIA_DIRECTA_O_SIN_ANCLA_UV",
+      });
+    }
+
+    return {
+      ...propuesta,
+      evidenciasUrls,
+    };
+  });
+
+  return {
+    ...analisis,
+    versionPrompt: `${analisis.versionPrompt}+url-evidencia-sanitizacion-v1`,
+    propuestas,
   };
 }
 
@@ -241,13 +324,28 @@ export async function guardarYAnalizarBitacora(
       fechaEfectiva: validado.fechaEfectiva,
       candidatos,
     });
-    const analisis = await analizarRegistroBitacoraConIa({
+
+    const contenidoParaIa = sanitizarContenidoBitacoraParaIa(validado.contenido);
+    const urlsParaIa = extraerUrlsBitacora(contenidoParaIa.contenido);
+
+    if (contenidoParaIa.totalRedacciones > 0) {
+      console.warn("[BITACORA-IA-SEGURIDAD] datos-sensibles-redactados", {
+        registroId: registro.gestion.id,
+        totalRedacciones: contenidoParaIa.totalRedacciones,
+      });
+    }
+
+    const analisisCrudo = await analizarRegistroBitacoraConIa({
       registroBitacoraId: registro.gestion.id,
       fechaEfectiva,
-      contenidoOriginal: validado.contenido,
-      urlsDisponibles: urlsDetectadas,
+      contenidoOriginal: contenidoParaIa.contenido,
+      urlsDisponibles: urlsParaIa,
       aspectos: contextoAspectos,
     });
+    const analisis = aplicarGuardrailUrlsEvidencia(
+      analisisCrudo,
+      urlsParaIa
+    );
 
     const snapshotFinal: SnapshotBitacoraIa = {
       ...snapshotInicial,
