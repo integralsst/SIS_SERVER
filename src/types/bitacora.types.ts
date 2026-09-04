@@ -22,6 +22,8 @@ export type RelacionSemanticaBitacora = "DIRECTA" | "CONTEXTUAL";
 
 export type AlcanceEvaluacionBitacora = "EVALUADO" | "EXCLUIDO";
 
+export type TipoUnidadVerificacionBitacora = "EVALUACION" | "EXCLUSION";
+
 export type CoberturaRequisitoBitacora =
   | "COMPLETA"
   | "PARCIAL"
@@ -78,11 +80,20 @@ export interface ContextoAspectoBitacora {
   logicaEvaluacion: string | null;
 }
 
+export interface UnidadVerificacionBitacora {
+  id: string;
+  tipo: TipoUnidadVerificacionBitacora;
+  objetoTecnico: string;
+  fragmentoBitacora: string;
+  resultadoObservado: string;
+}
+
 export interface PropuestaAspectoBitacora {
   aspectoId: number;
   identidadHistorica: string;
   alcanceEvaluacion: AlcanceEvaluacionBitacora;
   relacionSemantica: RelacionSemanticaBitacora;
+  unidadVerificacionIds?: string[];
   coberturaRequisito: CoberturaRequisitoBitacora;
   elementosEvaluados: string[];
   elementosNoEvaluados: string[];
@@ -106,5 +117,6 @@ export interface ResultadoAnalisisBitacora {
   registroBitacoraId: string;
   modelo: string;
   versionPrompt: string;
+  unidadesVerificacion?: UnidadVerificacionBitacora[];
   propuestas: PropuestaAspectoBitacora[];
 }
