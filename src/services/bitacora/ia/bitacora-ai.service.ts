@@ -330,6 +330,194 @@ function normalizarContextual(
   };
 }
 
+function unirStringsUnicos(valores: Array<string[] | undefined>): string[] {
+  return [
+    ...new Set(
+      valores
+        .flatMap((valor) => valor ?? [])
+        .map((valor) => valor.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function firmaSemanticaPropuesta(propuesta: PropuestaAspectoBitacora): string {
+  return JSON.stringify({
+    identidadHistorica: propuesta.identidadHistorica,
+    fechaEfectiva: propuesta.fechaEfectiva,
+    alcanceEvaluacion: propuesta.alcanceEvaluacion,
+    relacionSemantica: propuesta.relacionSemantica,
+    coberturaRequisito: propuesta.coberturaRequisito,
+    accion: propuesta.accion,
+    estadoPropuesto: propuesta.estadoPropuesto,
+    calificacionAdministrativaPropuesta:
+      propuesta.calificacionAdministrativaPropuesta,
+    fechaDocumento: propuesta.fechaDocumento,
+  });
+}
+
+function confianzaConservadora(
+  propuestas: PropuestaAspectoBitacora[]
+): number {
+  const validas = propuestas
+    .map((propuesta) => propuesta.confianza)
+    .filter(
+      (confianza) =>
+        typeof confianza === "number" &&
+        Number.isFinite(confianza) &&
+        confianza >= 0 &&
+        confianza <= 1
+    );
+
+  return validas.length === propuestas.length && validas.length > 0
+    ? Math.min(...validas)
+    : 0;
+}
+
+function agregarReglaGuardrail(
+  reglaActual: string | null,
+  guardrail: string
+): string {
+  return reglaActual?.trim()
+    ? `${reglaActual.trim()} | ${guardrail}`
+    : guardrail;
+}
+
+/**
+ * OpenRouter no admite uniqueItems en el schema estricto usado por Bitácora.
+ * Por eso los duplicados estructurales se normalizan determinísticamente en
+ * backend antes de evaluar alcance, unidades o evidencias.
+ */
+function consolidarPropuestasDuplicadas(
+  input: AnalizarRegistroBitacoraIaInput,
+  propuestas: PropuestaAspectoBitacora[]
+): PropuestaAspectoBitacora[] {
+  if (!Array.isArray(propuestas)) {
+    return propuestas;
+  }
+
+  const candidatos = new Map(
+    input.aspectos.map((aspecto) => [aspecto.aspectoId, aspecto])
+  );
+  const grupos = new Map<number, PropuestaAspectoBitacora[]>();
+  const ordenAspectos: number[] = [];
+
+  for (const propuesta of propuestas) {
+    if (!propuesta || !Number.isInteger(propuesta.aspectoId)) {
+      return propuestas;
+    }
+
+    const existentes = grupos.get(propuesta.aspectoId);
+    if (existentes) {
+      existentes.push(propuesta);
+    } else {
+      grupos.set(propuesta.aspectoId, [propuesta]);
+      ordenAspectos.push(propuesta.aspectoId);
+    }
+  }
+
+  const normalizadas: PropuestaAspectoBitacora[] = [];
+
+  for (const aspectoId of ordenAspectos) {
+    const grupo = grupos.get(aspectoId) ?? [];
+    if (grupo.length <= 1) {
+      if (grupo[0]) normalizadas.push(grupo[0]);
+      continue;
+    }
+
+    const base = grupo[0];
+    const candidato = candidatos.get(aspectoId);
+    if (!candidato) {
+      // Se conserva una sola ocurrencia para que el validador de autorización
+      // emita el error correcto sin que el duplicado oculte el problema real.
+      normalizadas.push(base);
+      continue;
+    }
+
+    const firmas = new Set(grupo.map(firmaSemanticaPropuesta));
+    const unidadVerificacionIds = unirStringsUnicos(
+      grupo.map((propuesta) => propuesta.unidadVerificacionIds)
+    );
+    const informacionFaltante = unirStringsUnicos(
+      grupo.map((propuesta) => propuesta.informacionFaltante)
+    );
+    const confianza = confianzaConservadora(grupo);
+
+    if (firmas.size === 1) {
+      const guardrail = "GUARDRAIL_PROPUESTA_DUPLICADA_CONSOLIDADA_V1";
+      const consolidada: PropuestaAspectoBitacora = {
+        ...base,
+        unidadVerificacionIds,
+        elementosEvaluados: unirStringsUnicos(
+          grupo.map((propuesta) => propuesta.elementosEvaluados)
+        ),
+        elementosNoEvaluados: unirStringsUnicos(
+          grupo.map((propuesta) => propuesta.elementosNoEvaluados)
+        ),
+        evidenciasUrls: unirStringsUnicos(
+          grupo.map((propuesta) => propuesta.evidenciasUrls)
+        ),
+        informacionFaltante,
+        confianza,
+        evidenciaBitacora:
+          grupo
+            .map((propuesta) => propuesta.evidenciaBitacora?.trim())
+            .find(Boolean) ?? null,
+        reglaAplicada: agregarReglaGuardrail(base.reglaAplicada, guardrail),
+        justificacionTecnica:
+          `${base.justificacionTecnica} Stack44 consolidó determinísticamente ${grupo.length} respuestas equivalentes del modelo para este mismo aspecto.`.trim(),
+        requiereEvidenciaDocumental: grupo.some(
+          (propuesta) => propuesta.requiereEvidenciaDocumental
+        ),
+        requiereRevisionTecnica: grupo.some(
+          (propuesta) => propuesta.requiereRevisionTecnica
+        ),
+      };
+
+      console.warn("[BITACORA-IA-GUARDRAIL] propuesta-duplicada-consolidada", {
+        aspectoId,
+        ocurrencias: grupo.length,
+        motivo: "DUPLICADOS_SEMANTICAMENTE_EQUIVALENTES",
+      });
+
+      normalizadas.push(consolidada);
+      continue;
+    }
+
+    const guardrail = "GUARDRAIL_PROPUESTA_DUPLICADA_CONTRADICTORIA_V1";
+    const contextual = normalizarContextual(candidato, {
+      ...base,
+      alcanceEvaluacion: "EVALUADO",
+      unidadVerificacionIds,
+      informacionFaltante: agregarInformacionFaltante(
+        informacionFaltante,
+        "La IA devolvió más de una interpretación contradictoria para este mismo aspecto; por precisión, Stack44 no lo reconoce como DIRECTO en esta ejecución."
+      ),
+      confianza,
+      justificacionTecnica:
+        `${base.justificacionTecnica} Stack44 detectó respuestas duplicadas contradictorias para el mismo aspecto y degradó determinísticamente la adjudicación a CONTEXTUAL para evitar una evaluación automática ambigua.`.trim(),
+      reglaAplicada: agregarReglaGuardrail(base.reglaAplicada, guardrail),
+    });
+
+    console.warn("[BITACORA-IA-GUARDRAIL] propuesta-duplicada-contradictoria", {
+      aspectoId,
+      ocurrencias: grupo.length,
+      motivo: "PRECISION_SOBRE_RECALL",
+      relaciones: [...new Set(grupo.map((propuesta) => propuesta.relacionSemantica))],
+      acciones: [...new Set(grupo.map((propuesta) => propuesta.accion))],
+      calificaciones: [
+        ...new Set(
+          grupo.map((propuesta) => propuesta.calificacionAdministrativaPropuesta)
+        ),
+      ],
+    });
+
+    normalizadas.push(contextual);
+  }
+
+  return normalizadas;
+}
+
 function aplicarGuardrailUnidades(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora,
@@ -681,11 +869,11 @@ function validarAspectosDirectosFinales(
     }
 
     if (finales.has(aspectoId)) {
-      throw new ErrorOpenRouter(
-        `La adjudicación global repitió el aspecto ${aspectoId}.`,
-        502,
-        "BITACORA_IA_ADJUDICACION_GLOBAL_DUPLICADA"
-      );
+      console.warn("[BITACORA-IA-GUARDRAIL] adjudicacion-global-duplicada", {
+        aspectoId,
+        motivo: "CONJUNTO_DIRECTO_DEDUPLICADO",
+      });
+      continue;
     }
 
     finales.add(aspectoId);
@@ -773,6 +961,14 @@ function aplicarUnidadesGlobalAAspectosDirectos(
   for (const aspectoId of aspectosDirectosFinales) {
     const propuesta = propuestasPorAspecto.get(aspectoId);
     if (!propuesta) {
+      continue;
+    }
+
+    if (propuesta.relacionSemantica !== "DIRECTA") {
+      console.warn("[BITACORA-IA-GUARDRAIL] directa-removida-por-propuesta", {
+        aspectoId,
+        motivo: "PROPUESTA_FINAL_NO_DIRECTA",
+      });
       continue;
     }
 
@@ -1089,9 +1285,9 @@ function validarPropuestasModelo(
 
     if (idsVistos.has(propuesta.aspectoId)) {
       throw new ErrorOpenRouter(
-        `La IA devolvió el aspecto ${propuesta.aspectoId} más de una vez.`,
+        `La normalización interna dejó el aspecto ${propuesta.aspectoId} duplicado.`,
         502,
-        "BITACORA_IA_ASPECTO_DUPLICADO"
+        "BITACORA_IA_ASPECTO_DUPLICADO_INTERNO"
       );
     }
 
@@ -1224,12 +1420,16 @@ export async function analizarRegistroBitacoraConIa(
     input,
     respuesta.datos.unidadesVerificacion
   );
+  const propuestasNormalizadas = consolidarPropuestasDuplicadas(
+    input,
+    respuesta.datos.propuestas
+  );
   const aspectosDirectosDeclarados = validarAspectosDirectosFinales(
     input,
     respuesta.datos.aspectosDirectosFinales
   );
   const aspectosExcluidos = obtenerAspectosExcluidosDeAlcance(
-    respuesta.datos.propuestas,
+    propuestasNormalizadas,
     unidades
   );
   const aspectosDirectosConAlcance = aplicarAlcanceGlobalAAspectosDirectos(
@@ -1238,7 +1438,7 @@ export async function analizarRegistroBitacoraConIa(
   );
   const aspectosDirectosFinales = aplicarUnidadesGlobalAAspectosDirectos(
     aspectosDirectosConAlcance,
-    respuesta.datos.propuestas,
+    propuestasNormalizadas,
     unidades
   );
   const asignacionesEvidenciaConAlcance = aplicarAlcanceGlobalAAsignaciones(
@@ -1262,7 +1462,7 @@ export async function analizarRegistroBitacoraConIa(
     unidadesVerificacion: [...unidades.values()],
     propuestas: validarPropuestasModelo(
       input,
-      respuesta.datos.propuestas,
+      propuestasNormalizadas,
       aspectosDirectosFinales,
       urlsFinalesPorAspecto,
       unidades
