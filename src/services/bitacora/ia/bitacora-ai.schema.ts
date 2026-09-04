@@ -2,6 +2,33 @@ export const SCHEMA_RESPUESTA_BITACORA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    unidadesVerificacion: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: {
+            type: "string",
+            pattern: "^UV-[1-9][0-9]*$",
+          },
+          tipo: {
+            type: "string",
+            enum: ["EVALUACION", "EXCLUSION"],
+          },
+          objetoTecnico: { type: "string" },
+          fragmentoBitacora: { type: "string" },
+          resultadoObservado: { type: "string" },
+        },
+        required: [
+          "id",
+          "tipo",
+          "objetoTecnico",
+          "fragmentoBitacora",
+          "resultadoObservado",
+        ],
+      },
+    },
     aspectosDirectosFinales: {
       type: "array",
       items: { type: "integer" },
@@ -38,6 +65,14 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           relacionSemantica: {
             type: "string",
             enum: ["DIRECTA", "CONTEXTUAL"],
+          },
+          unidadVerificacionIds: {
+            type: "array",
+            uniqueItems: true,
+            items: {
+              type: "string",
+              pattern: "^UV-[1-9][0-9]*$",
+            },
           },
           coberturaRequisito: {
             type: "string",
@@ -124,6 +159,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           "identidadHistorica",
           "alcanceEvaluacion",
           "relacionSemantica",
+          "unidadVerificacionIds",
           "coberturaRequisito",
           "elementosEvaluados",
           "elementosNoEvaluados",
@@ -146,6 +182,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
     },
   },
   required: [
+    "unidadesVerificacion",
     "aspectosDirectosFinales",
     "asignacionesEvidenciaFinales",
     "justificacionAdjudicacionGlobal",
