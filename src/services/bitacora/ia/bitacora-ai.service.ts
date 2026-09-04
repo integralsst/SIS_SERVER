@@ -3,10 +3,11 @@ import type {
   PropuestaAspectoBitacora,
   ResultadoAnalisisBitacora,
 } from "../../../types/bitacora.types";
+import { PROMPT_SISTEMA_BITACORA } from "../bitacora-ai.prompt";
 import {
-  PROMPT_SISTEMA_BITACORA,
-  VERSION_PROMPT_BITACORA,
-} from "../bitacora-ai.prompt";
+  PROMPT_RECONCILIACION_GLOBAL,
+  VERSION_PROMPT_BITACORA_RECONCILIADA,
+} from "../bitacora-ai-reconciliacion.prompt";
 import { SCHEMA_RESPUESTA_BITACORA } from "./bitacora-ai.schema";
 import {
   ErrorOpenRouter,
@@ -14,6 +15,8 @@ import {
 } from "./openrouter.client";
 
 interface RespuestaModeloBitacora {
+  aspectosDirectosFinales: number[];
+  justificacionAdjudicacionGlobal: string;
   propuestas: PropuestaAspectoBitacora[];
 }
 
@@ -254,7 +257,7 @@ function aplicarGuardrailPropuestaCompleta(
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
     justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
-    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V3_4",
+    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V3_6",
     informacionFaltante: agregarInformacionFaltante(
       propuesta.informacionFaltante,
       "La interpretación requiere revisión humana porque no fue posible determinar de forma completa el estado y la calificación administrativa."
@@ -355,12 +358,101 @@ function validarUrlsPropuesta(
   };
 }
 
+function validarAspectosDirectosFinales(
+  input: AnalizarRegistroBitacoraIaInput,
+  aspectosDirectosFinales: number[]
+): Set<number> {
+  if (!Array.isArray(aspectosDirectosFinales)) {
+    throw new ErrorOpenRouter(
+      "La respuesta de IA no contiene una adjudicación global válida.",
+      502,
+      "BITACORA_IA_ADJUDICACION_GLOBAL_INVALIDA"
+    );
+  }
+
+  const candidatosAutorizados = new Set(
+    input.aspectos.map((aspecto) => aspecto.aspectoId)
+  );
+  const finales = new Set<number>();
+
+  for (const aspectoId of aspectosDirectosFinales) {
+    if (!Number.isInteger(aspectoId)) {
+      throw new ErrorOpenRouter(
+        "La adjudicación global contiene un identificador de aspecto inválido.",
+        502,
+        "BITACORA_IA_ADJUDICACION_GLOBAL_INVALIDA"
+      );
+    }
+
+    if (!candidatosAutorizados.has(aspectoId)) {
+      throw new ErrorOpenRouter(
+        `La adjudicación global incluyó un aspecto fuera del contexto autorizado: ${aspectoId}.`,
+        502,
+        "BITACORA_IA_ADJUDICACION_GLOBAL_NO_AUTORIZADA"
+      );
+    }
+
+    if (finales.has(aspectoId)) {
+      throw new ErrorOpenRouter(
+        `La adjudicación global repitió el aspecto ${aspectoId}.`,
+        502,
+        "BITACORA_IA_ADJUDICACION_GLOBAL_DUPLICADA"
+      );
+    }
+
+    finales.add(aspectoId);
+  }
+
+  return finales;
+}
+
+function aplicarReconciliacionGlobal(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora,
+  aspectosDirectosFinales: Set<number>
+): PropuestaAspectoBitacora {
+  const seleccionadaGlobalmente = aspectosDirectosFinales.has(
+    propuesta.aspectoId
+  );
+
+  if (!seleccionadaGlobalmente) {
+    if (propuesta.relacionSemantica === "DIRECTA") {
+      console.warn("[BITACORA-IA-GUARDRAIL] directa-degradada-por-reconciliacion", {
+        aspectoId: candidato.aspectoId,
+        motivo: "NO_INCLUIDA_EN_CONJUNTO_DIRECTO_FINAL",
+        accionOriginal: propuesta.accion,
+      });
+    }
+
+    return normalizarContextual(candidato, propuesta);
+  }
+
+  if (propuesta.relacionSemantica !== "DIRECTA") {
+    console.warn("[BITACORA-IA-GUARDRAIL] adjudicacion-global-inconsistente", {
+      aspectoId: candidato.aspectoId,
+      motivo: "INCLUIDA_GLOBALMENTE_PERO_PROPUESTA_CONTEXTUAL",
+    });
+
+    // Precisión > recall: el cierre global nunca promueve una propuesta
+    // que individualmente no quedó sustentada como DIRECTA.
+    return normalizarContextual(candidato, propuesta);
+  }
+
+  return propuesta;
+}
+
 function normalizarPropuestaModelo(
   input: AnalizarRegistroBitacoraIaInput,
   candidato: ContextoAspectoBitacora,
-  propuesta: PropuestaAspectoBitacora
+  propuesta: PropuestaAspectoBitacora,
+  aspectosDirectosFinales: Set<number>
 ): PropuestaAspectoBitacora {
-  const adjudicada = aplicarGuardrailAdjudicacion(candidato, propuesta);
+  const reconciliada = aplicarReconciliacionGlobal(
+    candidato,
+    propuesta,
+    aspectosDirectosFinales
+  );
+  const adjudicada = aplicarGuardrailAdjudicacion(candidato, reconciliada);
   const completa = aplicarGuardrailPropuestaCompleta(candidato, adjudicada);
   const conUrlsValidadas = validarUrlsPropuesta(input, completa);
 
@@ -369,7 +461,8 @@ function normalizarPropuestaModelo(
 
 function validarPropuestasModelo(
   input: AnalizarRegistroBitacoraIaInput,
-  propuestas: PropuestaAspectoBitacora[]
+  propuestas: PropuestaAspectoBitacora[],
+  aspectosDirectosFinales: Set<number>
 ): PropuestaAspectoBitacora[] {
   if (!Array.isArray(propuestas)) {
     throw new ErrorOpenRouter(
@@ -442,7 +535,24 @@ function validarPropuestasModelo(
       );
     }
 
-    validadas.push(normalizarPropuestaModelo(input, candidato, propuesta));
+    validadas.push(
+      normalizarPropuestaModelo(
+        input,
+        candidato,
+        propuesta,
+        aspectosDirectosFinales
+      )
+    );
+  }
+
+  for (const aspectoId of aspectosDirectosFinales) {
+    if (!idsVistos.has(aspectoId)) {
+      throw new ErrorOpenRouter(
+        `La adjudicación global marcó como DIRECTO el aspecto ${aspectoId}, pero no existe una propuesta correspondiente.`,
+        502,
+        "BITACORA_IA_ADJUDICACION_GLOBAL_SIN_PROPUESTA"
+      );
+    }
   }
 
   return validadas;
@@ -455,7 +565,7 @@ export async function analizarRegistroBitacoraConIa(
     return {
       registroBitacoraId: input.registroBitacoraId,
       modelo: "sin-modelo-candidatos-vacios",
-      versionPrompt: VERSION_PROMPT_BITACORA,
+      versionPrompt: VERSION_PROMPT_BITACORA_RECONCILIADA,
       propuestas: [],
     };
   }
@@ -474,21 +584,41 @@ export async function analizarRegistroBitacoraConIa(
     mensajes: [
       {
         role: "system",
-        content: PROMPT_SISTEMA_BITACORA,
+        content: `${PROMPT_SISTEMA_BITACORA}\n\n${PROMPT_RECONCILIACION_GLOBAL}`,
       },
       {
         role: "user",
         content: JSON.stringify(contextoUsuario),
       },
     ],
-    schemaName: "stack44_bitacora_analisis",
+    schemaName: "stack44_bitacora_analisis_v36",
     schema: SCHEMA_RESPUESTA_BITACORA,
   });
+
+  if (
+    typeof respuesta.datos.justificacionAdjudicacionGlobal !== "string" ||
+    respuesta.datos.justificacionAdjudicacionGlobal.trim().length === 0
+  ) {
+    throw new ErrorOpenRouter(
+      "La respuesta de IA no justificó la adjudicación global final.",
+      502,
+      "BITACORA_IA_ADJUDICACION_GLOBAL_SIN_JUSTIFICACION"
+    );
+  }
+
+  const aspectosDirectosFinales = validarAspectosDirectosFinales(
+    input,
+    respuesta.datos.aspectosDirectosFinales
+  );
 
   return {
     registroBitacoraId: input.registroBitacoraId,
     modelo: respuesta.modelo,
-    versionPrompt: VERSION_PROMPT_BITACORA,
-    propuestas: validarPropuestasModelo(input, respuesta.datos.propuestas),
+    versionPrompt: VERSION_PROMPT_BITACORA_RECONCILIADA,
+    propuestas: validarPropuestasModelo(
+      input,
+      respuesta.datos.propuestas,
+      aspectosDirectosFinales
+    ),
   };
 }
