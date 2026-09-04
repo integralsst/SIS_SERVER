@@ -174,6 +174,50 @@ function urlsCanonicas(urls: string[]): string[] {
   return [...normalizadas];
 }
 
+function resolverAccionPorComparacionEstado(
+  contexto: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (
+    propuesta.relacionSemantica !== "DIRECTA" ||
+    propuesta.accion !== "PROPONER_EVALUACION" ||
+    propuesta.estadoPropuesto === null ||
+    propuesta.calificacionAdministrativaPropuesta === null
+  ) {
+    return propuesta;
+  }
+
+  const calificacionEsperada = calificacionPorEstado(propuesta.estadoPropuesto);
+  if (
+    calificacionEsperada === null ||
+    calificacionEsperada !== propuesta.calificacionAdministrativaPropuesta
+  ) {
+    return propuesta;
+  }
+
+  if (
+    contexto.estadoActual === null ||
+    contexto.estadoActual !== propuesta.estadoPropuesto
+  ) {
+    return {
+      ...propuesta,
+      estadoActual: contexto.estadoActual,
+    };
+  }
+
+  return {
+    ...propuesta,
+    accion: "SIN_CAMBIO",
+    estadoActual: contexto.estadoActual,
+    estadoPropuesto: contexto.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 comparó determinísticamente el resultado técnico nuevo contra el estado vigente y confirmó que la calificación administrativa no cambia.`.trim(),
+    reglaAplicada: propuesta.reglaAplicada?.trim()
+      ? `${propuesta.reglaAplicada.trim()} | COMPARACION_ESTADO_BACKEND_V1`
+      : "COMPARACION_ESTADO_BACKEND_V1",
+  };
+}
+
 function construirResumen(
   propuestas: PropuestaAspectoBitacora[],
   reconocidosIds: Set<number>
@@ -257,22 +301,29 @@ function enriquecerPropuestas(params: {
     const contexto = contextoPorId.get(propuesta.aspectoId);
     if (!contexto) return propuesta;
 
-    const urlsModelo = urlsCanonicas(propuesta.evidenciasUrls ?? []).filter(
-      (url) => urlsDetectadas.includes(url)
+    const propuestaComparada = resolverAccionPorComparacionEstado(
+      contexto,
+      propuesta
     );
+
+    const urlsModelo = urlsCanonicas(
+      propuestaComparada.evidenciasUrls ?? []
+    ).filter((url) => urlsDetectadas.includes(url));
     const evidenciasUrls =
       urlsModelo.length > 0
         ? urlsModelo
-        : aspectoUrlUnica === propuesta.aspectoId
+        : aspectoUrlUnica === propuestaComparada.aspectoId
           ? urlsDetectadas
           : [];
     const fechaDocumento =
-      propuesta.fechaDocumento ??
-      (aspectoFechaUnica === propuesta.aspectoId ? fechaDocumental : null);
+      propuestaComparada.fechaDocumento ??
+      (aspectoFechaUnica === propuestaComparada.aspectoId
+        ? fechaDocumental
+        : null);
 
-    if (propuesta.accion !== "SIN_CAMBIO") {
+    if (propuestaComparada.accion !== "SIN_CAMBIO") {
       return {
-        ...propuesta,
+        ...propuestaComparada,
         evidenciasUrls,
         fechaDocumento,
       };
@@ -292,19 +343,19 @@ function enriquecerPropuestas(params: {
 
     if (!aportaSoporteNuevo || calificacionActual === null) {
       return {
-        ...propuesta,
+        ...propuestaComparada,
         evidenciasUrls,
         fechaDocumento,
       };
     }
 
     return {
-      ...propuesta,
+      ...propuestaComparada,
       accion: "PROPONER_EVALUACION" as const,
       estadoPropuesto: contexto.estadoActual,
       calificacionAdministrativaPropuesta: calificacionActual,
       evidenciaBitacora:
-        propuesta.evidenciaBitacora?.trim() ||
+        propuestaComparada.evidenciaBitacora?.trim() ||
         "La Bitácora aporta soporte documental nuevo para el aspecto sin modificar su calificación vigente.",
       evidenciasUrls,
       fechaDocumento,
