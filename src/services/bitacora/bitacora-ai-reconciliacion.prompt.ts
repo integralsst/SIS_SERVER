@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.11";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.12";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1B · RECONCILIACIÓN GLOBAL ENTRE CANDIDATOS
@@ -12,10 +12,11 @@ OBJETIVO
 
 SECUENCIA OBLIGATORIA
 1. Primero adjudica individualmente DIRECTA o CONTEXTUAL para todos los candidatos.
-2. Después compara entre sí únicamente los candidatos inicialmente DIRECTOS.
-3. Cierra aspectosDirectosFinales ANTES de determinar cobertura, acción o calificación.
-4. Solo los aspectos incluidos en aspectosDirectosFinales continúan a PASO 2 y PASO 3.
-5. Los demás quedan CONTEXTUAL + SIN_CAMBIO y no son evaluables.
+2. Para cada propuesta declara alcanceEvaluacion como EVALUADO o EXCLUIDO antes de cerrar el conjunto global.
+3. Después compara entre sí únicamente los candidatos inicialmente DIRECTOS y no excluidos de alcance.
+4. Cierra aspectosDirectosFinales ANTES de determinar cobertura, acción o calificación.
+5. Solo los aspectos incluidos en aspectosDirectosFinales continúan a PASO 2 y PASO 3.
+6. Los demás quedan CONTEXTUAL + SIN_CAMBIO y no son evaluables.
 
 REGLAS DE RECONCILIACIÓN
 1. Si un aspecto más específico explica completamente la evidencia y otro candidato más amplio solo coincide porque contiene ese mismo documento, etapa, subcomponente, órgano o término, conserva como DIRECTO únicamente el aspecto específico y convierte el amplio en CONTEXTUAL.
@@ -28,9 +29,16 @@ REGLAS DE RECONCILIACIÓN
 8. Distingue el OBJETO TÉCNICO evaluado. Sistema, procedimiento, programa, plan, política, informe, registro, acta, matriz, protocolo y evidencia son objetos distintos salvo que el propio texto los vincule de forma expresa dentro del mismo requisito. No conviertas en DIRECTO un candidato sobre "procedimiento" solo porque la nota habla de un "sistema", ni un candidato sobre "plan" porque la nota trate una "política", ni equivalencias análogas.
 9. Si la anotación nombra y evalúa expresamente un objeto técnico específico y otro candidato vecino exige un objeto diferente que no fue revisado, conserva el primero como DIRECTO y el vecino como CONTEXTUAL, aunque ambos compartan términos de archivo, conservación, gestión, documentación, seguimiento o control.
 
+CONTRATO DE ALCANCE EXPLÍCITO
+1. alcanceEvaluacion es un interruptor de seguridad de alcance y NO sustituye relacionSemantica.
+2. Usa alcanceEvaluacion=EXCLUIDO únicamente cuando la anotación diga de forma explícita e inequívoca que ese objeto o requisito no se revisó, no se evaluó, no fue objeto de revisión, no se abordó o quedó fuera del alcance de la actividad.
+3. Usa alcanceEvaluacion=EVALUADO cuando el objeto no está expresamente excluido por alcance. Esto no obliga a que sea DIRECTO: relacionSemantica y la reconciliación global siguen determinando si realmente corresponde al requisito.
+4. Toda propuesta EXCLUIDO debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, coberturaRequisito=NO_APLICA, calificacionAdministrativaPropuesta=null, evidenciaBitacora=null, evidenciasUrls=[], fechaDocumento=null y no puede aparecer en aspectosDirectosFinales.
+5. Nunca conviertas EXCLUIDO en INFORMACION_INSUFICIENTE: si el profesional decidió no revisar ese requisito, no existe una evaluación técnica que completar.
+
 REGLAS DE EXCLUSIÓN EXPLÍCITA DE ALCANCE
 1. Expresiones como "no se revisó", "no se evaluó", "no fue objeto de revisión", "no se abordó en esta actividad", "quedó fuera del alcance" y formulaciones inequívocamente equivalentes indican que ese objeto o requisito NO FUE EVALUADO en esta Bitácora.
-2. Si un candidato corresponde precisamente al objeto o requisito que la propia anotación excluye de la revisión, debe quedar CONTEXTUAL + SIN_CAMBIO y no puede incluirse en aspectosDirectosFinales.
+2. Si un candidato corresponde precisamente al objeto o requisito que la propia anotación excluye de la revisión, debe usar alcanceEvaluacion=EXCLUIDO, quedar CONTEXTUAL + SIN_CAMBIO y no puede incluirse en aspectosDirectosFinales.
 3. Una exclusión explícita de alcance NO es evidencia negativa sobre existencia, cumplimiento o estado. Por sí sola nunca autoriza 0, 3, 5 ni INFORMACION_INSUFICIENTE para el requisito excluido.
 4. Distingue siempre "NO SE REVISÓ X" de "SE REVISÓ X Y SE CONFIRMÓ QUE NO EXISTE / NO SE ENCONTRÓ / LA EMPRESA NO CUENTA CON X". Solo el segundo tipo de formulación puede constituir verificación negativa directa cuando la lógica aplicable lo permita.
 5. La exclusión afecta únicamente al objeto expresamente excluido. No elimines otros aspectos que la misma anotación sí evalúa de forma directa e independiente.
@@ -62,7 +70,7 @@ REGLAS OBLIGATORIAS DE EVIDENCIA
 7. Si existen dos URLs y el texto atribuye claramente una a cada uno de dos aspectos, conserva ambas asignaciones independientes.
 8. No inventes asociaciones por proximidad temática. Precisión > recall: ante duda, deja la URL sin asignar.
 9. Después de cerrar asignacionesEvidenciaFinales, cada propuesta DIRECTA debe tener en evidenciasUrls EXACTAMENTE las URLs que la asignación global le otorgó. Si no recibió ninguna, evidenciasUrls=[].
-10. Una propuesta CONTEXTUAL conserva siempre evidenciasUrls=[].
+10. Una propuesta CONTEXTUAL o EXCLUIDO conserva siempre evidenciasUrls=[].
 
 EJEMPLO NEGATIVO OBLIGATORIO
 - Dos aspectos quedan DIRECTOS.
@@ -77,6 +85,7 @@ EJEMPLO POSITIVO OBLIGATORIO
 - Resultado: asignacionesEvidenciaFinales=[{url: URL1, aspectoIds:[A]}, {url: URL2, aspectoIds:[B]}] y cada propuesta contiene únicamente su URL correspondiente.
 
 PRINCIPIO DE SEPARACIÓN
+- alcanceEvaluacion decide si existe una exclusión explícita de alcance que debe bloquear la evaluación del candidato.
 - La reconciliación decide QUÉ aspectos pueden evaluarse.
 - La reconciliación de evidencias decide QUÉ URL puede vincularse a cada aspecto DIRECTO.
 - Ninguna de las dos reconciliaciones decide CÓMO se califican los aspectos.
@@ -85,10 +94,12 @@ PRINCIPIO DE SEPARACIÓN
 - La comparación entre el resultado técnico nuevo y el estado vigente corresponde a Stack44 después de la respuesta del modelo.
 
 SALIDA GLOBAL OBLIGATORIA
-- Devuelve aspectosDirectosFinales como una lista de aspectoId, sin duplicados, que represente el conjunto FINAL reconciliado de aspectos realmente tratados de forma DIRECTA.
-- Todo aspectoId incluido en aspectosDirectosFinales debe existir entre los candidatos proporcionados por Stack44 y debe conservar relacionSemantica=DIRECTA en su propuesta final.
+- Cada propuesta debe devolver alcanceEvaluacion con uno de estos valores exactos: EVALUADO o EXCLUIDO.
+- Devuelve aspectosDirectosFinales como una lista de aspectoId, sin duplicados, que represente el conjunto FINAL reconciliado de aspectos realmente tratados de forma DIRECTA y nunca incluya propuestas EXCLUIDO.
+- Todo aspectoId incluido en aspectosDirectosFinales debe existir entre los candidatos proporcionados por Stack44, tener alcanceEvaluacion=EVALUADO y conservar relacionSemantica=DIRECTA en su propuesta final.
+- Todo candidato con alcanceEvaluacion=EXCLUIDO debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, sin URL y sin fechaDocumento.
 - Todo candidato que inicialmente pareciera DIRECTO pero no sobreviva a la reconciliación debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, sin URL y sin fechaDocumento.
-- Devuelve asignacionesEvidenciaFinales como la lista FINAL reconciliada de asociaciones URL→aspectoIds. Las URLs ambiguas se omiten.
+- Devuelve asignacionesEvidenciaFinales como la lista FINAL reconciliada de asociaciones URL→aspectoIds. Las URLs ambiguas se omiten y nunca se asocian a propuestas EXCLUIDO.
 - Devuelve justificacionAdjudicacionGlobal con una explicación breve de por qué ese conjunto final es el mínimo suficiente. No inventes hechos nuevos en esta justificación.
 
 EJEMPLO DE SOLAPAMIENTO
