@@ -182,17 +182,21 @@ export async function solicitarJsonEstructuradoOpenRouter<T>(
         typeof payload?.error?.message === "string"
           ? payload.error.message
           : `OpenRouter respondió HTTP ${response.status}.`;
+      const detalleProveedor =
+        detalle.length > 1_000 ? `${detalle.slice(0, 1_000)}…` : detalle;
 
       console.error("[OPENROUTER-BITACORA] respuesta-error", {
         status: response.status,
         requestId,
         modelo: config.model,
+        schemaName: input.schemaName,
         proveedor: typeof payload?.provider === "string" ? payload.provider : null,
         codigoProveedor:
           typeof payload?.error?.code === "string" ||
           typeof payload?.error?.code === "number"
             ? payload.error.code
             : null,
+        detalleProveedor,
       });
 
       throw new ErrorOpenRouter(
