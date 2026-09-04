@@ -31,6 +31,10 @@ export const SCHEMA_RESPUESTA_BITACORA = {
         properties: {
           aspectoId: { type: "integer" },
           identidadHistorica: { type: "string" },
+          alcanceEvaluacion: {
+            type: "string",
+            enum: ["EVALUADO", "EXCLUIDO"],
+          },
           relacionSemantica: {
             type: "string",
             enum: ["DIRECTA", "CONTEXTUAL"],
@@ -118,6 +122,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
         required: [
           "aspectoId",
           "identidadHistorica",
+          "alcanceEvaluacion",
           "relacionSemantica",
           "coberturaRequisito",
           "elementosEvaluados",
