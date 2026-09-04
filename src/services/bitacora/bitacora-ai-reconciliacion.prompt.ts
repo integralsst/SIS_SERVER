@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.7";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.8";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1B · RECONCILIACIÓN GLOBAL ENTRE CANDIDATOS
@@ -30,7 +30,8 @@ PRINCIPIO DE SEPARACIÓN
 - La reconciliación decide QUÉ aspectos pueden evaluarse.
 - La reconciliación NO decide CÓMO se califican.
 - Una vez cerrado aspectosDirectosFinales, evalúa cada aspecto DIRECTO de forma independiente en PASO 2 y PASO 3 usando su lógica específica oficial o, en su ausencia, el criterio general suministrado por Stack44.
-- El estado vigente no debe bloquear una nueva calificación cuando la nueva evidencia directa y suficiente justifique 0, 3 o 5.
+- El estado vigente no debe bloquear ni sesgar la nueva calificación cuando la nueva evidencia directa y suficiente justifique 0, 3 o 5.
+- La comparación entre el resultado técnico nuevo y el estado vigente corresponde a Stack44 después de la respuesta del modelo.
 
 SALIDA GLOBAL OBLIGATORIA
 - Devuelve aspectosDirectosFinales como una lista de aspectoId, sin duplicados, que represente el conjunto FINAL reconciliado de aspectos realmente tratados de forma DIRECTA.
@@ -47,7 +48,7 @@ EJEMPLO DE SOLAPAMIENTO
 
 EJEMPLO MULTI-ASPECTO
 - Si una misma bitácora verifica por separado la vigencia del acta de conformación y además revisa de forma completa las actas mensuales de reunión, ambos aspectos pueden quedar en aspectosDirectosFinales.
-- Después evalúa cada uno por separado: que uno quede SIN_CAMBIO no obliga al otro a conservar su estado actual.
+- Después evalúa cada uno por separado: que uno termine SIN_CAMBIO después de la comparación del backend no obliga al otro a conservar su estado actual.
 
 Este subpaso forma parte de la MISMA llamada de IA y de la MISMA secuencia obligatoria de 3 pasos. No solicites una segunda evaluación ni agregues texto fuera del JSON.
 `.trim();
