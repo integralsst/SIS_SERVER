@@ -170,6 +170,38 @@ function normalizarContextual(
   };
 }
 
+function aplicarGuardrailAlcance(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (propuesta.alcanceEvaluacion !== "EXCLUIDO") {
+    return {
+      ...propuesta,
+      alcanceEvaluacion: "EVALUADO",
+    };
+  }
+
+  if (
+    propuesta.relacionSemantica !== "CONTEXTUAL" ||
+    propuesta.accion !== "SIN_CAMBIO" ||
+    propuesta.calificacionAdministrativaPropuesta !== null ||
+    propuesta.evidenciasUrls.length > 0 ||
+    propuesta.fechaDocumento !== null
+  ) {
+    console.warn("[BITACORA-IA-GUARDRAIL] alcance-excluido-normalizado", {
+      aspectoId: candidato.aspectoId,
+      relacionOriginal: propuesta.relacionSemantica,
+      accionOriginal: propuesta.accion,
+      calificacionOriginal: propuesta.calificacionAdministrativaPropuesta,
+    });
+  }
+
+  return normalizarContextual(candidato, {
+    ...propuesta,
+    alcanceEvaluacion: "EXCLUIDO",
+  });
+}
+
 function normalizarAccionSinEvaluacion(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
@@ -427,6 +459,104 @@ function validarAspectosDirectosFinales(
   return finales;
 }
 
+function obtenerAspectosExcluidosDeAlcance(
+  propuestas: PropuestaAspectoBitacora[]
+): Set<number> {
+  if (!Array.isArray(propuestas)) {
+    throw new ErrorOpenRouter(
+      "La respuesta de IA no contiene una lista de propuestas válida.",
+      502,
+      "BITACORA_IA_RESPUESTA_INVALIDA"
+    );
+  }
+
+  const excluidos = new Set<number>();
+
+  for (const propuesta of propuestas) {
+    if (
+      propuesta.alcanceEvaluacion !== "EVALUADO" &&
+      propuesta.alcanceEvaluacion !== "EXCLUIDO"
+    ) {
+      throw new ErrorOpenRouter(
+        `La IA devolvió un alcance de evaluación inválido para el aspecto ${propuesta.aspectoId}.`,
+        502,
+        "BITACORA_IA_ALCANCE_INVALIDO"
+      );
+    }
+
+    if (
+      propuesta.alcanceEvaluacion === "EXCLUIDO" &&
+      Number.isInteger(propuesta.aspectoId)
+    ) {
+      excluidos.add(propuesta.aspectoId);
+    }
+  }
+
+  return excluidos;
+}
+
+function aplicarAlcanceGlobalAAspectosDirectos(
+  aspectosDirectosFinales: Set<number>,
+  aspectosExcluidos: Set<number>
+): Set<number> {
+  const filtrados = new Set(
+    [...aspectosDirectosFinales].filter(
+      (aspectoId) => !aspectosExcluidos.has(aspectoId)
+    )
+  );
+
+  const removidos = [...aspectosDirectosFinales].filter((aspectoId) =>
+    aspectosExcluidos.has(aspectoId)
+  );
+
+  if (removidos.length > 0) {
+    console.warn("[BITACORA-IA-GUARDRAIL] alcance-global-excluido", {
+      motivo: "ASPECTO_EXCLUIDO_NO_PUEDE_SER_DIRECTO",
+      aspectoIds: removidos,
+    });
+  }
+
+  return filtrados;
+}
+
+function aplicarAlcanceGlobalAAsignaciones(
+  asignaciones: AsignacionEvidenciaFinalModelo[],
+  aspectosExcluidos: Set<number>
+): AsignacionEvidenciaFinalModelo[] {
+  if (!Array.isArray(asignaciones) || aspectosExcluidos.size === 0) {
+    return asignaciones;
+  }
+
+  return asignaciones.flatMap((asignacion) => {
+    if (!asignacion || !Array.isArray(asignacion.aspectoIds)) {
+      return [asignacion];
+    }
+
+    const aspectoIds = asignacion.aspectoIds.filter(
+      (aspectoId) => !aspectosExcluidos.has(aspectoId)
+    );
+
+    if (aspectoIds.length !== asignacion.aspectoIds.length) {
+      console.warn("[BITACORA-IA-GUARDRAIL] evidencia-excluida-por-alcance", {
+        url: asignacion.url,
+        aspectoIdsOriginales: asignacion.aspectoIds,
+        aspectoIdsFinales: aspectoIds,
+      });
+    }
+
+    if (aspectoIds.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        ...asignacion,
+        aspectoIds,
+      },
+    ];
+  });
+}
+
 function validarAsignacionesEvidenciaFinales(
   input: AnalizarRegistroBitacoraIaInput,
   asignaciones: AsignacionEvidenciaFinalModelo[],
@@ -592,9 +722,10 @@ function normalizarPropuestaModelo(
   aspectosDirectosFinales: Set<number>,
   urlsFinalesPorAspecto: Map<number, string[]>
 ): PropuestaAspectoBitacora {
+  const conAlcance = aplicarGuardrailAlcance(candidato, propuesta);
   const reconciliada = aplicarReconciliacionGlobal(
     candidato,
-    propuesta,
+    conAlcance,
     aspectosDirectosFinales
   );
   const adjudicada = aplicarGuardrailAdjudicacion(candidato, reconciliada);
@@ -650,6 +781,17 @@ function validarPropuestasModelo(
     }
 
     idsVistos.add(propuesta.aspectoId);
+
+    if (
+      propuesta.alcanceEvaluacion !== "EVALUADO" &&
+      propuesta.alcanceEvaluacion !== "EXCLUIDO"
+    ) {
+      throw new ErrorOpenRouter(
+        `La IA devolvió un alcance de evaluación inválido para el aspecto ${propuesta.aspectoId}.`,
+        502,
+        "BITACORA_IA_ALCANCE_INVALIDO"
+      );
+    }
 
     if (propuesta.identidadHistorica !== candidato.identidadHistorica) {
       throw new ErrorOpenRouter(
@@ -744,7 +886,7 @@ export async function analizarRegistroBitacoraConIa(
         content: JSON.stringify(contextoUsuario),
       },
     ],
-    schemaName: "stack44_bitacora_analisis_v39",
+    schemaName: "stack44_bitacora_analisis_v312",
     schema: SCHEMA_RESPUESTA_BITACORA,
   });
 
@@ -759,13 +901,24 @@ export async function analizarRegistroBitacoraConIa(
     );
   }
 
-  const aspectosDirectosFinales = validarAspectosDirectosFinales(
+  const aspectosDirectosDeclarados = validarAspectosDirectosFinales(
     input,
     respuesta.datos.aspectosDirectosFinales
   );
+  const aspectosExcluidos = obtenerAspectosExcluidosDeAlcance(
+    respuesta.datos.propuestas
+  );
+  const aspectosDirectosFinales = aplicarAlcanceGlobalAAspectosDirectos(
+    aspectosDirectosDeclarados,
+    aspectosExcluidos
+  );
+  const asignacionesEvidenciaConAlcance = aplicarAlcanceGlobalAAsignaciones(
+    respuesta.datos.asignacionesEvidenciaFinales,
+    aspectosExcluidos
+  );
   const urlsFinalesPorAspecto = validarAsignacionesEvidenciaFinales(
     input,
-    respuesta.datos.asignacionesEvidenciaFinales,
+    asignacionesEvidenciaConAlcance,
     aspectosDirectosFinales
   );
 
