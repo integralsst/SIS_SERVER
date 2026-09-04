@@ -7,6 +7,7 @@ import { prisma } from "../../lib/prisma";
 import type {
   ContextoAspectoBitacora,
   PropuestaAspectoBitacora,
+  UnidadVerificacionBitacora,
 } from "../../types/bitacora.types";
 import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
 import {
@@ -16,6 +17,7 @@ import {
 } from "./bitacora-registros.service";
 import { buscarCandidatosAspectoBitacora } from "./recuperacion/candidatos-aspecto.service";
 import { cargarContextoAspectosBitacora } from "./recuperacion/contexto-aspecto.service";
+import { calcularSoporteDirectoBitacora } from "./recuperacion/relevancia-textual.service";
 import type { CrearRegistroBitacoraInput } from "../../types/bitacora.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 
@@ -34,6 +36,9 @@ const MESES_ES: Record<string, number> = {
   noviembre: 11,
   diciembre: 12,
 };
+
+const MARGEN_COMPATIBILIDAD_UNIDAD_MINIMO = 2;
+const PORCENTAJE_MARGEN_COMPATIBILIDAD_UNIDAD = 0.25;
 
 function aJsonPrisma(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -174,6 +179,133 @@ function urlsCanonicas(urls: string[]): string[] {
   return [...normalizadas];
 }
 
+function normalizarContextualPorCompatibilidad(
+  contexto: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  return {
+    ...propuesta,
+    relacionSemantica: "CONTEXTUAL",
+    coberturaRequisito: "NO_APLICA",
+    elementosEvaluados: [],
+    elementosNoEvaluados: [],
+    accion: "SIN_CAMBIO",
+    estadoActual: contexto.estadoActual,
+    estadoPropuesto: contexto.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    evidenciaBitacora: null,
+    evidenciasUrls: [],
+    fechaDocumento: null,
+    justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 descartó el reconocimiento directo porque ninguna unidad de verificación referenciada quedó suficientemente próxima al mejor ajuste local entre los candidatos recuperados.`.trim(),
+    reglaAplicada: propuesta.reglaAplicada?.trim()
+      ? `${propuesta.reglaAplicada.trim()} | GUARDRAIL_COMPATIBILIDAD_UNIDAD_ASPECTO_V1`
+      : "GUARDRAIL_COMPATIBILIDAD_UNIDAD_ASPECTO_V1",
+    requiereEvidenciaDocumental: false,
+    requiereRevisionTecnica: false,
+  };
+}
+
+function construirCompatibilidadUnidades(params: {
+  unidades: UnidadVerificacionBitacora[];
+  candidatos: Awaited<ReturnType<typeof buscarCandidatosAspectoBitacora>>;
+}): Map<string, Set<number>> {
+  const compatiblesPorUnidad = new Map<string, Set<number>>();
+
+  for (const unidad of params.unidades) {
+    if (unidad.tipo !== "EVALUACION") {
+      compatiblesPorUnidad.set(unidad.id, new Set<number>());
+      continue;
+    }
+
+    const resultados = params.candidatos.map((candidato) => {
+      const soporte = calcularSoporteDirectoBitacora({
+        // La compatibilidad se calcula sobre el fragmento literal, no sobre el
+        // objetoTecnico generado por el modelo. Así una etiqueta incorrecta de
+        // la IA no puede convertir una unidad vecina en evidencia válida.
+        contenidoBitacora: unidad.fragmentoBitacora,
+        codigo: candidato.codigo,
+        nombre: candidato.nombre,
+        palabrasClave: candidato.palabrasClave,
+      });
+
+      return {
+        aspectoId: candidato.aspectoId,
+        puntaje: soporte.puntaje,
+        conflictoEntidad: soporte.conflictoEntidad,
+      };
+    });
+
+    const elegibles = resultados.filter(
+      (resultado) => !resultado.conflictoEntidad && resultado.puntaje > 0
+    );
+    const mejorPuntaje = elegibles.reduce(
+      (maximo, resultado) => Math.max(maximo, resultado.puntaje),
+      0
+    );
+
+    if (mejorPuntaje === 0) {
+      compatiblesPorUnidad.set(unidad.id, new Set<number>());
+      continue;
+    }
+
+    const margen = Math.max(
+      MARGEN_COMPATIBILIDAD_UNIDAD_MINIMO,
+      Math.ceil(mejorPuntaje * PORCENTAJE_MARGEN_COMPATIBILIDAD_UNIDAD)
+    );
+    const umbralRelativo = Math.max(1, mejorPuntaje - margen);
+    const compatibles = new Set(
+      elegibles
+        .filter((resultado) => resultado.puntaje >= umbralRelativo)
+        .map((resultado) => resultado.aspectoId)
+    );
+
+    compatiblesPorUnidad.set(unidad.id, compatibles);
+
+    console.info("[BITACORA-IA-GUARDRAIL] compatibilidad-unidad", {
+      unidadId: unidad.id,
+      mejorPuntaje,
+      umbralRelativo,
+      aspectoIdsCompatibles: [...compatibles],
+    });
+  }
+
+  return compatiblesPorUnidad;
+}
+
+function aplicarGuardrailCompatibilidadUnidad(params: {
+  propuesta: PropuestaAspectoBitacora;
+  contexto: ContextoAspectoBitacora;
+  unidadesPorId: Map<string, UnidadVerificacionBitacora>;
+  compatiblesPorUnidad: Map<string, Set<number>>;
+}): PropuestaAspectoBitacora {
+  const { propuesta, contexto, unidadesPorId, compatiblesPorUnidad } = params;
+
+  if (propuesta.relacionSemantica !== "DIRECTA") {
+    return propuesta;
+  }
+
+  const unidadIds = propuesta.unidadVerificacionIds ?? [];
+  const tieneUnidadCompatible = unidadIds.some((unidadId) => {
+    const unidad = unidadesPorId.get(unidadId);
+    return (
+      unidad?.tipo === "EVALUACION" &&
+      compatiblesPorUnidad.get(unidadId)?.has(propuesta.aspectoId)
+    );
+  });
+
+  if (tieneUnidadCompatible) {
+    return propuesta;
+  }
+
+  console.warn("[BITACORA-IA-GUARDRAIL] directa-degradada-por-compatibilidad-unidad", {
+    aspectoId: propuesta.aspectoId,
+    unidadVerificacionIds: unidadIds,
+    motivo: "SIN_UNIDAD_LOCALMENTE_COMPATIBLE",
+  });
+
+  return normalizarContextualPorCompatibilidad(contexto, propuesta);
+}
+
 function resolverAccionPorComparacionEstado(
   contexto: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
@@ -258,19 +390,46 @@ function construirResumen(
 function enriquecerPropuestas(params: {
   contenido: string;
   propuestas: PropuestaAspectoBitacora[];
+  unidadesVerificacion: UnidadVerificacionBitacora[];
   contextos: ContextoAspectoBitacora[];
   candidatos: Awaited<ReturnType<typeof buscarCandidatosAspectoBitacora>>;
 }) {
-  const { contenido, propuestas, contextos, candidatos } = params;
+  const {
+    contenido,
+    propuestas,
+    unidadesVerificacion,
+    contextos,
+    candidatos,
+  } = params;
   const contextoPorId = new Map(
     contextos.map((contexto) => [contexto.aspectoId, contexto])
   );
   const candidatoPorId = new Map(
     candidatos.map((candidato) => [candidato.aspectoId, candidato])
   );
+  const unidadesPorId = new Map(
+    unidadesVerificacion.map((unidad) => [unidad.id, unidad])
+  );
+  const compatiblesPorUnidad = construirCompatibilidadUnidades({
+    unidades: unidadesVerificacion,
+    candidatos,
+  });
+  const propuestasCompatibles = propuestas.map((propuesta) => {
+    const contexto = contextoPorId.get(propuesta.aspectoId);
+    if (!contexto || !candidatoPorId.has(propuesta.aspectoId)) {
+      return propuesta;
+    }
+
+    return aplicarGuardrailCompatibilidadUnidad({
+      propuesta,
+      contexto,
+      unidadesPorId,
+      compatiblesPorUnidad,
+    });
+  });
   const reconocidosIds = new Set<number>();
 
-  for (const propuesta of propuestas) {
+  for (const propuesta of propuestasCompatibles) {
     if (
       candidatoPorId.has(propuesta.aspectoId) &&
       propuesta.relacionSemantica === "DIRECTA"
@@ -281,7 +440,7 @@ function enriquecerPropuestas(params: {
 
   const urlsDetectadas = urlsCanonicas(extraerUrlsBitacora(contenido));
   const fechaDocumental = extraerFechaDocumentalSegura(contenido);
-  const reconocidos = propuestas.filter((propuesta) =>
+  const reconocidos = propuestasCompatibles.filter((propuesta) =>
     reconocidosIds.has(propuesta.aspectoId)
   );
   const aspectoUrlUnica =
@@ -293,7 +452,7 @@ function enriquecerPropuestas(params: {
       ? reconocidos[0].aspectoId
       : null;
 
-  const enriquecidas = propuestas.map((propuesta) => {
+  const enriquecidas = propuestasCompatibles.map((propuesta) => {
     if (!reconocidosIds.has(propuesta.aspectoId)) {
       return propuesta;
     }
@@ -397,6 +556,7 @@ export async function guardarYAnalizarBitacoraOperativa(
   const enriquecido = enriquecerPropuestas({
     contenido: resultado.registro.contenidoOriginal,
     propuestas: resultado.analisis.propuestas,
+    unidadesVerificacion: resultado.analisis.unidadesVerificacion ?? [],
     contextos,
     candidatos,
   });
@@ -406,11 +566,16 @@ export async function guardarYAnalizarBitacoraOperativa(
     include: { aprobacion: true },
   });
 
+  const aspectosDirectosFinales = enriquecido.propuestas
+    .filter((propuesta) => propuesta.relacionSemantica === "DIRECTA")
+    .map((propuesta) => propuesta.aspectoId);
+
   if (!registro?.aprobacion) {
     return {
       ...resultado,
       analisis: {
         ...resultado.analisis,
+        aspectosDirectosFinales,
         propuestas: enriquecido.propuestas,
       },
       resumen: construirResumen(
@@ -427,6 +592,11 @@ export async function guardarYAnalizarBitacoraOperativa(
     ...snapshot,
     analisis: {
       ...snapshot.analisis,
+      unidadesVerificacion:
+        resultado.analisis.unidadesVerificacion ??
+        snapshot.analisis.unidadesVerificacion ??
+        [],
+      aspectosDirectosFinales,
       propuestas: enriquecido.propuestas,
     },
   };
@@ -442,6 +612,7 @@ export async function guardarYAnalizarBitacoraOperativa(
     ...resultado,
     analisis: {
       ...resultado.analisis,
+      aspectosDirectosFinales,
       propuestas: enriquecido.propuestas,
     },
     resumen: construirResumen(

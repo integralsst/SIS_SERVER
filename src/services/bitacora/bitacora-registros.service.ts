@@ -9,6 +9,7 @@ import { prisma } from "../../lib/prisma";
 import type {
   CrearRegistroBitacoraInput,
   PropuestaAspectoBitacora,
+  UnidadVerificacionBitacora,
 } from "../../types/bitacora.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 import { validarCrearRegistroBitacora } from "../../validators/bitacora/bitacora.validator";
@@ -20,7 +21,10 @@ import {
 import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
 import { analizarRegistroBitacoraConIa } from "./ia/bitacora-ai.service";
-import { buscarCandidatosAspectoBitacora } from "./recuperacion/candidatos-aspecto.service";
+import {
+  buscarCandidatosAspectoBitacora,
+  segmentarBitacoraParaRecuperacion,
+} from "./recuperacion/candidatos-aspecto.service";
 import { cargarContextoAspectosBitacora } from "./recuperacion/contexto-aspecto.service";
 
 export interface EventoHistorialBitacora {
@@ -43,17 +47,24 @@ export interface SnapshotBitacoraIa {
   urlsDetectadas: string[];
   recuperacion: {
     totalCandidatos: number;
+    segmentosRecuperacion: Array<{
+      id: string;
+      texto: string;
+    }>;
     aspectosCandidatos: Array<{
       aspectoId: number;
       identidadHistorica: string;
       codigo: string | null;
       nombre: string;
       puntajeRecuperacion: number;
+      segmentoRecuperacionIds: string[];
     }>;
   };
   analisis: {
     modelo: string | null;
     versionPrompt: string | null;
+    unidadesVerificacion: UnidadVerificacionBitacora[];
+    aspectosDirectosFinales: number[];
     propuestas: PropuestaAspectoBitacora[];
     error?: string | null;
   };
@@ -156,11 +167,14 @@ export async function guardarYAnalizarBitacora(
     urlsDetectadas,
     recuperacion: {
       totalCandidatos: 0,
+      segmentosRecuperacion: [],
       aspectosCandidatos: [],
     },
     analisis: {
       modelo: null,
       versionPrompt: null,
+      unidadesVerificacion: [],
+      aspectosDirectosFinales: [],
       propuestas: [],
     },
     historial: [
@@ -214,6 +228,9 @@ export async function guardarYAnalizarBitacora(
   });
 
   try {
+    const segmentosRecuperacion = segmentarBitacoraParaRecuperacion(
+      validado.contenido
+    );
     const candidatos = await buscarCandidatosAspectoBitacora({
       versionSupermatrizId: version.id,
       contenidoBitacora: validado.contenido,
@@ -237,17 +254,23 @@ export async function guardarYAnalizarBitacora(
       estadoProcesamiento: "ANALIZADA",
       recuperacion: {
         totalCandidatos: candidatos.length,
+        segmentosRecuperacion,
         aspectosCandidatos: candidatos.map((candidato) => ({
           aspectoId: candidato.aspectoId,
           identidadHistorica: candidato.identidadHistorica,
           codigo: candidato.codigo,
           nombre: candidato.nombre,
           puntajeRecuperacion: candidato.puntajeRecuperacion,
+          segmentoRecuperacionIds: candidato.segmentoRecuperacionIds,
         })),
       },
       analisis: {
         modelo: analisis.modelo,
         versionPrompt: analisis.versionPrompt,
+        unidadesVerificacion: analisis.unidadesVerificacion ?? [],
+        aspectosDirectosFinales: analisis.propuestas
+          .filter((propuesta) => propuesta.relacionSemantica === "DIRECTA")
+          .map((propuesta) => propuesta.aspectoId),
         propuestas: analisis.propuestas,
       },
       historial: [
