@@ -6,6 +6,22 @@ export const SCHEMA_RESPUESTA_BITACORA = {
       type: "array",
       items: { type: "integer" },
     },
+    asignacionesEvidenciaFinales: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          url: { type: "string" },
+          aspectoIds: {
+            type: "array",
+            minItems: 1,
+            items: { type: "integer" },
+          },
+        },
+        required: ["url", "aspectoIds"],
+      },
+    },
     justificacionAdjudicacionGlobal: { type: "string" },
     propuestas: {
       type: "array",
@@ -126,6 +142,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
   },
   required: [
     "aspectosDirectosFinales",
+    "asignacionesEvidenciaFinales",
     "justificacionAdjudicacionGlobal",
     "propuestas",
   ],
