@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.9";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.10";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1B · RECONCILIACIÓN GLOBAL ENTRE CANDIDATOS
@@ -25,6 +25,15 @@ REGLAS DE RECONCILIACIÓN
 5. La ausencia de un candidato del conjunto final DIRECTO nunca implica incumplimiento; simplemente significa que su relación es CONTEXTUAL para esa anotación.
 6. Las URLs y fechas documentales solo pueden permanecer asociadas a propuestas que sobrevivan como DIRECTAS después de esta reconciliación.
 7. Cuando haya duda entre conservar un falso positivo o excluir un candidato insuficientemente sustentado, prioriza precisión: exclúyelo del conjunto DIRECTO final.
+8. Distingue el OBJETO TÉCNICO evaluado. Sistema, procedimiento, programa, plan, política, informe, registro, acta, matriz, protocolo y evidencia son objetos distintos salvo que el propio texto los vincule de forma expresa dentro del mismo requisito. No conviertas en DIRECTO un candidato sobre "procedimiento" solo porque la nota habla de un "sistema", ni un candidato sobre "plan" porque la nota trate una "política", ni equivalencias análogas.
+9. Si la anotación nombra y evalúa expresamente un objeto técnico específico y otro candidato vecino exige un objeto diferente que no fue revisado, conserva el primero como DIRECTO y el vecino como CONTEXTUAL, aunque ambos compartan términos de archivo, conservación, gestión, documentación, seguimiento o control.
+
+REGLAS TRANSVERSALES DE PRECISIÓN PARA PASOS 2 Y 3
+1. "No fue posible confirmar", "no se pudo confirmar", "no fue posible verificar", "no se pudo verificar", "no se logró establecer" y expresiones equivalentes describen una LIMITACIÓN DE EVIDENCIA; no prueban por sí solas inexistencia, ausencia ni incumplimiento.
+2. Una limitación de evidencia no autoriza automáticamente calificación 0. Solo puede sustentar 0 cuando la propia anotación contiene además una verificación negativa material del mismo requisito, por ejemplo: "se verificó que no existe", "la empresa no cuenta con", "el soporte fue revisado y no fue encontrado", "se confirmó la ausencia" o una formulación inequívocamente equivalente.
+3. Si existe LÓGICA ESPECÍFICA OFICIAL y esa lógica asigna 3 a evidencia parcial, indirecta, incompleta o a una condición equivalente a la observada, aplica 3. No sustituyas esa regla por un 0 del criterio general.
+4. Si la evidencia es parcial o indirecta pero la lógica específica no permite decidir con seguridad entre 0/3/5, usa INFORMACION_INSUFICIENTE; nunca conviertas incertidumbre en inexistencia.
+5. La lógica específica oficial prevalece sobre el criterio general también cuando el criterio general permitiría una conclusión más severa. No mezcles ambos para empeorar una calificación definida explícitamente por la lógica específica.
 
 SUBPASO 1C · RECONCILIACIÓN GLOBAL DE EVIDENCIAS URL
 
