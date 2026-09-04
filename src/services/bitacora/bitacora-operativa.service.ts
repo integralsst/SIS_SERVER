@@ -40,12 +40,15 @@ const MESES_ES: Record<string, number> = {
 };
 
 /**
- * Términos que ayudan a recuperar candidatos, pero que por sí solos no
- * demuestran que una nota trate exactamente del mismo requisito.
+ * Términos útiles para recuperar candidatos, pero insuficientes por sí solos
+ * para demostrar que la anotación trata exactamente del mismo requisito.
  *
- * Esta lista se usa únicamente en la capa de enriquecimiento de SIN_CAMBIO
- * (visibilidad + asociación segura de URL/fecha). No modifica el guardrail
- * que autoriza las evaluaciones 0/3/5 existentes.
+ * La regla estricta se usa para:
+ * - mostrar/enriquecer SIN_CAMBIO;
+ * - autorizar una propuesta automática de Cumplido · 5.
+ *
+ * Las propuestas 0/3 conservan el guardrail directo ya calibrado, para evitar
+ * volver demasiado conservadores los casos de incumplimiento/parcialidad.
  */
 const SENALES_CONTEXTUALES_NO_INEQUIVOCAS = new Set([
   "acta",
@@ -95,10 +98,7 @@ function normalizarTexto(value: string): string {
     .toLowerCase();
 }
 
-function fechaPareceVencimiento(
-  texto: string,
-  indice: number
-): boolean {
+function fechaPareceVencimiento(texto: string, indice: number): boolean {
   const prefijo = texto.slice(Math.max(0, indice - 42), indice);
   return /(?:vigente\s+hasta|vigencia\s+hasta|vence|vencimiento|hasta\s+el)\s*$/i.test(
     prefijo
@@ -209,7 +209,7 @@ function urlsCanonicas(urls: string[]): string[] {
   return [...normalizadas];
 }
 
-function tieneSoporteInequivocoParaEnriquecimiento(
+function tieneSoporteInequivoco(
   soporte: ReturnType<typeof calcularSoporteDirectoBitacora>
 ): boolean {
   if (!tieneSoporteDirectoBitacora(soporte)) {
@@ -230,9 +230,47 @@ function tieneSoporteInequivocoParaEnriquecimiento(
     (senal) => !SENALES_CONTEXTUALES_NO_INEQUIVOCAS.has(senal)
   );
 
-  // Para un SIN_CAMBIO no basta compartir una entidad o un tipo documental.
-  // Exigimos dos señales específicas independientes del mismo requisito.
   return new Set(senalesEspecificas).size >= 2;
+}
+
+function soporteSuficienteParaPropuesta(
+  propuesta: PropuestaAspectoBitacora,
+  soporte: ReturnType<typeof calcularSoporteDirectoBitacora>
+): boolean {
+  if (propuesta.accion !== "PROPONER_EVALUACION") {
+    return tieneSoporteInequivoco(soporte);
+  }
+
+  // Un Cumplido · 5 es una afirmación fuerte: compartir solo el tema no basta.
+  if (propuesta.calificacionAdministrativaPropuesta === 5) {
+    return tieneSoporteInequivoco(soporte);
+  }
+
+  // Conserva la calibración ya validada para 0/3.
+  return tieneSoporteDirectoBitacora(soporte);
+}
+
+function neutralizarPropuestaSinSoporte(
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  const eraCumplido = propuesta.calificacionAdministrativaPropuesta === 5;
+
+  return {
+    ...propuesta,
+    accion: "SIN_CAMBIO",
+    estadoPropuesto: null,
+    calificacionAdministrativaPropuesta: null,
+    evidenciaBitacora: null,
+    evidenciasUrls: [],
+    fechaDocumento: null,
+    justificacionTecnica: eraCumplido
+      ? "Stack44 bloqueó la propuesta automática de Cumplido porque la anotación no aporta soporte inequívoco del mismo requisito completo. El aspecto permanece sin cambio."
+      : "Stack44 bloqueó la propuesta automática porque la anotación no aporta soporte directo suficiente del mismo requisito. El aspecto permanece sin cambio.",
+    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2",
+    informacionFaltante: [
+      "Falta soporte directo suficiente del mismo requisito para modificar la evaluación.",
+    ],
+  };
 }
 
 function construirResumen(
@@ -286,6 +324,7 @@ function enriquecerPropuestas(params: {
     candidatos.map((candidato) => [candidato.aspectoId, candidato])
   );
   const reconocidosIds = new Set<number>();
+  const propuestasBloqueadasIds = new Set<number>();
 
   for (const propuesta of propuestas) {
     const candidato = candidatoPorId.get(propuesta.aspectoId);
@@ -298,19 +337,24 @@ function enriquecerPropuestas(params: {
       palabrasClave: candidato.palabrasClave,
     });
 
-    const reconocido =
-      propuesta.accion === "PROPONER_EVALUACION"
-        ? tieneSoporteDirectoBitacora(soporte)
-        : tieneSoporteInequivocoParaEnriquecimiento(soporte);
+    const reconocido = soporteSuficienteParaPropuesta(propuesta, soporte);
 
     if (reconocido) {
       reconocidosIds.add(propuesta.aspectoId);
+    } else if (propuesta.accion === "PROPONER_EVALUACION") {
+      propuestasBloqueadasIds.add(propuesta.aspectoId);
     }
   }
 
+  const propuestasValidadas = propuestas.map((propuesta) =>
+    propuestasBloqueadasIds.has(propuesta.aspectoId)
+      ? neutralizarPropuestaSinSoporte(propuesta)
+      : propuesta
+  );
+
   const urlsDetectadas = urlsCanonicas(extraerUrlsBitacora(contenido));
   const fechaDocumental = extraerFechaDocumentalSegura(contenido);
-  const reconocidos = propuestas.filter((propuesta) =>
+  const reconocidos = propuestasValidadas.filter((propuesta) =>
     reconocidosIds.has(propuesta.aspectoId)
   );
   const aspectoUrlUnica =
@@ -318,7 +362,7 @@ function enriquecerPropuestas(params: {
       ? reconocidos[0].aspectoId
       : null;
 
-  const enriquecidas = propuestas.map((propuesta) => {
+  const enriquecidas = propuestasValidadas.map((propuesta) => {
     if (!reconocidosIds.has(propuesta.aspectoId)) {
       return propuesta;
     }
@@ -349,8 +393,7 @@ function enriquecerPropuestas(params: {
     const aportaSoporteNuevo =
       evidenciasUrls.length > 0 ||
       Boolean(
-        fechaDocumento &&
-          fechaDocumento !== contexto.fechaDocumentoActual
+        fechaDocumento && fechaDocumento !== contexto.fechaDocumentoActual
       );
 
     if (!aportaSoporteNuevo || calificacionActual === null) {
