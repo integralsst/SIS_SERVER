@@ -2,6 +2,11 @@ export const SCHEMA_RESPUESTA_BITACORA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    aspectosDirectosFinales: {
+      type: "array",
+      items: { type: "integer" },
+    },
+    justificacionAdjudicacionGlobal: { type: "string" },
     propuestas: {
       type: "array",
       items: {
@@ -119,5 +124,9 @@ export const SCHEMA_RESPUESTA_BITACORA = {
       },
     },
   },
-  required: ["propuestas"],
+  required: [
+    "aspectosDirectosFinales",
+    "justificacionAdjudicacionGlobal",
+    "propuestas",
+  ],
 } as const;
