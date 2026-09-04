@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.10";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.11";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1B · RECONCILIACIÓN GLOBAL ENTRE CANDIDATOS
@@ -27,6 +27,14 @@ REGLAS DE RECONCILIACIÓN
 7. Cuando haya duda entre conservar un falso positivo o excluir un candidato insuficientemente sustentado, prioriza precisión: exclúyelo del conjunto DIRECTO final.
 8. Distingue el OBJETO TÉCNICO evaluado. Sistema, procedimiento, programa, plan, política, informe, registro, acta, matriz, protocolo y evidencia son objetos distintos salvo que el propio texto los vincule de forma expresa dentro del mismo requisito. No conviertas en DIRECTO un candidato sobre "procedimiento" solo porque la nota habla de un "sistema", ni un candidato sobre "plan" porque la nota trate una "política", ni equivalencias análogas.
 9. Si la anotación nombra y evalúa expresamente un objeto técnico específico y otro candidato vecino exige un objeto diferente que no fue revisado, conserva el primero como DIRECTO y el vecino como CONTEXTUAL, aunque ambos compartan términos de archivo, conservación, gestión, documentación, seguimiento o control.
+
+REGLAS DE EXCLUSIÓN EXPLÍCITA DE ALCANCE
+1. Expresiones como "no se revisó", "no se evaluó", "no fue objeto de revisión", "no se abordó en esta actividad", "quedó fuera del alcance" y formulaciones inequívocamente equivalentes indican que ese objeto o requisito NO FUE EVALUADO en esta Bitácora.
+2. Si un candidato corresponde precisamente al objeto o requisito que la propia anotación excluye de la revisión, debe quedar CONTEXTUAL + SIN_CAMBIO y no puede incluirse en aspectosDirectosFinales.
+3. Una exclusión explícita de alcance NO es evidencia negativa sobre existencia, cumplimiento o estado. Por sí sola nunca autoriza 0, 3, 5 ni INFORMACION_INSUFICIENTE para el requisito excluido.
+4. Distingue siempre "NO SE REVISÓ X" de "SE REVISÓ X Y SE CONFIRMÓ QUE NO EXISTE / NO SE ENCONTRÓ / LA EMPRESA NO CUENTA CON X". Solo el segundo tipo de formulación puede constituir verificación negativa directa cuando la lógica aplicable lo permita.
+5. La exclusión afecta únicamente al objeto expresamente excluido. No elimines otros aspectos que la misma anotación sí evalúa de forma directa e independiente.
+6. Una frase usada por el profesional para delimitar alcance no debe transformarse en una evaluación adversa del requisito que decidió no revisar.
 
 REGLAS TRANSVERSALES DE PRECISIÓN PARA PASOS 2 Y 3
 1. "No fue posible confirmar", "no se pudo confirmar", "no fue posible verificar", "no se pudo verificar", "no se logró establecer" y expresiones equivalentes describen una LIMITACIÓN DE EVIDENCIA; no prueban por sí solas inexistencia, ausencia ni incumplimiento.
