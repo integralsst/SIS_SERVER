@@ -8,8 +8,8 @@ import {
 import { prisma } from "../../lib/prisma";
 import type {
   CrearRegistroBitacoraInput,
+  DecisionEvidenciaBitacoraInput,
   PropuestaAspectoBitacora,
-  ResultadoAnalisisBitacora,
   UnidadVerificacionBitacora,
 } from "../../types/bitacora.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
@@ -20,6 +20,7 @@ import {
   TIPO_ACTIVIDAD_BITACORA_INTERNA,
 } from "./bitacora.constants";
 import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
+import { prepararUrlsParaConfirmacionHumana } from "./bitacora-evidencias-confirmacion.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
 import { sanitizarContenidoBitacoraParaIa } from "./ia/bitacora-ai-sanitizacion.service";
 import { analizarRegistroBitacoraConIa } from "./ia/bitacora-ai.service";
@@ -75,6 +76,7 @@ export interface SnapshotBitacoraIa {
     aplicadaEn: string;
     aplicadaPorUsuarioId: string;
     aspectoIdsExcluidos: number[];
+    evidenciasDecididas?: DecisionEvidenciaBitacoraInput[];
     evaluaciones: Array<{
       id: string;
       aspectoId: number;
@@ -117,87 +119,6 @@ function crearResumen(propuestas: PropuestaAspectoBitacora[]) {
     evaluaciones,
     requierenRevision,
     evidenciasUrls,
-  };
-}
-
-function aplicarGuardrailUrlsEvidencia(
-  analisis: ResultadoAnalisisBitacora,
-  urlsAutorizadas: string[]
-): ResultadoAnalisisBitacora {
-  const unidades = new Map(
-    (analisis.unidadesVerificacion ?? []).map((unidad) => [unidad.id, unidad])
-  );
-  const urlsDisponibles = new Set(urlsAutorizadas);
-
-  const propuestas = analisis.propuestas.map((propuesta) => {
-    if (propuesta.relacionSemantica !== "DIRECTA") {
-      return {
-        ...propuesta,
-        evidenciasUrls: [],
-      };
-    }
-
-    const unidadesPropuesta = new Set(propuesta.unidadVerificacionIds ?? []);
-    const permitidas = new Set<string>();
-
-    for (const clasificacion of propuesta.clasificacionUrls ?? []) {
-      if (
-        !clasificacion ||
-        typeof clasificacion.url !== "string" ||
-        !Array.isArray(clasificacion.unidadVerificacionIds) ||
-        clasificacion.tipo !== "EVIDENCIA_DIRECTA"
-      ) {
-        continue;
-      }
-
-      const url = clasificacion.url.trim();
-      if (!url || !urlsDisponibles.has(url)) {
-        continue;
-      }
-
-      const ancladaMismaUnidad = clasificacion.unidadVerificacionIds.some(
-        (unidadId) => {
-          if (!unidadesPropuesta.has(unidadId)) {
-            return false;
-          }
-
-          const unidad = unidades.get(unidadId);
-          if (!unidad || unidad.tipo !== "EVALUACION") {
-            return false;
-          }
-
-          return extraerUrlsBitacora(unidad.fragmentoBitacora).includes(url);
-        }
-      );
-
-      if (ancladaMismaUnidad) {
-        permitidas.add(url);
-      }
-    }
-
-    const evidenciasUrls = propuesta.evidenciasUrls.filter((url) =>
-      permitidas.has(url)
-    );
-
-    if (evidenciasUrls.length !== propuesta.evidenciasUrls.length) {
-      console.warn("[BITACORA-IA-GUARDRAIL] urls-evidencia-descartadas", {
-        aspectoId: propuesta.aspectoId,
-        recibidas: propuesta.evidenciasUrls.length,
-        conservadas: evidenciasUrls.length,
-        motivo: "URL_NO_EVIDENCIA_DIRECTA_O_SIN_ANCLA_UV",
-      });
-    }
-
-    return {
-      ...propuesta,
-      evidenciasUrls,
-    };
-  });
-
-  return {
-    ...analisis,
-    versionPrompt: `${analisis.versionPrompt}+url-evidencia-sanitizacion-v1`,
-    propuestas,
   };
 }
 
@@ -342,7 +263,7 @@ export async function guardarYAnalizarBitacora(
       urlsDisponibles: urlsParaIa,
       aspectos: contextoAspectos,
     });
-    const analisis = aplicarGuardrailUrlsEvidencia(
+    const analisis = prepararUrlsParaConfirmacionHumana(
       analisisCrudo,
       urlsParaIa
     );
@@ -404,7 +325,11 @@ export async function guardarYAnalizarBitacora(
       },
       versionSupermatriz: snapshotFinal.versionSupermatriz,
       recuperacion: snapshotFinal.recuperacion,
-      analisis: snapshotFinal.analisis,
+      analisis: {
+        ...snapshotFinal.analisis,
+        evidenciasPendientesConfirmacion:
+          analisis.evidenciasPendientesConfirmacion ?? [],
+      },
       resumen: crearResumen(snapshotFinal.analisis.propuestas),
       estadoProcesamiento: snapshotFinal.estadoProcesamiento,
       escrituraEvaluacionRealizada: false,
