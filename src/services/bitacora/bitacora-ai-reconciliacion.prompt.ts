@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.8";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.9";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1B · RECONCILIACIÓN GLOBAL ENTRE CANDIDATOS
@@ -26,9 +26,43 @@ REGLAS DE RECONCILIACIÓN
 6. Las URLs y fechas documentales solo pueden permanecer asociadas a propuestas que sobrevivan como DIRECTAS después de esta reconciliación.
 7. Cuando haya duda entre conservar un falso positivo o excluir un candidato insuficientemente sustentado, prioriza precisión: exclúyelo del conjunto DIRECTO final.
 
+SUBPASO 1C · RECONCILIACIÓN GLOBAL DE EVIDENCIAS URL
+
+Ejecuta este subpaso DESPUÉS de cerrar aspectosDirectosFinales y ANTES de devolver el JSON final. Forma parte de la misma llamada y no modifica la calificación de ningún aspecto.
+
+OBJETIVO
+- Decidir globalmente qué URL detectada corresponde realmente a qué aspecto DIRECTO final.
+- Evitar que una URL ambigua se copie a varios aspectos solo porque todos son DIRECTOS.
+- Permitir asignaciones 1→1, N→N y una misma URL compartida por varios aspectos únicamente cuando el propio texto lo atribuya de forma inequívoca.
+
+REGLAS OBLIGATORIAS DE EVIDENCIA
+1. Revisa TODAS las URLs detectadas y TODOS los aspectos incluidos en aspectosDirectosFinales como un único problema de asignación.
+2. Devuelve asignacionesEvidenciaFinales únicamente para vínculos inequívocos entre URL y aspecto(s).
+3. Cada objeto de asignacionesEvidenciaFinales contiene una URL exacta de enlacesDetectados y la lista aspectoIds a la que esa URL soporta directamente.
+4. Si una URL es soporte exclusivo de un aspecto, incluye únicamente ese aspectoId.
+5. Una misma URL puede incluir varios aspectoIds SOLO cuando el registro afirme de forma clara que esa misma evidencia soporta directamente cada uno de esos requisitos. Compartir tema, órgano, comité o visita no basta.
+6. Si el texto dice que la URL es soporte general, adjunto general, enlace de la visita, o declara que no es posible determinar a cuál de varios aspectos corresponde, NO la asignes a ninguno: omítela de asignacionesEvidenciaFinales.
+7. Si existen dos URLs y el texto atribuye claramente una a cada uno de dos aspectos, conserva ambas asignaciones independientes.
+8. No inventes asociaciones por proximidad temática. Precisión > recall: ante duda, deja la URL sin asignar.
+9. Después de cerrar asignacionesEvidenciaFinales, cada propuesta DIRECTA debe tener en evidenciasUrls EXACTAMENTE las URLs que la asignación global le otorgó. Si no recibió ninguna, evidenciasUrls=[].
+10. Una propuesta CONTEXTUAL conserva siempre evidenciasUrls=[].
+
+EJEMPLO NEGATIVO OBLIGATORIO
+- Dos aspectos quedan DIRECTOS.
+- Existe una sola URL.
+- La nota dice que es soporte general de la visita o que no puede determinarse a cuál de los dos aspectos corresponde.
+- Resultado: asignacionesEvidenciaFinales=[] y evidenciasUrls=[] en ambas propuestas. Nunca copies la URL a los dos aspectos.
+
+EJEMPLO POSITIVO OBLIGATORIO
+- Dos aspectos quedan DIRECTOS.
+- URL 1 está descrita explícitamente como evidencia exclusiva del aspecto A.
+- URL 2 está descrita explícitamente como evidencia exclusiva del aspecto B.
+- Resultado: asignacionesEvidenciaFinales=[{url: URL1, aspectoIds:[A]}, {url: URL2, aspectoIds:[B]}] y cada propuesta contiene únicamente su URL correspondiente.
+
 PRINCIPIO DE SEPARACIÓN
 - La reconciliación decide QUÉ aspectos pueden evaluarse.
-- La reconciliación NO decide CÓMO se califican.
+- La reconciliación de evidencias decide QUÉ URL puede vincularse a cada aspecto DIRECTO.
+- Ninguna de las dos reconciliaciones decide CÓMO se califican los aspectos.
 - Una vez cerrado aspectosDirectosFinales, evalúa cada aspecto DIRECTO de forma independiente en PASO 2 y PASO 3 usando su lógica específica oficial o, en su ausencia, el criterio general suministrado por Stack44.
 - El estado vigente no debe bloquear ni sesgar la nueva calificación cuando la nueva evidencia directa y suficiente justifique 0, 3 o 5.
 - La comparación entre el resultado técnico nuevo y el estado vigente corresponde a Stack44 después de la respuesta del modelo.
@@ -37,6 +71,7 @@ SALIDA GLOBAL OBLIGATORIA
 - Devuelve aspectosDirectosFinales como una lista de aspectoId, sin duplicados, que represente el conjunto FINAL reconciliado de aspectos realmente tratados de forma DIRECTA.
 - Todo aspectoId incluido en aspectosDirectosFinales debe existir entre los candidatos proporcionados por Stack44 y debe conservar relacionSemantica=DIRECTA en su propuesta final.
 - Todo candidato que inicialmente pareciera DIRECTO pero no sobreviva a la reconciliación debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, sin URL y sin fechaDocumento.
+- Devuelve asignacionesEvidenciaFinales como la lista FINAL reconciliada de asociaciones URL→aspectoIds. Las URLs ambiguas se omiten.
 - Devuelve justificacionAdjudicacionGlobal con una explicación breve de por qué ese conjunto final es el mínimo suficiente. No inventes hechos nuevos en esta justificación.
 
 EJEMPLO DE SOLAPAMIENTO
