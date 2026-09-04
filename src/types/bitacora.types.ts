@@ -18,6 +18,14 @@ export type AccionAnalisisBitacora =
   | "INFORMACION_INSUFICIENTE"
   | "REQUIERE_REVISION_HUMANA";
 
+export type RelacionSemanticaBitacora = "DIRECTA" | "CONTEXTUAL";
+
+export type CoberturaRequisitoBitacora =
+  | "COMPLETA"
+  | "PARCIAL"
+  | "INDETERMINADA"
+  | "NO_APLICA";
+
 export interface CrearRegistroBitacoraInput {
   fechaEfectiva: string;
   contenido: string;
@@ -61,6 +69,7 @@ export interface ContextoAspectoBitacora {
   calificacionActual: number | null;
   observacionActual: string | null;
   fechaDocumentoActual: string | null;
+  evidenciasUrlsActuales: string[];
   requiereEvidencia: boolean;
   descripcionEvidencia: string | null;
   requiereRevisionTecnica: boolean;
@@ -70,6 +79,10 @@ export interface ContextoAspectoBitacora {
 export interface PropuestaAspectoBitacora {
   aspectoId: number;
   identidadHistorica: string;
+  relacionSemantica: RelacionSemanticaBitacora;
+  coberturaRequisito: CoberturaRequisitoBitacora;
+  elementosEvaluados: string[];
+  elementosNoEvaluados: string[];
   accion: AccionAnalisisBitacora;
   estadoActual: EstadoCumplimientoAspecto | null;
   estadoPropuesto: EstadoCumplimientoAspecto | null;

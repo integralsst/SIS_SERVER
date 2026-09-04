@@ -16,10 +16,6 @@ import {
 } from "./bitacora-registros.service";
 import { buscarCandidatosAspectoBitacora } from "./recuperacion/candidatos-aspecto.service";
 import { cargarContextoAspectosBitacora } from "./recuperacion/contexto-aspecto.service";
-import {
-  calcularSoporteDirectoBitacora,
-  tieneSoporteDirectoBitacora,
-} from "./recuperacion/relevancia-textual.service";
 import type { CrearRegistroBitacoraInput } from "../../types/bitacora.types";
 import type { UsuarioSesionEvaluacion } from "../../types/evaluacion.types";
 
@@ -38,37 +34,6 @@ const MESES_ES: Record<string, number> = {
   noviembre: 11,
   diciembre: 12,
 };
-
-/**
- * Términos útiles para recuperar candidatos, pero insuficientes por sí solos
- * para demostrar que la anotación trata exactamente del mismo requisito.
- *
- * La regla estricta se usa para:
- * - mostrar/enriquecer SIN_CAMBIO;
- * - autorizar una propuesta automática de Cumplido · 5.
- *
- * Las propuestas 0/3 conservan el guardrail directo ya calibrado, para evitar
- * volver demasiado conservadores los casos de incumplimiento/parcialidad.
- */
-const SENALES_CONTEXTUALES_NO_INEQUIVOCAS = new Set([
-  "acta",
-  "actas",
-  "comite",
-  "copasst",
-  "vigia",
-  "ocupacional",
-  "documento",
-  "documentos",
-  "evidencia",
-  "evidencias",
-  "soporte",
-  "soportes",
-  "empresa",
-  "seguridad",
-  "salud",
-  "trabajo",
-  "sgsst",
-]);
 
 function aJsonPrisma(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -209,70 +174,6 @@ function urlsCanonicas(urls: string[]): string[] {
   return [...normalizadas];
 }
 
-function tieneSoporteInequivoco(
-  soporte: ReturnType<typeof calcularSoporteDirectoBitacora>
-): boolean {
-  if (!tieneSoporteDirectoBitacora(soporte)) {
-    return false;
-  }
-
-  if (
-    soporte.senales.some(
-      (senal) =>
-        senal.startsWith("codigo:") ||
-        senal.startsWith("frase:")
-    )
-  ) {
-    return true;
-  }
-
-  const senalesEspecificas = soporte.senales.filter(
-    (senal) => !SENALES_CONTEXTUALES_NO_INEQUIVOCAS.has(senal)
-  );
-
-  return new Set(senalesEspecificas).size >= 2;
-}
-
-function soporteSuficienteParaPropuesta(
-  propuesta: PropuestaAspectoBitacora,
-  soporte: ReturnType<typeof calcularSoporteDirectoBitacora>
-): boolean {
-  if (propuesta.accion !== "PROPONER_EVALUACION") {
-    return tieneSoporteInequivoco(soporte);
-  }
-
-  // Un Cumplido · 5 es una afirmación fuerte: compartir solo el tema no basta.
-  if (propuesta.calificacionAdministrativaPropuesta === 5) {
-    return tieneSoporteInequivoco(soporte);
-  }
-
-  // Conserva la calibración ya validada para 0/3.
-  return tieneSoporteDirectoBitacora(soporte);
-}
-
-function neutralizarPropuestaSinSoporte(
-  propuesta: PropuestaAspectoBitacora
-): PropuestaAspectoBitacora {
-  const eraCumplido = propuesta.calificacionAdministrativaPropuesta === 5;
-
-  return {
-    ...propuesta,
-    accion: "SIN_CAMBIO",
-    estadoPropuesto: null,
-    calificacionAdministrativaPropuesta: null,
-    evidenciaBitacora: null,
-    evidenciasUrls: [],
-    fechaDocumento: null,
-    justificacionTecnica: eraCumplido
-      ? "Stack44 bloqueó la propuesta automática de Cumplido porque la anotación no aporta soporte inequívoco del mismo requisito completo. El aspecto permanece sin cambio."
-      : "Stack44 bloqueó la propuesta automática porque la anotación no aporta soporte directo suficiente del mismo requisito. El aspecto permanece sin cambio.",
-    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2",
-    informacionFaltante: [
-      "Falta soporte directo suficiente del mismo requisito para modificar la evaluación.",
-    ],
-  };
-}
-
 function construirResumen(
   propuestas: PropuestaAspectoBitacora[],
   reconocidosIds: Set<number>
@@ -324,45 +225,31 @@ function enriquecerPropuestas(params: {
     candidatos.map((candidato) => [candidato.aspectoId, candidato])
   );
   const reconocidosIds = new Set<number>();
-  const propuestasBloqueadasIds = new Set<number>();
 
   for (const propuesta of propuestas) {
-    const candidato = candidatoPorId.get(propuesta.aspectoId);
-    if (!candidato) continue;
-
-    const soporte = calcularSoporteDirectoBitacora({
-      contenidoBitacora: contenido,
-      codigo: candidato.codigo,
-      nombre: candidato.nombre,
-      palabrasClave: candidato.palabrasClave,
-    });
-
-    const reconocido = soporteSuficienteParaPropuesta(propuesta, soporte);
-
-    if (reconocido) {
+    if (
+      candidatoPorId.has(propuesta.aspectoId) &&
+      propuesta.relacionSemantica === "DIRECTA"
+    ) {
       reconocidosIds.add(propuesta.aspectoId);
-    } else if (propuesta.accion === "PROPONER_EVALUACION") {
-      propuestasBloqueadasIds.add(propuesta.aspectoId);
     }
   }
 
-  const propuestasValidadas = propuestas.map((propuesta) =>
-    propuestasBloqueadasIds.has(propuesta.aspectoId)
-      ? neutralizarPropuestaSinSoporte(propuesta)
-      : propuesta
-  );
-
   const urlsDetectadas = urlsCanonicas(extraerUrlsBitacora(contenido));
   const fechaDocumental = extraerFechaDocumentalSegura(contenido);
-  const reconocidos = propuestasValidadas.filter((propuesta) =>
+  const reconocidos = propuestas.filter((propuesta) =>
     reconocidosIds.has(propuesta.aspectoId)
   );
   const aspectoUrlUnica =
     urlsDetectadas.length === 1 && reconocidos.length === 1
       ? reconocidos[0].aspectoId
       : null;
+  const aspectoFechaUnica =
+    fechaDocumental && reconocidos.length === 1
+      ? reconocidos[0].aspectoId
+      : null;
 
-  const enriquecidas = propuestasValidadas.map((propuesta) => {
+  const enriquecidas = propuestas.map((propuesta) => {
     if (!reconocidosIds.has(propuesta.aspectoId)) {
       return propuesta;
     }
@@ -379,7 +266,9 @@ function enriquecerPropuestas(params: {
         : aspectoUrlUnica === propuesta.aspectoId
           ? urlsDetectadas
           : [];
-    const fechaDocumento = propuesta.fechaDocumento ?? fechaDocumental;
+    const fechaDocumento =
+      propuesta.fechaDocumento ??
+      (aspectoFechaUnica === propuesta.aspectoId ? fechaDocumental : null);
 
     if (propuesta.accion !== "SIN_CAMBIO") {
       return {
@@ -390,14 +279,23 @@ function enriquecerPropuestas(params: {
     }
 
     const calificacionActual = calificacionPorEstado(contexto.estadoActual);
-    const aportaSoporteNuevo =
-      evidenciasUrls.length > 0 ||
-      Boolean(
-        fechaDocumento && fechaDocumento !== contexto.fechaDocumentoActual
-      );
+    const urlsActuales = new Set(
+      urlsCanonicas(contexto.evidenciasUrlsActuales ?? [])
+    );
+    const aportaUrlNueva = evidenciasUrls.some(
+      (url) => !urlsActuales.has(url)
+    );
+    const aportaFechaNueva = Boolean(
+      fechaDocumento && fechaDocumento !== contexto.fechaDocumentoActual
+    );
+    const aportaSoporteNuevo = aportaUrlNueva || aportaFechaNueva;
 
     if (!aportaSoporteNuevo || calificacionActual === null) {
-      return propuesta;
+      return {
+        ...propuesta,
+        evidenciasUrls,
+        fechaDocumento,
+      };
     }
 
     return {
@@ -412,7 +310,7 @@ function enriquecerPropuestas(params: {
       fechaDocumento,
       justificacionTecnica:
         "La información confirma el estado vigente y aporta soporte documental nuevo. Stack44 registra una nueva evaluación histórica con la misma calificación para conservar inmutabilidad y actualizar evidencia/vigencia.",
-      reglaAplicada: "ACTUALIZACION_SOPORTE_SIN_CAMBIO_V1",
+      reglaAplicada: "ACTUALIZACION_SOPORTE_DIRECTO_SIN_CAMBIO_V2",
       informacionFaltante: [],
       requiereRevisionTecnica: contexto.requiereRevisionTecnica,
     } satisfies PropuestaAspectoBitacora;

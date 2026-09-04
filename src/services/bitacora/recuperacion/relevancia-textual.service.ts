@@ -9,30 +9,48 @@ const TERMINOS_GENERICOS = new Set([
   "anual",
   "aspecto",
   "aspectos",
+  "con",
+  "como",
   "cuenta",
   "cumplimiento",
   "debe",
   "deben",
+  "del",
+  "desde",
   "documental",
   "documento",
   "documentos",
   "empresa",
+  "entre",
   "evidencia",
   "evidencias",
   "gestion",
   "gestionar",
   "informacion",
+  "las",
+  "los",
+  "para",
+  "por",
+  "que",
   "registro",
   "registros",
   "requerido",
   "requerida",
   "requeridos",
   "requeridas",
+  "segun",
   "sgsst",
+  "sin",
   "sistema",
+  "sobre",
   "soporte",
   "soportes",
+  "sus",
   "trabajo",
+  "una",
+  "uno",
+  "unos",
+  "unas",
   "ultimo",
   "ultima",
 ]);
@@ -72,7 +90,11 @@ export function extraerTerminosBitacora(valor: string): Set<string> {
   return new Set(
     normalizarTextoBitacora(valor)
       .split(" ")
-      .filter((termino) => termino.length >= 3)
+      .filter(
+        (termino) =>
+          termino.length >= 3 &&
+          !TERMINOS_GENERICOS.has(termino)
+      )
   );
 }
 
@@ -207,6 +229,10 @@ export function calcularSoporteDirectoBitacora(params: {
   };
 }
 
+/**
+ * Este umbral se conserva únicamente como señal auxiliar de recuperación.
+ * No autoriza por sí solo reconocimiento semántico ni una evaluación.
+ */
 export function tieneSoporteDirectoBitacora(
   resultado: Pick<ResultadoSoporteDirectoBitacora, "puntaje" | "conflictoEntidad">
 ): boolean {
