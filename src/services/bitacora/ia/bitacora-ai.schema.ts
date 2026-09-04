@@ -68,7 +68,6 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           },
           unidadVerificacionIds: {
             type: "array",
-            uniqueItems: true,
             items: {
               type: "string",
               pattern: "^UV-[1-9][0-9]*$",
