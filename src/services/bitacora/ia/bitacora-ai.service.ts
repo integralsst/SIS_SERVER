@@ -2,6 +2,7 @@ import type {
   ContextoAspectoBitacora,
   PropuestaAspectoBitacora,
   ResultadoAnalisisBitacora,
+  UnidadVerificacionBitacora,
 } from "../../../types/bitacora.types";
 import { PROMPT_SISTEMA_BITACORA } from "../bitacora-ai.prompt";
 import {
@@ -20,6 +21,7 @@ interface AsignacionEvidenciaFinalModelo {
 }
 
 interface RespuestaModeloBitacora {
+  unidadesVerificacion: UnidadVerificacionBitacora[];
   aspectosDirectosFinales: number[];
   asignacionesEvidenciaFinales: AsignacionEvidenciaFinalModelo[];
   justificacionAdjudicacionGlobal: string;
@@ -35,6 +37,7 @@ export interface AnalizarRegistroBitacoraIaInput {
 }
 
 const MARCADOR_PASO_2 = "PASO 2 · COBERTURA DEL REQUISITO";
+const UMBRAL_CONFIANZA_REVISION_AUTOMATICA = 0.65;
 
 const PROMPT_SISTEMA_BITACORA_RECONCILIADO = (() => {
   if (!PROMPT_SISTEMA_BITACORA.includes(MARCADOR_PASO_2)) {
@@ -70,6 +73,163 @@ function agregarInformacionFaltante(
   mensaje: string
 ): string[] {
   return [...new Set([...actual, mensaje])];
+}
+
+function normalizarTextoAnclaje(valor: string): string {
+  return valor.normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+function normalizarTextoComparacion(valor: string): string {
+  return valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function contieneExclusionExplicita(fragmento: string): boolean {
+  const normalizado = normalizarTextoComparacion(fragmento);
+
+  return /\b(no se (?:reviso|evaluo|abordo)|no fue objeto de (?:revision|evaluacion)|no se realizo (?:revision|evaluacion)|quedo fuera del alcance|fuera del alcance)\b/.test(
+    normalizado
+  );
+}
+
+function validarUnidadesVerificacion(
+  input: AnalizarRegistroBitacoraIaInput,
+  unidades: UnidadVerificacionBitacora[]
+): Map<string, UnidadVerificacionBitacora> {
+  if (!Array.isArray(unidades)) {
+    throw new ErrorOpenRouter(
+      "La respuesta de IA no contiene unidades de verificación válidas.",
+      502,
+      "BITACORA_IA_UNIDADES_INVALIDAS"
+    );
+  }
+
+  const contenidoNormalizado = normalizarTextoAnclaje(input.contenidoOriginal);
+  const mapa = new Map<string, UnidadVerificacionBitacora>();
+
+  for (const unidad of unidades) {
+    if (
+      !unidad ||
+      typeof unidad.id !== "string" ||
+      !/^UV-[1-9][0-9]*$/.test(unidad.id) ||
+      (unidad.tipo !== "EVALUACION" && unidad.tipo !== "EXCLUSION") ||
+      typeof unidad.objetoTecnico !== "string" ||
+      typeof unidad.fragmentoBitacora !== "string" ||
+      typeof unidad.resultadoObservado !== "string"
+    ) {
+      throw new ErrorOpenRouter(
+        "La respuesta de IA contiene una unidad de verificación inválida.",
+        502,
+        "BITACORA_IA_UNIDAD_INVALIDA"
+      );
+    }
+
+    if (mapa.has(unidad.id)) {
+      throw new ErrorOpenRouter(
+        `La IA repitió la unidad de verificación ${unidad.id}.`,
+        502,
+        "BITACORA_IA_UNIDAD_DUPLICADA"
+      );
+    }
+
+    const objetoTecnico = unidad.objetoTecnico.trim();
+    const fragmentoBitacora = unidad.fragmentoBitacora.trim();
+    const resultadoObservado = unidad.resultadoObservado.trim();
+
+    if (!objetoTecnico || !fragmentoBitacora || !resultadoObservado) {
+      throw new ErrorOpenRouter(
+        `La unidad de verificación ${unidad.id} está incompleta.`,
+        502,
+        "BITACORA_IA_UNIDAD_INCOMPLETA"
+      );
+    }
+
+    const fragmentoNormalizado = normalizarTextoAnclaje(fragmentoBitacora);
+    if (!contenidoNormalizado.includes(fragmentoNormalizado)) {
+      throw new ErrorOpenRouter(
+        `La unidad de verificación ${unidad.id} no está anclada literalmente al registro de Bitácora.`,
+        502,
+        "BITACORA_IA_UNIDAD_NO_ANCLADA"
+      );
+    }
+
+    const tipo = contieneExclusionExplicita(fragmentoBitacora)
+      ? "EXCLUSION"
+      : unidad.tipo;
+
+    if (tipo !== unidad.tipo) {
+      console.warn("[BITACORA-IA-GUARDRAIL] unidad-reclasificada", {
+        unidadId: unidad.id,
+        tipoOriginal: unidad.tipo,
+        tipoFinal: tipo,
+        motivo: "FRAGMENTO_DECLARA_EXCLUSION_EXPLICITA",
+      });
+    }
+
+    mapa.set(unidad.id, {
+      id: unidad.id,
+      tipo,
+      objetoTecnico,
+      fragmentoBitacora,
+      resultadoObservado,
+    });
+  }
+
+  return mapa;
+}
+
+function validarReferenciasUnidades(
+  propuesta: PropuestaAspectoBitacora,
+  unidades: Map<string, UnidadVerificacionBitacora>
+): UnidadVerificacionBitacora[] {
+  const ids = propuesta.unidadVerificacionIds;
+
+  if (!Array.isArray(ids)) {
+    throw new ErrorOpenRouter(
+      `La IA no devolvió unidades de verificación para el aspecto ${propuesta.aspectoId}.`,
+      502,
+      "BITACORA_IA_UNIDADES_PROPUESTA_INVALIDAS"
+    );
+  }
+
+  const vistos = new Set<string>();
+  const referenciadas: UnidadVerificacionBitacora[] = [];
+
+  for (const id of ids) {
+    if (typeof id !== "string" || !/^UV-[1-9][0-9]*$/.test(id)) {
+      throw new ErrorOpenRouter(
+        `La IA devolvió una referencia de unidad inválida para el aspecto ${propuesta.aspectoId}.`,
+        502,
+        "BITACORA_IA_UNIDAD_PROPUESTA_INVALIDA"
+      );
+    }
+
+    if (vistos.has(id)) {
+      throw new ErrorOpenRouter(
+        `La IA repitió la unidad ${id} para el aspecto ${propuesta.aspectoId}.`,
+        502,
+        "BITACORA_IA_UNIDAD_PROPUESTA_DUPLICADA"
+      );
+    }
+    vistos.add(id);
+
+    const unidad = unidades.get(id);
+    if (!unidad) {
+      throw new ErrorOpenRouter(
+        `La IA vinculó el aspecto ${propuesta.aspectoId} a una unidad inexistente: ${id}.`,
+        502,
+        "BITACORA_IA_UNIDAD_PROPUESTA_NO_EXISTE"
+      );
+    }
+
+    referenciadas.push(unidad);
+  }
+
+  return referenciadas;
 }
 
 function construirFechaIso(
@@ -168,6 +328,46 @@ function normalizarContextual(
     requiereEvidenciaDocumental: false,
     requiereRevisionTecnica: false,
   };
+}
+
+function aplicarGuardrailUnidades(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora,
+  unidades: Map<string, UnidadVerificacionBitacora>
+): PropuestaAspectoBitacora {
+  const referenciadas = validarReferenciasUnidades(propuesta, unidades);
+  const contieneExclusion = referenciadas.some(
+    (unidad) => unidad.tipo === "EXCLUSION"
+  );
+  const contieneEvaluacion = referenciadas.some(
+    (unidad) => unidad.tipo === "EVALUACION"
+  );
+
+  if (contieneExclusion) {
+    if (propuesta.alcanceEvaluacion !== "EXCLUIDO") {
+      console.warn("[BITACORA-IA-GUARDRAIL] alcance-forzado-por-unidad", {
+        aspectoId: candidato.aspectoId,
+        motivo: "UNIDAD_EXCLUSION_REFERENCIADA",
+        unidadVerificacionIds: propuesta.unidadVerificacionIds,
+      });
+    }
+
+    return normalizarContextual(candidato, {
+      ...propuesta,
+      alcanceEvaluacion: "EXCLUIDO",
+    });
+  }
+
+  if (propuesta.relacionSemantica === "DIRECTA" && !contieneEvaluacion) {
+    console.warn("[BITACORA-IA-GUARDRAIL] directa-sin-unidad-evaluacion", {
+      aspectoId: candidato.aspectoId,
+      motivo: "SIN_ANCLA_EVALUACION",
+    });
+
+    return normalizarContextual(candidato, propuesta);
+  }
+
+  return propuesta;
 }
 
 function aplicarGuardrailAlcance(
@@ -319,6 +519,41 @@ function aplicarGuardrailPropuestaCompleta(
   };
 }
 
+function aplicarGuardrailConfianza(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  if (
+    propuesta.accion !== "PROPONER_EVALUACION" ||
+    propuesta.confianza >= UMBRAL_CONFIANZA_REVISION_AUTOMATICA
+  ) {
+    return propuesta;
+  }
+
+  console.warn("[BITACORA-IA-GUARDRAIL] confianza-baja", {
+    aspectoId: candidato.aspectoId,
+    confianza: propuesta.confianza,
+    umbral: UMBRAL_CONFIANZA_REVISION_AUTOMATICA,
+  });
+
+  return {
+    ...propuesta,
+    accion: "REQUIERE_REVISION_HUMANA",
+    estadoActual: candidato.estadoActual,
+    estadoPropuesto: candidato.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 requiere revisión humana porque la confianza de la adjudicación/evaluación quedó por debajo del umbral de seguridad automática.`.trim(),
+    reglaAplicada: propuesta.reglaAplicada
+      ? `${propuesta.reglaAplicada} | GUARDRAIL_CONFIANZA_BAJA_V1`
+      : "GUARDRAIL_CONFIANZA_BAJA_V1",
+    informacionFaltante: agregarInformacionFaltante(
+      propuesta.informacionFaltante,
+      `La confianza del análisis (${Math.round(propuesta.confianza * 100)}%) es inferior al ${Math.round(UMBRAL_CONFIANZA_REVISION_AUTOMATICA * 100)}% requerido para aplicar automáticamente una calificación.`
+    ),
+    requiereRevisionTecnica: true,
+  };
+}
+
 function validarFechaDocumentoPropuesta(
   input: AnalizarRegistroBitacoraIaInput,
   propuesta: PropuestaAspectoBitacora
@@ -460,7 +695,8 @@ function validarAspectosDirectosFinales(
 }
 
 function obtenerAspectosExcluidosDeAlcance(
-  propuestas: PropuestaAspectoBitacora[]
+  propuestas: PropuestaAspectoBitacora[],
+  unidades: Map<string, UnidadVerificacionBitacora>
 ): Set<number> {
   if (!Array.isArray(propuestas)) {
     throw new ErrorOpenRouter(
@@ -484,8 +720,13 @@ function obtenerAspectosExcluidosDeAlcance(
       );
     }
 
+    const referenciadas = validarReferenciasUnidades(propuesta, unidades);
+    const excluidaPorUnidad = referenciadas.some(
+      (unidad) => unidad.tipo === "EXCLUSION"
+    );
+
     if (
-      propuesta.alcanceEvaluacion === "EXCLUIDO" &&
+      (propuesta.alcanceEvaluacion === "EXCLUIDO" || excluidaPorUnidad) &&
       Number.isInteger(propuesta.aspectoId)
     ) {
       excluidos.add(propuesta.aspectoId);
@@ -517,6 +758,76 @@ function aplicarAlcanceGlobalAAspectosDirectos(
   }
 
   return filtrados;
+}
+
+function aplicarUnidadesGlobalAAspectosDirectos(
+  aspectosDirectosFinales: Set<number>,
+  propuestas: PropuestaAspectoBitacora[],
+  unidades: Map<string, UnidadVerificacionBitacora>
+): Set<number> {
+  const propuestasPorAspecto = new Map(
+    propuestas.map((propuesta) => [propuesta.aspectoId, propuesta])
+  );
+  const finales = new Set<number>();
+
+  for (const aspectoId of aspectosDirectosFinales) {
+    const propuesta = propuestasPorAspecto.get(aspectoId);
+    if (!propuesta) {
+      continue;
+    }
+
+    const referenciadas = validarReferenciasUnidades(propuesta, unidades);
+    const tieneEvaluacion = referenciadas.some(
+      (unidad) => unidad.tipo === "EVALUACION"
+    );
+    const tieneExclusion = referenciadas.some(
+      (unidad) => unidad.tipo === "EXCLUSION"
+    );
+
+    if (!tieneEvaluacion || tieneExclusion) {
+      console.warn("[BITACORA-IA-GUARDRAIL] directa-removida-por-unidades", {
+        aspectoId,
+        tieneEvaluacion,
+        tieneExclusion,
+        unidadVerificacionIds: propuesta.unidadVerificacionIds,
+      });
+      continue;
+    }
+
+    finales.add(aspectoId);
+  }
+
+  return finales;
+}
+
+function aplicarConjuntoDirectoAAsignaciones(
+  asignaciones: AsignacionEvidenciaFinalModelo[],
+  aspectosDirectosFinales: Set<number>
+): AsignacionEvidenciaFinalModelo[] {
+  if (!Array.isArray(asignaciones)) {
+    return asignaciones;
+  }
+
+  return asignaciones.flatMap((asignacion) => {
+    if (!asignacion || !Array.isArray(asignacion.aspectoIds)) {
+      return [asignacion];
+    }
+
+    const aspectoIds = asignacion.aspectoIds.filter((aspectoId) =>
+      aspectosDirectosFinales.has(aspectoId)
+    );
+
+    if (aspectoIds.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        ...asignacion,
+        aspectoIds,
+      },
+    ];
+  });
 }
 
 function aplicarAlcanceGlobalAAsignaciones(
@@ -720,9 +1031,11 @@ function normalizarPropuestaModelo(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora,
   aspectosDirectosFinales: Set<number>,
-  urlsFinalesPorAspecto: Map<number, string[]>
+  urlsFinalesPorAspecto: Map<number, string[]>,
+  unidades: Map<string, UnidadVerificacionBitacora>
 ): PropuestaAspectoBitacora {
-  const conAlcance = aplicarGuardrailAlcance(candidato, propuesta);
+  const conUnidades = aplicarGuardrailUnidades(candidato, propuesta, unidades);
+  const conAlcance = aplicarGuardrailAlcance(candidato, conUnidades);
   const reconciliada = aplicarReconciliacionGlobal(
     candidato,
     conAlcance,
@@ -730,7 +1043,8 @@ function normalizarPropuestaModelo(
   );
   const adjudicada = aplicarGuardrailAdjudicacion(candidato, reconciliada);
   const completa = aplicarGuardrailPropuestaCompleta(candidato, adjudicada);
-  const conUrlsValidadas = validarUrlsPropuesta(input, completa);
+  const conConfianza = aplicarGuardrailConfianza(candidato, completa);
+  const conUrlsValidadas = validarUrlsPropuesta(input, conConfianza);
   const urlsGlobales = urlsFinalesPorAspecto.get(candidato.aspectoId) ?? [];
   const conUrlsReconciliadas = {
     ...conUrlsValidadas,
@@ -745,7 +1059,8 @@ function validarPropuestasModelo(
   input: AnalizarRegistroBitacoraIaInput,
   propuestas: PropuestaAspectoBitacora[],
   aspectosDirectosFinales: Set<number>,
-  urlsFinalesPorAspecto: Map<number, string[]>
+  urlsFinalesPorAspecto: Map<number, string[]>,
+  unidades: Map<string, UnidadVerificacionBitacora>
 ): PropuestaAspectoBitacora[] {
   if (!Array.isArray(propuestas)) {
     throw new ErrorOpenRouter(
@@ -793,6 +1108,8 @@ function validarPropuestasModelo(
       );
     }
 
+    validarReferenciasUnidades(propuesta, unidades);
+
     if (propuesta.identidadHistorica !== candidato.identidadHistorica) {
       throw new ErrorOpenRouter(
         `La identidad histórica del aspecto ${propuesta.aspectoId} no coincide con Stack44.`,
@@ -835,7 +1152,8 @@ function validarPropuestasModelo(
         candidato,
         propuesta,
         aspectosDirectosFinales,
-        urlsFinalesPorAspecto
+        urlsFinalesPorAspecto,
+        unidades
       )
     );
   }
@@ -861,6 +1179,7 @@ export async function analizarRegistroBitacoraConIa(
       registroBitacoraId: input.registroBitacoraId,
       modelo: "sin-modelo-candidatos-vacios",
       versionPrompt: VERSION_PROMPT_BITACORA_RECONCILIADA,
+      unidadesVerificacion: [],
       propuestas: [],
     };
   }
@@ -886,7 +1205,7 @@ export async function analizarRegistroBitacoraConIa(
         content: JSON.stringify(contextoUsuario),
       },
     ],
-    schemaName: "stack44_bitacora_analisis_v312",
+    schemaName: "stack44_bitacora_analisis_v313",
     schema: SCHEMA_RESPUESTA_BITACORA,
   });
 
@@ -901,24 +1220,38 @@ export async function analizarRegistroBitacoraConIa(
     );
   }
 
+  const unidades = validarUnidadesVerificacion(
+    input,
+    respuesta.datos.unidadesVerificacion
+  );
   const aspectosDirectosDeclarados = validarAspectosDirectosFinales(
     input,
     respuesta.datos.aspectosDirectosFinales
   );
   const aspectosExcluidos = obtenerAspectosExcluidosDeAlcance(
-    respuesta.datos.propuestas
+    respuesta.datos.propuestas,
+    unidades
   );
-  const aspectosDirectosFinales = aplicarAlcanceGlobalAAspectosDirectos(
+  const aspectosDirectosConAlcance = aplicarAlcanceGlobalAAspectosDirectos(
     aspectosDirectosDeclarados,
     aspectosExcluidos
+  );
+  const aspectosDirectosFinales = aplicarUnidadesGlobalAAspectosDirectos(
+    aspectosDirectosConAlcance,
+    respuesta.datos.propuestas,
+    unidades
   );
   const asignacionesEvidenciaConAlcance = aplicarAlcanceGlobalAAsignaciones(
     respuesta.datos.asignacionesEvidenciaFinales,
     aspectosExcluidos
   );
+  const asignacionesEvidenciaDirectas = aplicarConjuntoDirectoAAsignaciones(
+    asignacionesEvidenciaConAlcance,
+    aspectosDirectosFinales
+  );
   const urlsFinalesPorAspecto = validarAsignacionesEvidenciaFinales(
     input,
-    asignacionesEvidenciaConAlcance,
+    asignacionesEvidenciaDirectas,
     aspectosDirectosFinales
   );
 
@@ -926,11 +1259,13 @@ export async function analizarRegistroBitacoraConIa(
     registroBitacoraId: input.registroBitacoraId,
     modelo: respuesta.modelo,
     versionPrompt: VERSION_PROMPT_BITACORA_RECONCILIADA,
+    unidadesVerificacion: [...unidades.values()],
     propuestas: validarPropuestasModelo(
       input,
       respuesta.datos.propuestas,
       aspectosDirectosFinales,
-      urlsFinalesPorAspecto
+      urlsFinalesPorAspecto,
+      unidades
     ),
   };
 }
