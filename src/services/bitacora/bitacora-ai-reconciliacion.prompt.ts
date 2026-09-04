@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.13";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.14";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1A · UNIDADES DE VERIFICACIÓN DEL REGISTRO
@@ -84,6 +84,11 @@ REGLAS TRANSVERSALES DE PRECISIÓN PARA PASOS 2 Y 3
 3. Si existe LÓGICA ESPECÍFICA OFICIAL y esa lógica asigna 3 a evidencia parcial, indirecta, incompleta o a una condición equivalente a la observada, aplica 3. No sustituyas esa regla por un 0 del criterio general.
 4. Si la evidencia es parcial o indirecta pero la lógica específica no permite decidir con seguridad entre 0/3/5, usa INFORMACION_INSUFICIENTE; nunca conviertas incertidumbre en inexistencia.
 5. La lógica específica oficial prevalece sobre el criterio general también cuando el criterio general permitiría una conclusión más severa. No mezcles ambos para empeorar una calificación definida explícitamente por la lógica específica.
+6. Antes de usar coberturaRequisito=INDETERMINADA o accion=INFORMACION_INSUFICIENTE, recorre los escenarios 0, 3 y 5 escritos en la LÓGICA ESPECÍFICA OFICIAL y comprueba si los hechos observados coinciden de forma suficiente con alguno de ellos. Si uno coincide, el aspecto ES EVALUABLE y debes aplicar ese escenario.
+7. No confundas "no alcanza 5" con "no se puede evaluar". Si la lógica específica define expresamente un escenario de 3 para evidencia parcial, indirecta, incompleta, desactualizada o para otra condición intermedia y la Bitácora documenta esa condición, usa coberturaRequisito=PARCIAL, accion=PROPONER_EVALUACION, estadoPropuesto=PARCIAL y calificacionAdministrativaPropuesta=3.
+8. Una condición requerida exclusivamente para llegar a 5 que no pudo confirmarse NO vuelve indeterminada la evaluación cuando la propia lógica específica define qué calificación corresponde precisamente ante esa falta de confirmación o evidencia parcial.
+9. INFORMACION_INSUFICIENTE se reserva para el caso en que, aun después de aplicar literalmente la lógica específica oficial, los hechos disponibles no permiten seleccionar de forma segura NINGUNO de sus escenarios 0, 3 o 5.
+10. Haz una comprobación final de consistencia antes de devolver el JSON: si justificacionTecnica o reglaAplicada afirman que la evidencia observada coincide con el escenario de 0, 3 o 5 de la lógica específica, la acción y la calificación deben corresponder a ese mismo escenario. No puedes afirmar que la evidencia encaja en 3 y simultáneamente devolver INFORMACION_INSUFICIENTE o REQUIERE_REVISION_HUMANA salvo que exista otra ambigüedad material independiente que impida aplicar la propia regla oficial.
 
 SUBPASO 1C · RECONCILIACIÓN GLOBAL DE EVIDENCIAS URL
 
