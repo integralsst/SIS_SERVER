@@ -437,8 +437,6 @@ function consolidarPropuestasDuplicadas(
     const base = grupo[0];
     const candidato = candidatos.get(aspectoId);
     if (!candidato) {
-      // Se conserva una sola ocurrencia para que el validador de autorización
-      // emita el error correcto sin que el duplicado oculte el problema real.
       normalizadas.push(base);
       continue;
     }
@@ -535,7 +533,7 @@ function aplicarGuardrailUnidades(
   const referenciadas = validarReferenciasUnidades(propuesta, unidades);
   const idsValidas = referenciadas.map((unidad) => unidad.id);
   const idsValidasSet = new Set(idsValidas);
-  const idsDescartadas = propuesta.unidadVerificacionIds.filter(
+  const idsDescartadas = (propuesta.unidadVerificacionIds ?? []).filter(
     (unidadId) => !idsValidasSet.has(unidadId)
   );
   let propuestaAnclada: PropuestaAspectoBitacora = {
@@ -1267,8 +1265,6 @@ function aplicarReconciliacionGlobal(
       motivo: "INCLUIDA_GLOBALMENTE_PERO_PROPUESTA_CONTEXTUAL",
     });
 
-    // Precisión > recall: el cierre global nunca promueve una propuesta
-    // que individualmente no quedó sustentada como DIRECTA.
     return normalizarContextual(candidato, propuesta);
   }
 
