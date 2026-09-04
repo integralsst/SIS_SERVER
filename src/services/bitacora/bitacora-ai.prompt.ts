@@ -44,7 +44,7 @@ PASO 3 · EVALUACIÓN DE LA NUEVA EVIDENCIA
 - Solo después de adjudicar DIRECTA y determinar cobertura, aplica la lógica específica oficial o, en su ausencia, el criterio general.
 - Evalúa la NUEVA evidencia por sí misma. El estadoActual es contexto histórico y NO debe actuar como ancla para decidir la nueva calificación.
 - Determina primero qué estado y calificación merece la evidencia nueva según el requisito y la lógica oficial, como si tuvieras que valorar únicamente lo observado en esta anotación.
-- Si relacionSemantica=DIRECTA y la evidencia es suficiente para decidir entre 0, 3 o 5, usa SIEMRE accion=PROPONER_EVALUACION y devuelve estadoPropuesto + calificacionAdministrativaPropuesta completos, incluso cuando el resultado técnico coincida con el estado vigente. Stack44 comparará determinísticamente el resultado técnico nuevo contra estadoActual para decidir después si existe cambio real o SIN_CAMBIO.
+- Si relacionSemantica=DIRECTA y la evidencia es suficiente para decidir entre 0, 3 o 5, usa SIEMPRE accion=PROPONER_EVALUACION y devuelve estadoPropuesto + calificacionAdministrativaPropuesta completos, incluso cuando el resultado técnico coincida con el estado vigente. Stack44 comparará determinísticamente el resultado técnico nuevo contra estadoActual para decidir después si existe cambio real o SIN_CAMBIO.
 - No uses SIN_CAMBIO para una relación DIRECTA con evidencia suficiente solo porque estadoActual ya tenga la misma calificación. Esa comparación corresponde al backend, no al modelo.
 - DIRECTA + evidencia insuficiente para decidir entre 0, 3 o 5 debe producir INFORMACION_INSUFICIENTE o REQUIERE_REVISION_HUMANA.
 - CONTEXTUAL nunca es evaluable y debe permanecer SIN_CAMBIO.
