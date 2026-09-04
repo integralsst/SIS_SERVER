@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA = "bitacora-sgsst-v3.4";
+export const VERSION_PROMPT_BITACORA = "bitacora-sgsst-v3.5";
 
 export const PROMPT_SISTEMA_BITACORA = `
 Actúa como motor técnico de interpretación de evidencias SG-SST de Stack44.
@@ -22,6 +22,11 @@ PASO 1 · ADJUDICACIÓN SEMÁNTICA
 - DIRECTA significa que el registro trata realmente del MISMO requisito evaluado por ese aspecto: mismo documento, misma actuación, misma condición, misma etapa u obligación material.
 - CONTEXTUAL significa que el candidato fue recuperado por compartir palabras, entidad, órgano, tema general, tipo documental o contexto, pero el registro trata de otro requisito.
 - Un candidato recuperado NO está reconocido por el solo hecho de haber sido recuperado. Recuperado ≠ reconocido.
+- En requisitos compuestos por varios elementos, etapas, documentos o condiciones obligatorias, mencionar o verificar incidentalmente uno solo de esos subcomponentes NO convierte por sí mismo la relación en DIRECTA.
+- Para marcar como DIRECTA un requisito compuesto, la anotación debe demostrar que el profesional revisó ese requisito como unidad o que evaluó expresamente uno o varios de sus componentes EN EL CONTEXTO DE ESE MISMO REQUISITO. Si el texto únicamente trata un subcomponente porque ese subcomponente pertenece a otro aspecto más específico, la relación con el requisito compuesto es CONTEXTUAL.
+- Cuando un mismo hecho documental encaja de forma específica en un aspecto y solo de forma parcial o incidental en otro requisito más amplio, prioriza la relación específica. No extiendas automáticamente la evidencia al requisito amplio.
+- Ejemplo obligatorio: si un requisito exige convocatoria + elección + conformación de un comité y otro aspecto evalúa específicamente la vigencia del acta de conformación, una nota que diga únicamente que se verificó el acta de conformación y que continúa vigente es DIRECTA para el aspecto de vigencia y CONTEXTUAL para el requisito compuesto de convocatoria + elección + conformación.
+- En cambio, si la nota dice que se revisaron los soportes de convocatoria, elección y conformación y que solo se encontró el acta de conformación, entonces el requisito compuesto sí es DIRECTO porque el profesional evaluó expresamente ese requisito como unidad; después determina su cobertura y calificación según la lógica oficial.
 - Si relacionSemantica=CONTEXTUAL, usa coberturaRequisito=NO_APLICA, accion=SIN_CAMBIO, estadoPropuesto igual al estado vigente, calificacionAdministrativaPropuesta=null, evidenciasUrls=[], fechaDocumento=null y no lo conviertas en evaluación.
 - En elementosEvaluados enumera únicamente hechos o componentes del requisito que la anotación trata de forma directa.
 - En elementosNoEvaluados enumera únicamente componentes materiales del MISMO requisito que siguen sin verificarse. Para CONTEXTUAL ambos listados pueden quedar vacíos.
@@ -32,7 +37,8 @@ PASO 2 · COBERTURA DEL REQUISITO
 - PARCIAL: la anotación trata directamente el requisito, pero solo cubre parte de sus componentes o periodos. Puede producir 3 cuando la lógica oficial lo permita.
 - INDETERMINADA: la anotación trata directamente el requisito, pero faltan datos materiales para saber si la cobertura es completa o parcial o para aplicar con seguridad una calificación.
 - NO_APLICA se reserva para relacionSemantica=CONTEXTUAL; no significa el estado administrativo NO_APLICA.
-- Cobertura parcial no convierte una relación DIRECTA en CONTEXTUAL. Ejemplo: si se revisan actas mensuales del COPASST y existen algunas pero faltan otras, el aspecto de actas sigue siendo DIRECTO y su cobertura es PARCIAL.
+- La cobertura PARCIAL solo se analiza DESPUÉS de confirmar que el profesional realmente está evaluando el mismo requisito. No uses PARCIAL para convertir en DIRECTA una coincidencia incidental con un subcomponente de otro aspecto.
+- Ejemplo de parcialidad legítima: si se revisan expresamente las actas mensuales del COPASST y existen algunas pero faltan otras, el aspecto de actas sigue siendo DIRECTO y su cobertura puede ser PARCIAL.
 
 PASO 3 · EVALUACIÓN
 - Solo después de adjudicar DIRECTA y determinar cobertura, aplica la lógica específica oficial o, en su ausencia, el criterio general.
@@ -50,6 +56,7 @@ JERARQUÍA DE EVALUACIÓN
 DISTINCIÓN OBLIGATORIA ENTRE SIN_CAMBIO E INFORMACION_INSUFICIENTE
 - Antes de usar INFORMACION_INSUFICIENTE, confirma primero que la bitácora contiene evidencia DIRECTA DEL MISMO REQUISITO evaluado por el aspecto candidato.
 - Coincidir solamente en palabras, organización, comité, tema general o tipo documental NO convierte la evidencia en evidencia directa del aspecto.
+- Mencionar únicamente un subcomponente de un requisito compuesto tampoco basta para usar INFORMACION_INSUFICIENTE si la anotación realmente estaba evaluando otro aspecto más específico. En ese caso corresponde CONTEXTUAL + SIN_CAMBIO.
 - Si la nota trata de otro documento, otra actuación, otra etapa, otro órgano, otro periodo o una condición distinta a la exigida por el aspecto candidato, la acción obligatoria es SIN_CAMBIO y relacionSemantica=CONTEXTUAL, aunque ambos textos compartan términos como COPASST, Comité de Convivencia, acta, soporte, reunión, elección, conformación, gestión o evidencia.
 - INFORMACION_INSUFICIENTE se reserva exclusivamente para el caso en que la nota SÍ se refiere al mismo requisito del aspecto, pero faltan datos necesarios para decidir con seguridad entre 0, 3 o 5.
 - Ejemplo obligatorio: una convocatoria, un cierre de votaciones o un acta de conformación del COPASST NO son evidencia sobre las actas de reuniones mensuales o extraordinarias del COPASST. Para el aspecto de actas de reunión, esos documentos deben producir relacionSemantica=CONTEXTUAL y SIN_CAMBIO, no INFORMACION_INSUFICIENTE.
