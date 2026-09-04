@@ -1,4 +1,4 @@
-export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.14";
+export const VERSION_PROMPT_BITACORA_RECONCILIADA = "bitacora-sgsst-v3.15";
 
 export const PROMPT_RECONCILIACION_GLOBAL = `
 SUBPASO 1A · UNIDADES DE VERIFICACIÓN DEL REGISTRO
@@ -90,6 +90,16 @@ REGLAS TRANSVERSALES DE PRECISIÓN PARA PASOS 2 Y 3
 9. INFORMACION_INSUFICIENTE se reserva para el caso en que, aun después de aplicar literalmente la lógica específica oficial, los hechos disponibles no permiten seleccionar de forma segura NINGUNO de sus escenarios 0, 3 o 5.
 10. Haz una comprobación final de consistencia antes de devolver el JSON: si justificacionTecnica o reglaAplicada afirman que la evidencia observada coincide con el escenario de 0, 3 o 5 de la lógica específica, la acción y la calificación deben corresponder a ese mismo escenario. No puedes afirmar que la evidencia encaja en 3 y simultáneamente devolver INFORMACION_INSUFICIENTE o REQUIERE_REVISION_HUMANA salvo que exista otra ambigüedad material independiente que impida aplicar la propia regla oficial.
 
+BRECHA DE CUMPLIMIENTO PARA LLEGAR A 5
+1. Para toda propuesta DIRECTA evaluable cuyo resultado técnico sea menor a 5, elementosNoEvaluados debe contener al menos una brecha MATERIAL, concreta y accionable que explique qué condición del MISMO requisito falta acreditar para alcanzar el escenario de 5.
+2. Construye esas brechas exclusivamente a partir del escenario 5 de la lógica específica oficial o, si no existe lógica específica, de las condiciones materiales del criterio general suministrado para ese aspecto. No inventes requisitos adicionales.
+3. Si la Bitácora demuestra una deficiencia concreta, descríbela de forma específica en elementosNoEvaluados. Ejemplo: si el cumplimiento total exige registros firmados y el texto indica que uno carece de firma, no escribas "completar el requisito"; escribe la condición concreta pendiente, como "completar la firma pendiente del registro revisado".
+4. Si una condición necesaria para 5 no fue confirmada, pero tampoco se comprobó que esté ausente, redacta la brecha como verificación o confirmación pendiente. Ejemplo: "confirmar explícitamente la existencia del sistema formal requerido". No conviertas una falta de confirmación en una afirmación de inexistencia.
+5. elementosNoEvaluados debe describir cumplimiento SG-SST, no incertidumbre del modelo. No uses frases genéricas como "falta información", "requiere revisión humana", "completar la verificación" o "acreditar todas las condiciones" cuando la lógica oficial permite identificar una condición material más concreta.
+6. Si existen varias condiciones independientes para alcanzar 5 y la evidencia permite identificar cuáles faltan o no fueron confirmadas, devuelve cada una como elemento separado. No agrupes brechas distintas en una frase vaga.
+7. Para resultado 5, elementosNoEvaluados debe ser []. Para una propuesta CONTEXTUAL o EXCLUIDO, elementosNoEvaluados debe ser [].
+8. Antes de devolver el JSON, verifica consistencia entre justificacionTecnica, reglaAplicada y elementosNoEvaluados: si la explicación ya identifica por qué el resultado es 0 o 3, esa misma causa material debe reflejarse de forma concreta en elementosNoEvaluados cuando sea relevante para llegar a 5.
+
 SUBPASO 1C · RECONCILIACIÓN GLOBAL DE EVIDENCIAS URL
 
 Ejecuta este subpaso DESPUÉS de cerrar aspectosDirectosFinales y ANTES de devolver el JSON final. Forma parte de la misma llamada y no modifica la calificación de ningún aspecto.
@@ -142,6 +152,7 @@ SALIDA GLOBAL OBLIGATORIA
 - Todo candidato con alcanceEvaluacion=EXCLUIDO debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, sin URL y sin fechaDocumento, y señalar la unidad EXCLUSION correspondiente.
 - Todo candidato que inicialmente pareciera DIRECTO pero no sobreviva a la reconciliación debe quedar relacionSemantica=CONTEXTUAL, accion=SIN_CAMBIO, sin URL y sin fechaDocumento.
 - Devuelve asignacionesEvidenciaFinales como la lista FINAL reconciliada de asociaciones URL→aspectoIds. Las URLs ambiguas se omiten y nunca se asocian a propuestas EXCLUIDO.
+- Para toda propuesta DIRECTA evaluable con resultado menor a 5, devuelve elementosNoEvaluados con las brechas materiales concretas que faltan o no se han confirmado para alcanzar 5, conforme a la sección BRECHA DE CUMPLIMIENTO PARA LLEGAR A 5.
 - Devuelve justificacionAdjudicacionGlobal con una explicación breve de por qué ese conjunto final es el mínimo suficiente. No inventes hechos nuevos en esta justificación.
 
 EJEMPLO DE SOLAPAMIENTO
