@@ -30,6 +30,8 @@ export type TipoUrlBitacora =
   | "REFERENCIA"
   | "CONTACTO";
 
+export type DecisionEvidenciaBitacora = "CONFIRMAR" | "DESCARTAR";
+
 export type CoberturaRequisitoBitacora =
   | "COMPLETA"
   | "PARCIAL"
@@ -43,8 +45,15 @@ export interface CrearRegistroBitacoraInput {
   tipoActividad?: string | null;
 }
 
+export interface DecisionEvidenciaBitacoraInput {
+  url: string;
+  decision: DecisionEvidenciaBitacora;
+  aspectoIds?: number[];
+}
+
 export interface AplicarRegistroBitacoraInput {
   excluirAspectoIds?: number[];
+  decisionesEvidencia?: DecisionEvidenciaBitacoraInput[];
 }
 
 export interface AutorBitacora {
@@ -98,6 +107,15 @@ export interface ClasificacionUrlBitacora {
   url: string;
   tipo: TipoUrlBitacora;
   unidadVerificacionIds: string[];
+  descripcion: string;
+}
+
+export interface EvidenciaPendienteConfirmacionBitacora {
+  url: string;
+  tipoSugerido: TipoUrlBitacora;
+  descripcionSugerida: string;
+  aspectoIdsSugeridos: number[];
+  unidadVerificacionIds: string[];
 }
 
 export interface PropuestaAspectoBitacora {
@@ -131,5 +149,6 @@ export interface ResultadoAnalisisBitacora {
   modelo: string;
   versionPrompt: string;
   unidadesVerificacion?: UnidadVerificacionBitacora[];
+  evidenciasPendientesConfirmacion?: EvidenciaPendienteConfirmacionBitacora[];
   propuestas: PropuestaAspectoBitacora[];
 }
