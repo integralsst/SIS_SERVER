@@ -440,6 +440,38 @@ function validarAsignacionesEvidenciaFinales(
     );
   }
 
+  const urlsUnicas = [
+    ...new Set((input.urlsDisponibles ?? []).map((url) => url.trim()).filter(Boolean)),
+  ];
+  const contenidoNormalizado = input.contenidoOriginal
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const declaraAmbiguedadExplicita = contenidoNormalizado
+    .split(/[.!?;\n]+/)
+    .some(
+      (fragmento) =>
+        /\b(enlace|url|evidencia|soporte|adjunto)\b/.test(fragmento) &&
+        /(no\s+(?:es|fue)\s+posible\s+(?:determinar|establecer|identificar)|no\s+se\s+puede\s+(?:determinar|establecer|identificar)|no\s+queda\s+claro|no\s+esta\s+claro)/.test(
+          fragmento
+        ) &&
+        /(correspond|pertenec|asoci|vincul|asign)/.test(fragmento)
+    );
+
+  if (
+    urlsUnicas.length === 1 &&
+    aspectosDirectosFinales.size > 1 &&
+    declaraAmbiguedadExplicita
+  ) {
+    console.warn("[BITACORA-IA-GUARDRAIL] evidencia-global-descartada", {
+      motivo: "URL_UNICA_CON_AMBIGUEDAD_EXPLICITA",
+      url: urlsUnicas[0],
+      aspectosDirectosFinales: [...aspectosDirectosFinales],
+    });
+
+    return new Map<number, string[]>();
+  }
+
   const urlsDisponibles = new Set(input.urlsDisponibles ?? []);
   const urlsVistas = new Set<string>();
   const urlsPorAspecto = new Map<number, string[]>();
