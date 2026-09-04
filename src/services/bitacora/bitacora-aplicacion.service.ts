@@ -8,6 +8,7 @@ import { prisma } from "../../lib/prisma";
 import type {
   AplicarRegistroBitacoraInput,
   PropuestaAspectoBitacora,
+  ResultadoAnalisisBitacora,
 } from "../../types/bitacora.types";
 import type {
   EvaluacionAspectoInput,
@@ -16,6 +17,11 @@ import type {
 import { ErrorValidacionBitacora } from "../../validators/bitacora/bitacora.validator";
 import { servicioEvaluacionDirecta } from "../evaluacion/evaluacion-directa.service";
 import { TIPO_ACTIVIDAD_BITACORA_INTERNA } from "./bitacora.constants";
+import {
+  construirUrlsConfirmadasPorAspecto,
+  prepararUrlsParaConfirmacionHumana,
+  validarDecisionesEvidenciaBitacora,
+} from "./bitacora-evidencias-confirmacion.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
 import {
   leerSnapshotBitacora,
@@ -97,17 +103,6 @@ function convertirPropuesta(
   };
 }
 
-function construirUrlsPorAspecto(
-  propuestas: PropuestaAspectoBitacora[]
-): Record<string, string[]> {
-  return Object.fromEntries(
-    propuestas.map((propuesta) => [
-      String(propuesta.aspectoId),
-      [...new Set(propuesta.evidenciasUrls)],
-    ])
-  );
-}
-
 function limitarTexto(texto: string, maximo: number): string {
   const limpio = texto.trim().replace(/\s+/g, " ");
   if (limpio.length <= maximo) {
@@ -152,7 +147,7 @@ function construirMetadataEvidencia(
     evidenciaInterpretada
       ? `Evidencia identificada: ${evidenciaInterpretada}`
       : null,
-    `Vinculada mediante análisis IA aprobado${
+    `Vinculada mediante análisis IA aprobado y confirmación humana${
       confianza ? ` · Confianza ${confianza}` : ""
     }.`,
     `Registro de Bitácora: ${registroId}.`,
@@ -174,8 +169,15 @@ async function enriquecerEvidenciasDesdeBitacora(params: {
     id: string;
     aspectoId: number;
   }>;
+  urlsPorAspecto: Record<string, string[]>;
 }): Promise<void> {
-  const { snapshot, registroId, propuestas, evaluaciones } = params;
+  const {
+    snapshot,
+    registroId,
+    propuestas,
+    evaluaciones,
+    urlsPorAspecto,
+  } = params;
 
   for (const propuesta of propuestas) {
     const evaluacion = evaluaciones.find(
@@ -187,7 +189,9 @@ async function enriquecerEvidenciasDesdeBitacora(params: {
 
     const urls = [
       ...new Set(
-        propuesta.evidenciasUrls.map((url) => url.trim()).filter(Boolean)
+        (urlsPorAspecto[String(propuesta.aspectoId)] ?? [])
+          .map((url) => url.trim())
+          .filter(Boolean)
       ),
     ];
     if (urls.length === 0) {
@@ -211,6 +215,35 @@ async function enriquecerEvidenciasDesdeBitacora(params: {
       });
     }
   }
+}
+
+function reconstruirPendientesConfirmacion(
+  snapshot: SnapshotBitacoraIa,
+  registroId: string
+) {
+  const analisis: ResultadoAnalisisBitacora = {
+    registroBitacoraId: registroId,
+    modelo: snapshot.analisis.modelo ?? "desconocido",
+    versionPrompt: snapshot.analisis.versionPrompt ?? "desconocido",
+    unidadesVerificacion: snapshot.analisis.unidadesVerificacion,
+    propuestas: snapshot.analisis.propuestas,
+  };
+
+  return (
+    prepararUrlsParaConfirmacionHumana(
+      analisis,
+      snapshot.urlsDetectadas ?? []
+    ).evidenciasPendientesConfirmacion ?? []
+  );
+}
+
+function totalUrlsConfirmadas(
+  urlsPorAspecto: Record<string, string[]>
+): number {
+  return Object.values(urlsPorAspecto).reduce(
+    (total, urls) => total + new Set(urls).size,
+    0
+  );
 }
 
 export async function aplicarBitacoraCompleta(
@@ -258,12 +291,16 @@ export async function aplicarBitacoraCompleta(
         propuesta.accion === "PROPONER_EVALUACION" &&
         !excluidosPrevios.has(propuesta.aspectoId)
     );
+    const urlsPorAspecto = construirUrlsConfirmadasPorAspecto(
+      snapshot.aplicacion.evidenciasDecididas ?? []
+    );
 
     await enriquecerEvidenciasDesdeBitacora({
       snapshot,
       registroId,
       propuestas: propuestasAplicadas,
       evaluaciones: snapshot.aplicacion.evaluaciones,
+      urlsPorAspecto,
     });
 
     return {
@@ -297,10 +334,19 @@ export async function aplicarBitacoraCompleta(
     );
   }
 
+  const pendientes = reconstruirPendientesConfirmacion(snapshot, registroId);
+  const evidenciasDecididas = validarDecisionesEvidenciaBitacora({
+    pendientes,
+    propuestas: snapshot.analisis.propuestas,
+    aspectoIdsExcluidos: exclusiones,
+    decisiones: input?.decisionesEvidencia,
+  });
+  const urlsPorAspecto =
+    construirUrlsConfirmadasPorAspecto(evidenciasDecididas);
+
   const evaluaciones = seleccionadas.map((propuesta) =>
     convertirPropuesta(registroId, propuesta)
   );
-  const urlsPorAspecto = construirUrlsPorAspecto(seleccionadas);
 
   console.info("[BITACORA-ASISTIDA] aplicacion-inicio", {
     empresaId,
@@ -308,6 +354,10 @@ export async function aplicarBitacoraCompleta(
     usuarioId: usuario.usuarioId,
     totalPropuestas: evaluaciones.length,
     exclusiones,
+    totalUrlsRevisadas: evidenciasDecididas.length,
+    totalUrlsConfirmadas: evidenciasDecididas.filter(
+      (decision) => decision.decision === "CONFIRMAR"
+    ).length,
   });
 
   const resultado = await servicioEvaluacionDirecta.guardarLoteEnFecha(
@@ -326,17 +376,16 @@ export async function aplicarBitacoraCompleta(
     registroId,
     propuestas: seleccionadas,
     evaluaciones: resultado.evaluaciones,
+    urlsPorAspecto,
   });
 
-  const totalEvidenciasVinculadas = seleccionadas.reduce(
-    (total, propuesta) => total + new Set(propuesta.evidenciasUrls).size,
-    0
-  );
+  const totalEvidenciasVinculadas = totalUrlsConfirmadas(urlsPorAspecto);
   const aplicadaEn = new Date().toISOString();
   const aplicacion: NonNullable<SnapshotBitacoraIa["aplicacion"]> = {
     aplicadaEn,
     aplicadaPorUsuarioId: usuario.usuarioId,
     aspectoIdsExcluidos: exclusiones,
+    evidenciasDecididas,
     evaluaciones: resultado.evaluaciones.map((evaluacion) => ({
       id: evaluacion.id,
       aspectoId: evaluacion.aspectoId,
@@ -354,7 +403,7 @@ export async function aplicarBitacoraCompleta(
         accion: "APLICACION_COMPLETADA",
         fecha: aplicadaEn,
         usuarioId: usuario.usuarioId,
-        detalle: `${resultado.evaluaciones.length} evaluación(es) aplicadas desde la Bitácora.`,
+        detalle: `${resultado.evaluaciones.length} evaluación(es) aplicadas desde la Bitácora con ${totalEvidenciasVinculadas} enlace(s) confirmado(s) como evidencia.`,
       },
     ],
   };
@@ -366,7 +415,7 @@ export async function aplicarBitacoraCompleta(
       decididaPorUsuarioId: usuario.usuarioId,
       decididaEn: new Date(),
       observacionDecision:
-        "Resumen de Bitácora IA aprobado y aplicado en lote al motor oficial de evaluación.",
+        "Resumen de Bitácora IA aprobado y aplicado en lote al motor oficial de evaluación; los enlaces fueron decididos explícitamente por el usuario.",
       reglasAplicadas: aJsonPrisma(snapshotAplicado),
     },
   });

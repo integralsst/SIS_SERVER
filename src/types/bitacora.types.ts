@@ -24,6 +24,14 @@ export type AlcanceEvaluacionBitacora = "EVALUADO" | "EXCLUIDO";
 
 export type TipoUnidadVerificacionBitacora = "EVALUACION" | "EXCLUSION";
 
+export type TipoUrlBitacora =
+  | "EVIDENCIA_DIRECTA"
+  | "RECURSO_ACCION"
+  | "REFERENCIA"
+  | "CONTACTO";
+
+export type DecisionEvidenciaBitacora = "CONFIRMAR" | "DESCARTAR";
+
 export type CoberturaRequisitoBitacora =
   | "COMPLETA"
   | "PARCIAL"
@@ -37,8 +45,15 @@ export interface CrearRegistroBitacoraInput {
   tipoActividad?: string | null;
 }
 
+export interface DecisionEvidenciaBitacoraInput {
+  url: string;
+  decision: DecisionEvidenciaBitacora;
+  aspectoIds?: number[];
+}
+
 export interface AplicarRegistroBitacoraInput {
   excluirAspectoIds?: number[];
+  decisionesEvidencia?: DecisionEvidenciaBitacoraInput[];
 }
 
 export interface AutorBitacora {
@@ -88,6 +103,21 @@ export interface UnidadVerificacionBitacora {
   resultadoObservado: string;
 }
 
+export interface ClasificacionUrlBitacora {
+  url: string;
+  tipo: TipoUrlBitacora;
+  unidadVerificacionIds: string[];
+  descripcion: string;
+}
+
+export interface EvidenciaPendienteConfirmacionBitacora {
+  url: string;
+  tipoSugerido: TipoUrlBitacora;
+  descripcionSugerida: string;
+  aspectoIdsSugeridos: number[];
+  unidadVerificacionIds: string[];
+}
+
 export interface PropuestaAspectoBitacora {
   aspectoId: number;
   identidadHistorica: string;
@@ -103,6 +133,7 @@ export interface PropuestaAspectoBitacora {
   calificacionAdministrativaPropuesta: 0 | 3 | 5 | null;
   evidenciaBitacora: string | null;
   evidenciasUrls: string[];
+  clasificacionUrls: ClasificacionUrlBitacora[];
   fechaEfectiva: string;
   fechaDocumento: string | null;
   justificacionTecnica: string;
@@ -118,5 +149,6 @@ export interface ResultadoAnalisisBitacora {
   modelo: string;
   versionPrompt: string;
   unidadesVerificacion?: UnidadVerificacionBitacora[];
+  evidenciasPendientesConfirmacion?: EvidenciaPendienteConfirmacionBitacora[];
   propuestas: PropuestaAspectoBitacora[];
 }

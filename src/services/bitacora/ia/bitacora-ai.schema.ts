@@ -125,6 +125,39 @@ export const SCHEMA_RESPUESTA_BITACORA = {
             type: "array",
             items: { type: "string" },
           },
+          clasificacionUrls: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                url: { type: "string" },
+                tipo: {
+                  type: "string",
+                  enum: [
+                    "EVIDENCIA_DIRECTA",
+                    "RECURSO_ACCION",
+                    "REFERENCIA",
+                    "CONTACTO",
+                  ],
+                },
+                unidadVerificacionIds: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    pattern: "^UV-[1-9][0-9]*$",
+                  },
+                },
+                descripcion: { type: "string" },
+              },
+              required: [
+                "url",
+                "tipo",
+                "unidadVerificacionIds",
+                "descripcion",
+              ],
+            },
+          },
           fechaEfectiva: { type: "string" },
           fechaDocumento: {
             anyOf: [
@@ -168,6 +201,7 @@ export const SCHEMA_RESPUESTA_BITACORA = {
           "calificacionAdministrativaPropuesta",
           "evidenciaBitacora",
           "evidenciasUrls",
+          "clasificacionUrls",
           "fechaEfectiva",
           "fechaDocumento",
           "justificacionTecnica",

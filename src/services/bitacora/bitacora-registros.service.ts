@@ -8,6 +8,7 @@ import {
 import { prisma } from "../../lib/prisma";
 import type {
   CrearRegistroBitacoraInput,
+  DecisionEvidenciaBitacoraInput,
   PropuestaAspectoBitacora,
   UnidadVerificacionBitacora,
 } from "../../types/bitacora.types";
@@ -19,7 +20,9 @@ import {
   TIPO_ACTIVIDAD_BITACORA_INTERNA,
 } from "./bitacora.constants";
 import { extraerUrlsBitacora } from "./bitacora-enlaces.service";
+import { prepararUrlsParaConfirmacionHumana } from "./bitacora-evidencias-confirmacion.service";
 import { asegurarAccesoBitacoraEmpresa } from "./bitacora-permisos.service";
+import { sanitizarContenidoBitacoraParaIa } from "./ia/bitacora-ai-sanitizacion.service";
 import { analizarRegistroBitacoraConIa } from "./ia/bitacora-ai.service";
 import {
   buscarCandidatosAspectoBitacora,
@@ -73,6 +76,7 @@ export interface SnapshotBitacoraIa {
     aplicadaEn: string;
     aplicadaPorUsuarioId: string;
     aspectoIdsExcluidos: number[];
+    evidenciasDecididas?: DecisionEvidenciaBitacoraInput[];
     evaluaciones: Array<{
       id: string;
       aspectoId: number;
@@ -241,13 +245,28 @@ export async function guardarYAnalizarBitacora(
       fechaEfectiva: validado.fechaEfectiva,
       candidatos,
     });
-    const analisis = await analizarRegistroBitacoraConIa({
+
+    const contenidoParaIa = sanitizarContenidoBitacoraParaIa(validado.contenido);
+    const urlsParaIa = extraerUrlsBitacora(contenidoParaIa.contenido);
+
+    if (contenidoParaIa.totalRedacciones > 0) {
+      console.warn("[BITACORA-IA-SEGURIDAD] datos-sensibles-redactados", {
+        registroId: registro.gestion.id,
+        totalRedacciones: contenidoParaIa.totalRedacciones,
+      });
+    }
+
+    const analisisCrudo = await analizarRegistroBitacoraConIa({
       registroBitacoraId: registro.gestion.id,
       fechaEfectiva,
-      contenidoOriginal: validado.contenido,
-      urlsDisponibles: urlsDetectadas,
+      contenidoOriginal: contenidoParaIa.contenido,
+      urlsDisponibles: urlsParaIa,
       aspectos: contextoAspectos,
     });
+    const analisis = prepararUrlsParaConfirmacionHumana(
+      analisisCrudo,
+      urlsParaIa
+    );
 
     const snapshotFinal: SnapshotBitacoraIa = {
       ...snapshotInicial,
@@ -306,7 +325,11 @@ export async function guardarYAnalizarBitacora(
       },
       versionSupermatriz: snapshotFinal.versionSupermatriz,
       recuperacion: snapshotFinal.recuperacion,
-      analisis: snapshotFinal.analisis,
+      analisis: {
+        ...snapshotFinal.analisis,
+        evidenciasPendientesConfirmacion:
+          analisis.evidenciasPendientesConfirmacion ?? [],
+      },
       resumen: crearResumen(snapshotFinal.analisis.propuestas),
       estadoProcesamiento: snapshotFinal.estadoProcesamiento,
       escrituraEvaluacionRealizada: false,
