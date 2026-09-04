@@ -7,10 +7,6 @@ import {
   PROMPT_SISTEMA_BITACORA,
   VERSION_PROMPT_BITACORA,
 } from "../bitacora-ai.prompt";
-import {
-  calcularSoporteDirectoBitacora,
-  tieneSoporteDirectoBitacora,
-} from "../recuperacion/relevancia-textual.service";
 import { SCHEMA_RESPUESTA_BITACORA } from "./bitacora-ai.schema";
 import {
   ErrorOpenRouter,
@@ -128,6 +124,28 @@ function extraerFechasCalendarioExplicitas(contenido: string): Set<string> {
   return fechas;
 }
 
+function normalizarContextual(
+  candidato: ContextoAspectoBitacora,
+  propuesta: PropuestaAspectoBitacora
+): PropuestaAspectoBitacora {
+  return {
+    ...propuesta,
+    relacionSemantica: "CONTEXTUAL",
+    coberturaRequisito: "NO_APLICA",
+    elementosEvaluados: [],
+    elementosNoEvaluados: [],
+    accion: "SIN_CAMBIO",
+    estadoActual: candidato.estadoActual,
+    estadoPropuesto: candidato.estadoActual,
+    calificacionAdministrativaPropuesta: null,
+    evidenciaBitacora: null,
+    evidenciasUrls: [],
+    fechaDocumento: null,
+    requiereEvidenciaDocumental: false,
+    requiereRevisionTecnica: false,
+  };
+}
+
 function normalizarAccionSinEvaluacion(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
@@ -136,62 +154,73 @@ function normalizarAccionSinEvaluacion(
     return propuesta;
   }
 
+  if (propuesta.relacionSemantica === "CONTEXTUAL") {
+    return normalizarContextual(candidato, propuesta);
+  }
+
   return {
     ...propuesta,
+    estadoActual: candidato.estadoActual,
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
-    evidenciasUrls: [],
-    fechaDocumento: null,
   };
 }
 
-function aplicarGuardrailSoporteDirecto(
-  input: AnalizarRegistroBitacoraIaInput,
+function aplicarGuardrailAdjudicacion(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
-  if (propuesta.accion !== "PROPONER_EVALUACION") {
-    return normalizarAccionSinEvaluacion(candidato, propuesta);
+  if (propuesta.relacionSemantica === "CONTEXTUAL") {
+    if (
+      propuesta.accion !== "SIN_CAMBIO" ||
+      propuesta.coberturaRequisito !== "NO_APLICA"
+    ) {
+      console.warn("[BITACORA-IA-GUARDRAIL] adjudicacion-normalizada", {
+        aspectoId: candidato.aspectoId,
+        motivo: "CONTEXTUAL_NO_EVALUABLE",
+        accionOriginal: propuesta.accion,
+        coberturaOriginal: propuesta.coberturaRequisito,
+      });
+    }
+
+    return normalizarContextual(candidato, propuesta);
   }
 
-  const soporteDirecto = calcularSoporteDirectoBitacora({
-    contenidoBitacora: input.contenidoOriginal,
-    codigo: candidato.codigo,
-    nombre: candidato.nombre,
-    palabrasClave: candidato.palabrasClave,
-  });
+  const coberturaRequisito =
+    propuesta.coberturaRequisito === "NO_APLICA"
+      ? "INDETERMINADA"
+      : propuesta.coberturaRequisito;
 
-  if (tieneSoporteDirectoBitacora(soporteDirecto)) {
-    return propuesta;
-  }
-
-  console.warn("[BITACORA-IA-GUARDRAIL] propuesta-degradada", {
-    aspectoId: candidato.aspectoId,
-    motivo: "SIN_SOPORTE_DIRECTO",
-    accionOriginal: propuesta.accion,
-    puntajeSoporteDirecto: soporteDirecto.puntaje,
-    conflictoEntidad: soporteDirecto.conflictoEntidad,
-    senalesDirectas: soporteDirecto.senales,
-  });
-
-  return {
+  const directa = {
     ...propuesta,
-    accion: "SIN_CAMBIO",
-    estadoPropuesto: candidato.estadoActual,
-    calificacionAdministrativaPropuesta: null,
-    evidenciaBitacora: null,
-    evidenciasUrls: [],
-    fechaDocumento: null,
-    justificacionTecnica:
-      "Stack44 bloqueó la propuesta de evaluación porque el registro no aporta evidencia directa suficiente sobre este aspecto. La ausencia de mención no constituye incumplimiento.",
-    reglaAplicada: "GUARDRAIL_SOPORTE_DIRECTO_V2_1",
-    informacionFaltante: agregarInformacionFaltante(
-      propuesta.informacionFaltante,
-      "No existe evidencia directa suficiente sobre este aspecto en el registro analizado."
-    ),
-    requiereEvidenciaDocumental: false,
-    requiereRevisionTecnica: false,
+    relacionSemantica: "DIRECTA" as const,
+    coberturaRequisito,
+    estadoActual: candidato.estadoActual,
   };
+
+  if (
+    directa.accion === "PROPONER_EVALUACION" &&
+    directa.coberturaRequisito === "INDETERMINADA"
+  ) {
+    console.warn("[BITACORA-IA-GUARDRAIL] propuesta-degradada", {
+      aspectoId: candidato.aspectoId,
+      motivo: "COBERTURA_INDETERMINADA",
+      accionOriginal: directa.accion,
+    });
+
+    return {
+      ...directa,
+      accion: "INFORMACION_INSUFICIENTE",
+      estadoPropuesto: candidato.estadoActual,
+      calificacionAdministrativaPropuesta: null,
+      informacionFaltante: agregarInformacionFaltante(
+        directa.informacionFaltante,
+        "La anotación se refiere directamente al requisito, pero la cobertura disponible es indeterminada para proponer una calificación automática."
+      ),
+    };
+  }
+
+  return directa;
 }
 
 function aplicarGuardrailPropuestaCompleta(
@@ -221,12 +250,11 @@ function aplicarGuardrailPropuestaCompleta(
   return {
     ...propuesta,
     accion: "REQUIERE_REVISION_HUMANA",
+    estadoActual: candidato.estadoActual,
     estadoPropuesto: candidato.estadoActual,
     calificacionAdministrativaPropuesta: null,
-    evidenciasUrls: [],
-    fechaDocumento: null,
     justificacionTecnica: `${propuesta.justificacionTecnica} Stack44 no permitió convertir esta interpretación en propuesta de evaluación porque el modelo no entregó estado y calificación completos.`.trim(),
-    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V2_1",
+    reglaAplicada: "GUARDRAIL_PROPUESTA_INCOMPLETA_V3_4",
     informacionFaltante: agregarInformacionFaltante(
       propuesta.informacionFaltante,
       "La interpretación requiere revisión humana porque no fue posible determinar de forma completa el estado y la calificación administrativa."
@@ -239,7 +267,7 @@ function validarFechaDocumentoPropuesta(
   input: AnalizarRegistroBitacoraIaInput,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
-  if (propuesta.accion !== "PROPONER_EVALUACION") {
+  if (propuesta.relacionSemantica === "CONTEXTUAL") {
     return {
       ...propuesta,
       fechaDocumento: null,
@@ -296,11 +324,20 @@ function validarUrlsPropuesta(
   input: AnalizarRegistroBitacoraIaInput,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
+  if (propuesta.relacionSemantica === "CONTEXTUAL") {
+    return {
+      ...propuesta,
+      evidenciasUrls: [],
+    };
+  }
+
   const disponibles = new Set(input.urlsDisponibles ?? []);
   const recibidas = Array.isArray(propuesta.evidenciasUrls)
     ? propuesta.evidenciasUrls
     : [];
-  const normalizadas = [...new Set(recibidas.map((url) => url.trim()).filter(Boolean))];
+  const normalizadas = [
+    ...new Set(recibidas.map((url) => url.trim()).filter(Boolean)),
+  ];
 
   for (const url of normalizadas) {
     if (!disponibles.has(url)) {
@@ -314,8 +351,7 @@ function validarUrlsPropuesta(
 
   return {
     ...propuesta,
-    evidenciasUrls:
-      propuesta.accion === "PROPONER_EVALUACION" ? normalizadas : [],
+    evidenciasUrls: normalizadas,
   };
 }
 
@@ -324,21 +360,11 @@ function normalizarPropuestaModelo(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora
 ): PropuestaAspectoBitacora {
-  const conUrlsValidadas = validarUrlsPropuesta(input, propuesta);
-  const conSoporteValidado = aplicarGuardrailSoporteDirecto(
-    input,
-    candidato,
-    conUrlsValidadas
-  );
-  const conPropuestaCompleta = aplicarGuardrailPropuestaCompleta(
-    candidato,
-    conSoporteValidado
-  );
+  const adjudicada = aplicarGuardrailAdjudicacion(candidato, propuesta);
+  const completa = aplicarGuardrailPropuestaCompleta(candidato, adjudicada);
+  const conUrlsValidadas = validarUrlsPropuesta(input, completa);
 
-  return validarFechaDocumentoPropuesta(
-    input,
-    conPropuestaCompleta
-  );
+  return validarFechaDocumentoPropuesta(input, conUrlsValidadas);
 }
 
 function validarPropuestasModelo(
@@ -416,9 +442,7 @@ function validarPropuestasModelo(
       );
     }
 
-    validadas.push(
-      normalizarPropuestaModelo(input, candidato, propuesta)
-    );
+    validadas.push(normalizarPropuestaModelo(input, candidato, propuesta));
   }
 
   return validadas;
