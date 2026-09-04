@@ -14,8 +14,14 @@ import {
   solicitarJsonEstructuradoOpenRouter,
 } from "./openrouter.client";
 
+interface AsignacionEvidenciaFinalModelo {
+  url: string;
+  aspectoIds: number[];
+}
+
 interface RespuestaModeloBitacora {
   aspectosDirectosFinales: number[];
+  asignacionesEvidenciaFinales: AsignacionEvidenciaFinalModelo[];
   justificacionAdjudicacionGlobal: string;
   propuestas: PropuestaAspectoBitacora[];
 }
@@ -421,6 +427,97 @@ function validarAspectosDirectosFinales(
   return finales;
 }
 
+function validarAsignacionesEvidenciaFinales(
+  input: AnalizarRegistroBitacoraIaInput,
+  asignaciones: AsignacionEvidenciaFinalModelo[],
+  aspectosDirectosFinales: Set<number>
+): Map<number, string[]> {
+  if (!Array.isArray(asignaciones)) {
+    throw new ErrorOpenRouter(
+      "La respuesta de IA no contiene una reconciliación global de evidencias válida.",
+      502,
+      "BITACORA_IA_EVIDENCIAS_GLOBALES_INVALIDAS"
+    );
+  }
+
+  const urlsDisponibles = new Set(input.urlsDisponibles ?? []);
+  const urlsVistas = new Set<string>();
+  const urlsPorAspecto = new Map<number, string[]>();
+
+  for (const asignacion of asignaciones) {
+    if (
+      !asignacion ||
+      typeof asignacion.url !== "string" ||
+      !Array.isArray(asignacion.aspectoIds)
+    ) {
+      throw new ErrorOpenRouter(
+        "La reconciliación global contiene una asignación de evidencia inválida.",
+        502,
+        "BITACORA_IA_EVIDENCIAS_GLOBALES_INVALIDAS"
+      );
+    }
+
+    const url = asignacion.url.trim();
+    if (!url || !urlsDisponibles.has(url)) {
+      throw new ErrorOpenRouter(
+        `La reconciliación global intentó usar una URL no autorizada: ${url || "(vacía)"}.`,
+        502,
+        "BITACORA_IA_EVIDENCIA_GLOBAL_NO_AUTORIZADA"
+      );
+    }
+
+    if (urlsVistas.has(url)) {
+      throw new ErrorOpenRouter(
+        `La reconciliación global repitió la URL ${url}.`,
+        502,
+        "BITACORA_IA_EVIDENCIA_GLOBAL_DUPLICADA"
+      );
+    }
+    urlsVistas.add(url);
+
+    if (asignacion.aspectoIds.length === 0) {
+      throw new ErrorOpenRouter(
+        `La reconciliación global devolvió una asignación vacía para la URL ${url}.`,
+        502,
+        "BITACORA_IA_EVIDENCIA_GLOBAL_SIN_ASPECTO"
+      );
+    }
+
+    const idsVistos = new Set<number>();
+    for (const aspectoId of asignacion.aspectoIds) {
+      if (!Number.isInteger(aspectoId)) {
+        throw new ErrorOpenRouter(
+          `La reconciliación global devolvió un aspecto inválido para la URL ${url}.`,
+          502,
+          "BITACORA_IA_EVIDENCIA_GLOBAL_ASPECTO_INVALIDO"
+        );
+      }
+
+      if (!aspectosDirectosFinales.has(aspectoId)) {
+        throw new ErrorOpenRouter(
+          `La reconciliación global intentó vincular la URL ${url} a un aspecto que no quedó DIRECTO: ${aspectoId}.`,
+          502,
+          "BITACORA_IA_EVIDENCIA_GLOBAL_ASPECTO_NO_DIRECTO"
+        );
+      }
+
+      if (idsVistos.has(aspectoId)) {
+        throw new ErrorOpenRouter(
+          `La reconciliación global repitió el aspecto ${aspectoId} para la URL ${url}.`,
+          502,
+          "BITACORA_IA_EVIDENCIA_GLOBAL_ASPECTO_DUPLICADO"
+        );
+      }
+      idsVistos.add(aspectoId);
+
+      const actuales = urlsPorAspecto.get(aspectoId) ?? [];
+      urlsPorAspecto.set(aspectoId, [...actuales, url]);
+    }
+  }
+
+  return urlsPorAspecto;
+}
+
 function aplicarReconciliacionGlobal(
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora,
@@ -460,7 +557,8 @@ function normalizarPropuestaModelo(
   input: AnalizarRegistroBitacoraIaInput,
   candidato: ContextoAspectoBitacora,
   propuesta: PropuestaAspectoBitacora,
-  aspectosDirectosFinales: Set<number>
+  aspectosDirectosFinales: Set<number>,
+  urlsFinalesPorAspecto: Map<number, string[]>
 ): PropuestaAspectoBitacora {
   const reconciliada = aplicarReconciliacionGlobal(
     candidato,
@@ -470,14 +568,21 @@ function normalizarPropuestaModelo(
   const adjudicada = aplicarGuardrailAdjudicacion(candidato, reconciliada);
   const completa = aplicarGuardrailPropuestaCompleta(candidato, adjudicada);
   const conUrlsValidadas = validarUrlsPropuesta(input, completa);
+  const urlsGlobales = urlsFinalesPorAspecto.get(candidato.aspectoId) ?? [];
+  const conUrlsReconciliadas = {
+    ...conUrlsValidadas,
+    evidenciasUrls:
+      conUrlsValidadas.relacionSemantica === "DIRECTA" ? urlsGlobales : [],
+  };
 
-  return validarFechaDocumentoPropuesta(input, conUrlsValidadas);
+  return validarFechaDocumentoPropuesta(input, conUrlsReconciliadas);
 }
 
 function validarPropuestasModelo(
   input: AnalizarRegistroBitacoraIaInput,
   propuestas: PropuestaAspectoBitacora[],
-  aspectosDirectosFinales: Set<number>
+  aspectosDirectosFinales: Set<number>,
+  urlsFinalesPorAspecto: Map<number, string[]>
 ): PropuestaAspectoBitacora[] {
   if (!Array.isArray(propuestas)) {
     throw new ErrorOpenRouter(
@@ -555,7 +660,8 @@ function validarPropuestasModelo(
         input,
         candidato,
         propuesta,
-        aspectosDirectosFinales
+        aspectosDirectosFinales,
+        urlsFinalesPorAspecto
       )
     );
   }
@@ -606,7 +712,7 @@ export async function analizarRegistroBitacoraConIa(
         content: JSON.stringify(contextoUsuario),
       },
     ],
-    schemaName: "stack44_bitacora_analisis_v37",
+    schemaName: "stack44_bitacora_analisis_v39",
     schema: SCHEMA_RESPUESTA_BITACORA,
   });
 
@@ -625,6 +731,11 @@ export async function analizarRegistroBitacoraConIa(
     input,
     respuesta.datos.aspectosDirectosFinales
   );
+  const urlsFinalesPorAspecto = validarAsignacionesEvidenciaFinales(
+    input,
+    respuesta.datos.asignacionesEvidenciaFinales,
+    aspectosDirectosFinales
+  );
 
   return {
     registroBitacoraId: input.registroBitacoraId,
@@ -633,7 +744,8 @@ export async function analizarRegistroBitacoraConIa(
     propuestas: validarPropuestasModelo(
       input,
       respuesta.datos.propuestas,
-      aspectosDirectosFinales
+      aspectosDirectosFinales,
+      urlsFinalesPorAspecto
     ),
   };
 }
